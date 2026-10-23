@@ -15,7 +15,7 @@ const ICONS = { todo: CheckSquare, note: NotepadText, daily: CalendarDays, page:
 const KIND_LABEL = { todo: "待办", note: "笔记", daily: "日记", page: "知识库" } as const;
 
 /** 引用了某个条目（Jira 问题、文档）的待办和文档。 */
-export function Backlinks(props: { system: string; itemKey: string; title?: string; hideEmpty?: boolean; actions?: ReactNode }) {
+export function Backlinks(props: { system: string; itemKey: string; title?: string; hideEmpty?: boolean; actions?: ReactNode; id?: string; onCount?: (n: number) => void }) {
   const { navigate } = useNav();
   const [links, setLinks] = useState<Backlink[] | null>(null);
 
@@ -24,10 +24,14 @@ export function Backlinks(props: { system: string; itemKey: string; title?: stri
   }, [props.system, props.itemKey]);
   useEffect(load, [load]);
   useWorkspaceRefresh(load);
+  const { onCount } = props;
+  useEffect(() => {
+    onCount?.(links?.length ?? 0);
+  }, [links, onCount]);
 
   if (!links || (props.hideEmpty && links.length === 0 && !props.actions)) return null;
   return (
-    <section className="block">
+    <section className="block" id={props.id}>
       <div className="block-title">
         <h2>
           <Link2 size={16} className="muted" />

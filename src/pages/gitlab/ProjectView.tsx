@@ -11,6 +11,8 @@ import { DiffList } from "./DiffView";
 import { MergeRequestView } from "./MergeRequestView";
 import { MR_STATES, MrListBody, useMrList } from "./MrList";
 import { NewMergeRequestDialog } from "./NewMergeRequestDialog";
+import { RelatedIssues } from "./RelatedIssues";
+import { toast } from "../../components/Toast";
 import type { MrState } from "../../api";
 
 type Tab = "code" | "mrs" | "commits" | "branches" | "compare";
@@ -21,11 +23,17 @@ interface Location {
   isFile: boolean;
 }
 
-export function ProjectView({ projectId, initialMr }: { projectId: number; initialMr?: number }) {
+/**
+ * `initialRef`：打开时显示的分支（可以是 tree/ 之后的路径，取其中最长的已有分支名）；
+ * `initialCommit`：打开时显示的提交。
+ */
+export function ProjectView({ projectId, initialMr, initialRef, initialCommit }: { projectId: number; initialMr?: number; initialRef?: string; initialCommit?: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [gitRef, setGitRef] = useState<string>("");
-  const [tab, setTab] = useState<Tab>(initialMr ? "mrs" : "code");
+  const [tab, setTab] = useState<Tab>(initialMr ? "mrs" : initialRef || initialCommit ? "commits" : "code");
+  /** 提交标签中打开的提交 */
+  const [openCommit, setOpenCommit] = useState<string | null>(initialCommit ?? null);
   const [openMr, setOpenMr] = useState<number | null>(initialMr ?? null);
   /** 新建合并请求对话框（值为预选的源分支） */
   const [creating, setCreating] = useState<string | null>(null);
@@ -39,12 +47,16 @@ export function ProjectView({ projectId, initialMr }: { projectId: number; initi
         if (cancelled) return;
         setProject(p);
         setBranches(b);
-        setGitRef(p.defaultBranch ?? b[0]?.name ?? "");
+        const wanted = initialRef ? b.filter((x) => initialRef === x.name || initialRef.startsWith(`${x.name}/`)).sort((x, y) => y.name.length - x.name.length)[0] : undefined;
+        if (initialRef && !wanted) toast(`分支 ${initialRef} 已不存在`, true);
+        setGitRef(wanted?.name ?? p.defaultBranch ?? b[0]?.name ?? "");
       })
       .catch((e) => !cancelled && setError(errorMessage(e)));
     return () => {
       cancelled = true;
     };
+    // 只在打开项目时应用一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   if (error) return <div className="detail-body"><ErrorBox message={error} /></div>;
@@ -91,6 +103,7 @@ export function ProjectView({ projectId, initialMr }: { projectId: number; initi
                 onClick={() => {
                   setTab(id);
                   if (id === "mrs") setOpenMr(null);
+                  if (id === "commits") setOpenCommit(null);
                 }}
               >
                 <Icon size={14} />
@@ -122,7 +135,15 @@ export function ProjectView({ projectId, initialMr }: { projectId: number; initi
 
       {tab === "code" && <CodeTab projectId={projectId} projectUrl={project.webUrl} gitRef={gitRef} location={location} onLocation={setLocation} />}
       {tab === "mrs" && (openMr ? <MergeRequestView key={openMr} mrRef={{ project: projectId, iid: openMr }} onBack={() => setOpenMr(null)} /> : <ProjectMrsTab projectId={projectId} onOpen={setOpenMr} />)}
-      {tab === "commits" && <CommitsTab projectId={projectId} gitRef={gitRef} />}
+      {tab === "commits" &&
+        (openCommit ? (
+          <CommitDetailView projectId={projectId} projectPath={project.pathWithNamespace} sha={openCommit} onBack={() => setOpenCommit(null)} />
+        ) : (
+          <>
+            {gitRef !== project.defaultBranch && <RelatedIssues target={{ projectPath: project.pathWithNamespace, branch: gitRef, text: gitRef }} />}
+            <CommitsTab projectId={projectId} gitRef={gitRef} onOpen={setOpenCommit} />
+          </>
+        ))}
       {tab === "branches" && <BranchesTab branches={branches} projectUrl={project.webUrl} onOpen={openBranch} onCreateMr={(name) => setCreating(name)} />}
       {tab === "compare" && <CompareTab projectId={projectId} branches={branches} defaultBranch={project.defaultBranch ?? ""} />}
       {creating !== null && (
@@ -224,13 +245,12 @@ function FileBody({ file }: { file: FileContent }) {
   return <CodeView code={file.text} path={file.path} />;
 }
 
-function CommitsTab({ projectId, gitRef }: { projectId: number; gitRef: string }) {
+function CommitsTab({ projectId, gitRef, onOpen }: { projectId: number; gitRef: string; onOpen: (sha: string) => void }) {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
 
   const loadPage = useCallback(
     async (p: number) => {
@@ -251,16 +271,13 @@ function CommitsTab({ projectId, gitRef }: { projectId: number; gitRef: string }
   );
 
   useEffect(() => {
-    setSelected(null);
     void loadPage(1);
   }, [loadPage]);
-
-  if (selected) return <CommitDetailView projectId={projectId} sha={selected} onBack={() => setSelected(null)} />;
 
   return (
     <section className="block">
       {error && <ErrorBox message={error} />}
-      <CommitList commits={commits} onOpen={setSelected} />
+      <CommitList commits={commits} onOpen={onOpen} />
       {hasMore && commits.length > 0 && (
         <button className="btn" onClick={() => loadPage(page + 1)} disabled={loading}>
           {loading ? "加载中…" : "加载更多"}
@@ -293,7 +310,8 @@ export function CommitList({ commits, onOpen }: { commits: Commit[]; onOpen: (sh
   );
 }
 
-export function CommitDetailView({ projectId, sha, onBack }: { projectId: number; sha: string; onBack: () => void }) {
+/** `projectPath` 有值时显示提到这个提交的问题。 */
+export function CommitDetailView({ projectId, projectPath, sha, onBack }: { projectId: number; projectPath?: string; sha: string; onBack: () => void }) {
   const [detail, setDetail] = useState<CommitDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -327,6 +345,7 @@ export function CommitDetailView({ projectId, sha, onBack }: { projectId: number
             </p>
             {detail.commit.message.trim() !== detail.commit.title.trim() && <pre className="commit-message">{detail.commit.message.trim()}</pre>}
           </div>
+          {projectPath && <RelatedIssues target={{ projectPath, sha: detail.commit.id, text: detail.commit.message || detail.commit.title }} />}
           <DiffList diffs={detail.diffs} />
         </>
       )}

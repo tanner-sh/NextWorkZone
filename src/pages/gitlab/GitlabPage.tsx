@@ -78,6 +78,16 @@ export function GitlabPage() {
     current.mrIid && (current.projectId || current.projectPath) ? { project: current.projectId ?? current.projectPath!, iid: current.mrIid } : null,
   );
   const mrList = useMrList({ scope }, mrState, mrSearch);
+  /** 从链接跳转过来时要打开的分支或提交 */
+  const [opening, setOpening] = useState<{ gitRef?: string; commitSha?: string } | null>(() =>
+    current.gitRef || current.commitSha ? { gitRef: current.gitRef, commitSha: current.commitSha } : null,
+  );
+
+  /** 在列表中手动打开项目：不再带着链接中的分支或提交 */
+  const openProject = (id: number) => {
+    setOpening(null);
+    setSelected(id);
+  };
 
   const setMode = (m: Mode) => {
     setModeState(m);
@@ -93,11 +103,10 @@ export function GitlabPage() {
     if (current.mrIid && (current.projectId || current.projectPath)) {
       setModeState("mrs");
       setSelectedMr({ project: current.projectId ?? current.projectPath!, iid: current.mrIid });
-    } else if (current.projectId) {
+    } else if (current.projectId || current.projectPath) {
       setModeState("projects");
-      setSelected(current.projectId);
-    } else if (current.projectPath) {
-      setModeState("projects");
+      setOpening(current.gitRef || current.commitSha ? { gitRef: current.gitRef, commitSha: current.commitSha } : null);
+      if (current.projectId) setSelected(current.projectId);
     }
   }, [current]);
 
@@ -159,7 +168,7 @@ export function GitlabPage() {
       );
     const isStarred = starred.includes(p.id);
     return [
-      { label: "打开", icon: <FolderGit2 size={14} />, onSelect: () => setSelected(p.id) },
+      { label: "打开", icon: <FolderGit2 size={14} />, onSelect: () => openProject(p.id) },
       { label: isStarred ? "取消收藏" : "收藏", icon: isStarred ? <StarOff size={14} /> : <Star size={14} />, onSelect: () => toggleStar(p.id) },
       "separator",
       { label: "复制项目路径", icon: <Copy size={14} />, onSelect: copy(p.pathWithNamespace) },
@@ -283,7 +292,7 @@ export function GitlabPage() {
             <li key={p.id}>
               <div
                 className={`issue-item project-item${selected === p.id ? " selected" : ""}${contextMenu.target === String(p.id) ? " menu-target" : ""}`}
-                onClick={() => setSelected(p.id)}
+                onClick={() => openProject(p.id)}
                 onContextMenu={(e) => contextMenu.open(e, projectMenu(p), String(p.id))}
                 role="button"
                 tabIndex={0}
@@ -318,7 +327,11 @@ export function GitlabPage() {
         </ul>
       </aside>
       <section className="detail-pane">
-        {selected ? <ProjectView key={selected} projectId={selected} /> : <div className="empty-center">选择左侧的项目</div>}
+        {selected ? (
+          <ProjectView key={`${selected}|${opening?.gitRef ?? ""}|${opening?.commitSha ?? ""}`} projectId={selected} initialRef={opening?.gitRef} initialCommit={opening?.commitSha} />
+        ) : (
+          <div className="empty-center">选择左侧的项目</div>
+        )}
       </section>
       {contextMenu.menu}
     </div>

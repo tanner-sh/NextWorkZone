@@ -294,6 +294,12 @@ impl GitlabClient {
         self.json(self.get(&["merge_requests"])?.query(&q)).await
     }
 
+    /// 所有能看到的合并请求中，标题或描述包含 `text` 的（任意状态）。
+    pub async fn search_merge_requests(&self, text: &str, limit: usize) -> Result<Vec<MergeRequest>> {
+        let query = [("scope", "all"), ("state", "all"), ("search", text), ("order_by", "updated_at")];
+        self.all_pages(&["merge_requests"], &query, limit).await
+    }
+
     pub async fn project_merge_requests(&self, project: &str, query: &MrQuery) -> Result<Vec<MergeRequest>> {
         self.json(self.get(&["projects", project, "merge_requests"])?.query(&Self::mr_query(query))).await
     }

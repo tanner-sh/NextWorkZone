@@ -43,7 +43,7 @@ pub struct IndexStatus {
 }
 
 /// 数据库操作放到阻塞线程中执行。
-async fn blocking<T: Send + 'static>(index: &Arc<IssueIndex>, f: impl FnOnce(&IssueIndex) -> Result<T> + Send + 'static) -> Result<T> {
+pub(crate) async fn blocking<T: Send + 'static>(index: &Arc<IssueIndex>, f: impl FnOnce(&IssueIndex) -> Result<T> + Send + 'static) -> Result<T> {
     let index = index.clone();
     tauri::async_runtime::spawn_blocking(move || f(&index)).await.map_err(|e| Error::Other(e.to_string()))?
 }

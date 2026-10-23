@@ -7,7 +7,7 @@ mod shortcuts;
 mod state;
 mod tray;
 
-use commands::{activity, gitlab, inbox, jira, jira_index, jira_tools, search, session, settings, tools, weekly, wiki, worklog, workspace};
+use commands::{activity, code_refs, gitlab, inbox, jira, jira_index, jira_tools, search, session, settings, tools, weekly, wiki, worklog, workspace};
 use nextworkzone_core::secrets::Store;
 use tauri::Manager;
 
@@ -127,6 +127,8 @@ pub fn run() {
             wiki::wiki_users,
             wiki::wiki_search,
             wiki::wiki_issue_pages,
+            code_refs::issue_code_refs,
+            code_refs::code_related_issues,
             wiki::wiki_edit,
             wiki::wiki_new_page,
             wiki::wiki_templates,

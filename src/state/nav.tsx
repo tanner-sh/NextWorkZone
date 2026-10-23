@@ -25,6 +25,10 @@ export interface NavTarget {
   projectPath?: string;
   /** GitLab 合并请求编号（项目内的 !iid），与 projectId 或 projectPath 一起使用 */
   mrIid?: number;
+  /** GitLab 分支（或 tree/ 之后的路径，打开时按项目中已有的分支确定分支名），与 projectId 或 projectPath 一起使用 */
+  gitRef?: string;
+  /** GitLab 提交，与 projectId 或 projectPath 一起使用 */
+  commitSha?: string;
   /** 工具 id（见 tools/registry），与 page: "tools" 一起使用 */
   tool?: string;
   /** 工具页面中的标签，例如 settings */

@@ -21,7 +21,7 @@ const GITLAB_RESERVED = new Set(["users", "dashboard", "explore", "help", "admin
 const GITLAB_PROJECT_PAGES = new Set(["tree", "blob", "commits", "commit", "merge_requests", "issues", "branches", "tags", "compare", "raw", "blame", "pipelines", "jobs", "wikis"]);
 
 /**
- * 能直接判断的应用内目标：Jira 问题、带 pageId 的 Wiki 页面、GitLab 项目和合并请求。
+ * 能直接判断的应用内目标：Jira 问题、带 pageId 的 Wiki 页面、GitLab 项目、合并请求、分支和提交。
  * 其他 Wiki 地址（短链接、/display/…）需要向服务器解析，返回 `"wiki"` 表示交给 `resolveLink`。
  */
 export function routeUrl(url: string, baseUrl: BaseUrl): NavTarget | "wiki" | null {
@@ -48,8 +48,22 @@ export function routeUrl(url: string, baseUrl: BaseUrl): NavTarget | "wiki" | nu
   const end = dash > 0 ? dash : legacy;
   const projectPath = (end > 0 ? segments.slice(0, end) : segments).join("/");
   const page = dash > 0 ? end + 1 : end;
-  const mr = end > 0 && segments[page] === "merge_requests" ? Number(segments[page + 1]) : NaN;
-  return Number.isInteger(mr) && mr > 0 ? { page: "gitlab", projectPath, mrIid: mr } : { page: "gitlab", projectPath };
+  const kind = end > 0 ? segments[page] : undefined;
+  const args = end > 0 ? segments.slice(page + 1).map(decodeSegment) : [];
+  const mr = kind === "merge_requests" ? Number(args[0]) : NaN;
+  if (Number.isInteger(mr) && mr > 0) return { page: "gitlab", projectPath, mrIid: mr };
+  if (kind === "commit" && /^[0-9a-f]{7,40}$/i.test(args[0] ?? "")) return { page: "gitlab", projectPath, commitSha: args[0].toLowerCase() };
+  // 分支名可以含 /，带着目录时由项目页按已有分支确定
+  if ((kind === "tree" || kind === "commits" || kind === "blob") && args.length > 0) return { page: "gitlab", projectPath, gitRef: args.join("/") };
+  return { page: "gitlab", projectPath };
+}
+
+function decodeSegment(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
 }
 
 /** 解析地址为应用内目标（Wiki 的短链接等需要请求服务器）；不是系统地址时返回 `null`。 */

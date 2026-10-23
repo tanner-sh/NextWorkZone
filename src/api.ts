@@ -492,6 +492,63 @@ export interface Commit {
   webUrl: string | null;
 }
 
+/** 找到问题与代码关联的线索。 */
+export interface CodeRefSource {
+  /** 描述中的链接 / 评论中的链接 / 合并请求的标题或描述含问题键 / 提交说明含问题键 */
+  kind: "description" | "comment" | "mrSearch" | "commitSearch";
+  author: string | null;
+  at: string | null;
+  commentId: string | null;
+}
+
+/** 问题中提到的代码。 */
+export interface CodeRef {
+  /** external：其他 GitLab 实例上的地址，只能在浏览器中打开 */
+  kind: "mr" | "branch" | "commit" | "external";
+  url: string;
+  projectId: number | null;
+  projectPath: string;
+  projectName: string;
+  branch: string | null;
+  sha: string | null;
+  iid: number | null;
+  /** 合并请求标题、提交标题，或分支最近一次提交的标题 */
+  title: string;
+  /** 合并请求：opened / merged / closed / locked；分支：merged / missing；提交：missing */
+  state: string | null;
+  pipeline: string | null;
+  author: string | null;
+  at: string | null;
+  /** 分支：线索时间前后的提交 */
+  commits: Commit[];
+  /** 无法访问时的说明 */
+  unavailable: string | null;
+  sources: CodeRefSource[];
+}
+
+/** 问题的一段正文，用于找出其中的代码链接。 */
+export interface IssueText {
+  source: "description" | "comment";
+  commentId?: string;
+  author?: string;
+  at?: string;
+  html: string;
+}
+
+/** 分支、提交或合并请求；text 是标题、分支名、提交说明等。 */
+export interface CodeTarget {
+  projectPath: string;
+  branch?: string;
+  sha?: string;
+  iid?: number;
+  text: string;
+}
+
+export interface RelatedIssue extends IssueHit {
+  /** key：标题、分支名或提交说明中的问题键；link：问题中链接了它 */
+  via: "key" | "link";
+}
+
 export interface Branch {
   name: string;
   default: boolean;
@@ -1162,6 +1219,8 @@ export const api = {
     invoke<Commit[]>("gl_commits", { project, gitRef, path, page }),
   glCommit: (project: number, sha: string) => invoke<CommitDetail>("gl_commit", { project, sha }),
   glCompare: (project: number, from: string, to: string) => invoke<Comparison>("gl_compare", { project, from, to }),
+  issueCodeRefs: (key: string, texts: IssueText[]) => invoke<CodeRef[]>("issue_code_refs", { key, texts }),
+  codeRelatedIssues: (target: CodeTarget) => invoke<RelatedIssue[]>("code_related_issues", { target }),
   glMe: () => invoke<GlUser>("gl_me"),
   glMergeRequests: (scope: MrScope, query: MrQuery) => invoke<MergeRequest[]>("gl_merge_requests", { scope, query }),
   glProjectMergeRequests: (project: GlProjectRef, query: MrQuery) =>

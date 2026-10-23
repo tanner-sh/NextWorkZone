@@ -7,9 +7,11 @@ use reqwest::{Client, Method, RequestBuilder, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+pub mod links;
 mod mr;
 pub use mr::*;
 
+#[derive(Clone)]
 pub struct GitlabClient {
     http: Client,
     base_url: String,
@@ -354,9 +356,10 @@ impl GitlabClient {
     async fn all_pages<T: DeserializeOwned>(&self, segments: &[&str], query: &[(&str, &str)], limit: usize) -> Result<Vec<T>> {
         let mut items = Vec::new();
         let mut page = "1".to_string();
+        let per_page = limit.clamp(1, 100).to_string();
         loop {
             let response = check(
-                self.get(segments)?.query(query).query(&[("per_page", "100"), ("page", page.as_str())]).send().await?,
+                self.get(segments)?.query(query).query(&[("per_page", per_page.as_str()), ("page", page.as_str())]).send().await?,
             )
             .await?;
             let next = response
@@ -404,6 +407,23 @@ impl GitlabClient {
     pub async fn project(&self, id: u64) -> Result<Project> {
         let raw: RawProject = self.json(self.get(&["projects", &id.to_string()])?).await?;
         Ok(raw.into())
+    }
+
+    /// 按路径（`group/project`）取项目。
+    pub async fn project_by_path(&self, path: &str) -> Result<Project> {
+        let raw: RawProject = self.json(self.get(&["projects", path])?).await?;
+        Ok(raw.into())
+    }
+
+    /// 一个分支；不存在时返回 `None`。
+    pub async fn branch(&self, project: u64, name: &str) -> Result<Option<Branch>> {
+        let id = project.to_string();
+        let response = self.get(&["projects", &id, "repository", "branches", name])?.send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let b: RawBranch = check(response).await?.json().await?;
+        Ok(Some(Branch { name: b.name, default: b.default, protected: b.protected, merged: b.merged, commit: b.commit.into() }))
     }
 
     pub async fn branches(&self, project: u64, search: Option<&str>) -> Result<Vec<Branch>> {
@@ -489,6 +509,29 @@ impl GitlabClient {
             query.push(("path", p));
         }
         let raw: Vec<RawCommit> = self.json(self.get(&["projects", &id, "repository", "commits"])?.query(&query)).await?;
+        Ok(raw.into_iter().map(Commit::from).collect())
+    }
+
+    /// 分支在一段时间内（`since`、`until` 为 ISO 8601）的提交，新的在前。
+    pub async fn commits_between(&self, project: u64, git_ref: &str, since: &str, until: &str, limit: usize) -> Result<Vec<Commit>> {
+        let id = project.to_string();
+        let raw: Vec<RawCommit> = self
+            .all_pages(&["projects", &id, "repository", "commits"], &[("ref_name", git_ref), ("since", since), ("until", until)], limit)
+            .await?;
+        Ok(raw.into_iter().map(Commit::from).collect())
+    }
+
+    /// 一个提交（不含改动）。
+    pub async fn commit_info(&self, project: u64, sha: &str) -> Result<Commit> {
+        let id = project.to_string();
+        let raw: RawCommit = self.json(self.get(&["projects", &id, "repository", "commits", sha])?).await?;
+        Ok(raw.into())
+    }
+
+    /// 在项目中按提交说明搜索（GitLab 只搜索默认分支）。
+    pub async fn search_commits(&self, project: u64, text: &str, limit: usize) -> Result<Vec<Commit>> {
+        let id = project.to_string();
+        let raw: Vec<RawCommit> = self.all_pages(&["projects", &id, "search"], &[("scope", "commits"), ("search", text)], limit).await?;
         Ok(raw.into_iter().map(Commit::from).collect())
     }
 

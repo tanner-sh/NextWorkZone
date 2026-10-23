@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod code_refs;
 pub mod gitlab;
 pub mod inbox;
 pub mod jira;

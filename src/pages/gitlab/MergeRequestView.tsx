@@ -13,12 +13,14 @@ import { RichHtml } from "../../components/RichHtml";
 import { toast } from "../../components/Toast";
 import { copyText } from "../../lib/clipboard";
 import { formatTime } from "../../lib/format";
-import { gitlabMarkdown, issueKeysIn } from "../../lib/gitlabMarkdown";
+import { gitlabMarkdown } from "../../lib/gitlabMarkdown";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { DiffList, lineKeyOf, type DiffAnnotations } from "./DiffView";
 import { mrMenu } from "./gitlabMenu";
 import { CommitDetailView, CommitList } from "./ProjectView";
+import { PIPELINE_LABELS, STATE_LABELS } from "./labels";
+import { RelatedIssues } from "./RelatedIssues";
 
 export interface MrRef {
   project: GlProjectRef;
@@ -49,17 +51,12 @@ function projectUrlOf(mr: MergeRequest): string {
 
 const DRAFT_PREFIX = /^\s*(\[draft\]|\(draft\)|draft:|draft\s|\[wip\]|wip:)\s*/i;
 
-const STATE_LABELS: Record<MergeRequest["state"], string> = { opened: "打开", merged: "已合并", closed: "已关闭", locked: "已锁定" };
 
 export function MrStatePill({ mr }: { mr: MergeRequest }) {
   const cls = mr.state === "merged" ? "status-done" : mr.state === "opened" ? "status-indeterminate" : "status-new";
   return <span className={`status ${cls}`}>{STATE_LABELS[mr.state] ?? mr.state}</span>;
 }
 
-const PIPELINE_LABELS: Record<string, string> = {
-  success: "流水线已通过", failed: "流水线失败", running: "流水线运行中", pending: "流水线等待中", canceled: "流水线已取消", skipped: "流水线已跳过",
-  manual: "流水线等待手动操作", created: "流水线已创建", scheduled: "流水线已排期", preparing: "流水线准备中", waiting_for_resource: "流水线等待资源",
-};
 
 /** GitLab 系统记录的常见英文文案。 */
 function systemText(body: string): string {
@@ -204,7 +201,6 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
     );
 
   const projectPath = mrProjectPath(mr);
-  const keys = isReady("jira") ? issueKeysIn(`${mr.title} ${mr.sourceBranch}`) : [];
   const unresolved = (discussions ?? []).filter((d) => d.notes.some((n) => n.resolvable && !n.resolved)).length;
   const copy = (text: string, label = "已复制") => () =>
     copyText(text).then(
@@ -296,16 +292,6 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
             </button>
           </span>
         </div>
-        {keys.length > 0 && (
-          <div className="mr-meta">
-            <span className="muted small">关联问题</span>
-            {keys.map((k) => (
-              <button key={k} className="chip-btn" onClick={() => navigate({ page: "jira", issueKey: k })}>
-                {k}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="issue-actions">
           <div className="segmented">
             {(
@@ -354,6 +340,7 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
       {tab === "overview" && (
         <>
           <StatusPanel mr={mr} approvals={approvals} unresolved={unresolved} />
+          <RelatedIssues target={{ projectPath, iid: mr.iid, text: `${mr.title} ${mr.sourceBranch} ${mr.description}` }} />
           <section className="block">
             {mr.description.trim() ? (
               <RichHtml service="gitlab" className="rich mr-description" html={gitlabMarkdown(mr.description, projectUrlOf(mr))} />
@@ -405,7 +392,7 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
         </>
       )}
 
-      {tab === "commits" && <CommitsPane projectId={mr.projectId} commits={commits} error={subError} />}
+      {tab === "commits" && <CommitsPane projectId={mr.projectId} projectPath={projectPath} commits={commits} error={subError} />}
 
       {tab === "changes" && (
         <section className="block">
@@ -506,9 +493,9 @@ function StatusPanel({ mr, approvals, unresolved }: { mr: MergeRequest; approval
   );
 }
 
-function CommitsPane({ projectId, commits, error }: { projectId: number; commits: Commit[] | null; error: string | null }) {
+function CommitsPane({ projectId, projectPath, commits, error }: { projectId: number; projectPath: string; commits: Commit[] | null; error: string | null }) {
   const [selected, setSelected] = useState<string | null>(null);
-  if (selected) return <CommitDetailView projectId={projectId} sha={selected} onBack={() => setSelected(null)} />;
+  if (selected) return <CommitDetailView projectId={projectId} projectPath={projectPath} sha={selected} onBack={() => setSelected(null)} />;
   return (
     <section className="block">
       {error && <ErrorBox message={error} />}

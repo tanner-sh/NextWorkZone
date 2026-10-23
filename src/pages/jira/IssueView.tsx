@@ -21,6 +21,7 @@ import { useSettings } from "../../state/settings";
 import { CreateIssueDialog } from "./CreateIssueDialog";
 import { EditIssueDialog } from "./EditIssueDialog";
 import { IssueActivity } from "./IssueActivity";
+import { IssueCode } from "./IssueCode";
 import { Links, Subtasks } from "./IssueRelations";
 import { Backlinks } from "../workspace/Backlinks";
 import { issueToPage } from "../workspace/kbImport";
@@ -49,6 +50,11 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
   const priorityMenu = useContextMenu();
   const menus = useMenus();
   const { navigate } = useNav();
+  /** 代码、Wiki、工作空间中的关联数，显示在标题下方 */
+  const [related, setRelated] = useState<Record<RelatedKind, number>>({ code: 0, wiki: 0, workspace: 0 });
+  const countCode = useCallback((n: number) => setRelated((r) => (r.code === n ? r : { ...r, code: n })), []);
+  const countWiki = useCallback((n: number) => setRelated((r) => (r.wiki === n ? r : { ...r, wiki: n })), []);
+  const countWorkspace = useCallback((n: number) => setRelated((r) => (r.workspace === n ? r : { ...r, workspace: n })), []);
 
   useEffect(() => {
     api.jiraMe().then(setMe, () => setMe(null));
@@ -181,6 +187,7 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
           </button>
           <WatchButton issueKey={issue.key} />
         </div>
+        <RelatedSummary counts={related} />
       </header>
 
       {notice && (
@@ -291,9 +298,13 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
 
       <SimilarList issue={issue} />
 
-      <WikiPages issueKey={issue.key} />
+      <WikiPages issueKey={issue.key} onCount={countWiki} />
+
+      <IssueCode issue={issue} onCount={countCode} />
 
       <Backlinks
+        id="issue-workspace"
+        onCount={countWorkspace}
         system="jira"
         itemKey={issue.key}
         title="工作空间"
@@ -400,7 +411,32 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
 }
 
 /** 引用了这个问题的 Wiki 页面（页面中的 Jira 宏、正文中的问题键）。 */
-function WikiPages({ issueKey }: { issueKey: string }) {
+type RelatedKind = "code" | "wiki" | "workspace";
+const RELATED: [RelatedKind, string, string][] = [
+  ["code", "代码", "issue-code"],
+  ["wiki", "Wiki", "issue-wiki"],
+  ["workspace", "工作空间", "issue-workspace"],
+];
+
+/** 标题下方的一行关联摘要，点击滚动到对应区块。 */
+function RelatedSummary({ counts }: { counts: Record<RelatedKind, number> }) {
+  const items = RELATED.filter(([kind]) => counts[kind] > 0);
+  if (items.length === 0) return null;
+  return (
+    <div className="issue-related muted small">
+      {items.map(([kind, label, id], i) => (
+        <span key={kind}>
+          {i > 0 && " · "}
+          <button className="link-plain" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            {label} {counts[kind]}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function WikiPages({ issueKey, onCount }: { issueKey: string; onCount?: (n: number) => void }) {
   const { isReady } = useSettings();
   const { navigate } = useNav();
   const menus = useMenus();
@@ -418,9 +454,12 @@ function WikiPages({ issueKey }: { issueKey: string }) {
       alive = false;
     };
   }, [issueKey, ready]);
+  useEffect(() => {
+    onCount?.(pages?.length ?? 0);
+  }, [pages, onCount]);
   if (!ready || !pages || pages.length === 0) return null;
   return (
-    <section className="block">
+    <section className="block" id="issue-wiki">
       <h2>
         <BookText size={16} className="muted" />
         Wiki 页面 <span className="count">{pages.length}</span>

@@ -958,6 +958,30 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ---------- 相似问题 ---------- */
 .similar-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* 问题详情：代码 */
+.issue-related { margin-top: 2px; }
+.issue-related .link-plain { color: var(--muted); font-size: 12px; }
+.issue-related .link-plain:hover { color: var(--accent); }
+.code-refs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.code-ref { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 6px 4px; min-width: 0; }
+.code-ref-main { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.code-ref-main.clickable { cursor: pointer; }
+.code-ref-main.clickable:hover { background: var(--hover); }
+.code-ref.unavailable .code-ref-name { color: var(--muted); }
+.code-ref-name { flex: 1; min-width: 0; }
+.code-ref-name code, .code-ref-commit code { font-size: 12px; }
+.code-ref-id { color: var(--muted); }
+.code-ref-project { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.code-ref-detail { display: flex; gap: 4px; align-items: center; min-width: 0; padding: 0 8px 0 31px; flex-wrap: wrap; }
+.code-ref-detail .link { font-size: inherit; }
+.code-ref-commits { list-style: none; margin: 4px 0 0; padding: 0 8px 0 27px; display: flex; flex-direction: column; }
+.code-ref-commit { width: 100%; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 4px; border: none; border-radius: 5px; background: none; color: var(--text); font-size: 12.5px; text-align: left; cursor: pointer; }
+.code-ref-commit:hover { background: var(--hover); }
+.code-ref-commits .link { padding: 3px 4px; }
+.pipeline-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.pipeline-dot.success { background: var(--ok); }
+.pipeline-dot.failed { background: var(--error); }
+.pipeline-dot.running, .pipeline-dot.pending { background: var(--accent); }
 .similar-item { width: 100%; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: none; border-radius: 6px; background: none; color: var(--text); text-align: left; }
 .similar-item:hover { background: var(--hover); }
 .similar-person { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12.5px; }

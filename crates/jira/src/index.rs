@@ -48,7 +48,7 @@ const INDEX_FIELDS: &str =
     "summary,status,issuetype,priority,project,assignee,reporter,resolution,created,updated,duedate,resolutiondate,description,comment";
 const PAGE_SIZE: u32 = 100;
 /// 保存格式的版本；文本处理方式改变后递增，旧数据会被清空重新同步。
-const FORMAT_VERSION: &str = "2";
+const FORMAT_VERSION: &str = "3";
 /// 两页之间稍作停顿，避免首次建库时给服务器太大压力。
 const PAGE_PAUSE: Duration = Duration::from_millis(200);
 /// 相似问题中显示的最后几条评论。
@@ -360,6 +360,27 @@ impl IssueIndex {
         Ok(hits)
     }
 
+    /// 描述或评论中出现任一 `needles`（已转小写）的问题，最近更新的在前。
+    /// `accept` 再用描述、评论原文逐条确认（例如排除 `/merge_requests/12` 匹配到 `/merge_requests/123`）。
+    pub fn mentioning(&self, needles: &[String], accept: impl Fn(&str) -> bool, limit: u32) -> Result<Vec<IssueHit>> {
+        if needles.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conditions: Vec<String> =
+            (1..=needles.len()).map(|i| format!("instr(description_lc, ?{i}) OR instr(comments_lc, ?{i})")).collect();
+        let sql = format!("SELECT data FROM issues WHERE {} ORDER BY updated_ms DESC LIMIT 200", conditions.join(" OR "));
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&sql).db()?;
+        let rows = stmt.query_map(params_from_iter(needles.iter()), |r| r.get::<_, String>(0)).db()?.collect::<rusqlite::Result<Vec<_>>>().db()?;
+        Ok(rows
+            .iter()
+            .filter_map(|data| serde_json::from_str::<IndexedIssue>(data).ok())
+            .filter(|item| std::iter::once(&item.description).chain(item.comments.iter().map(|c| &c.body)).any(|t| accept(t)))
+            .take(limit as usize)
+            .map(|item| hit(item, needles, None))
+            .collect())
+    }
+
     /// 本机问题库中与给定概要相似的问题。问题库中没有这个项目的问题时返回 `None`（由调用方改用 Jira 搜索）。
     ///
     /// 关键词的权重按“越少见越重要”计算：在概要中出现计 3 倍，在描述开头出现计 1 倍；至少要有一个关键词出现在概要中。
@@ -653,12 +674,15 @@ pub fn wiki_plain(markup: &str) -> String {
         [
             // 部分项目使用富文本渲染器，内容是 HTML
             (r"(?i)<br\s*/?>|</p>|</li>|</tr>", "\n"),
+            // 链接的地址保留下来（按地址查找引用了某个分支、提交的问题）
+            (r#"(?i)<a\s[^>\n]*?href="(https?://[^"]+)"[^>\n]*>"#, " $1 "),
             (r"<[^>\n]{1,500}>", " "),
             // {code:java}、{quote}、{color:red} 等宏只留内容
             (r"\{[a-zA-Z]+(?::[^}]*)?\}", " "),
             // 图片、附件 !a.png|thumbnail!
             (r"![^!\s][^!\n]*!", " "),
             (r"\[~([^\]]+)\]", "@$1"),
+            (r"\[([^|\]]+)\|(https?://[^\]]+)\]", "$1 $2"),
             (r"\[([^|\]]+)\|[^\]]+\]", "$1"),
             (r"\[([^\]]+)\]", "$1"),
             (r"(?m)^\s*h[1-6]\.\s*", ""),
@@ -716,6 +740,25 @@ mod tests {
             ])
             .unwrap();
         (dir, index)
+    }
+
+    #[test]
+    fn finds_issues_mentioning_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = IssueIndex::open(&dir.path().join("index.db")).unwrap();
+        index
+            .upsert(&[
+                issue("AB-1", "一", "", None, &[("ls", "代码已提交至 [分支|https://git.example.com/G/App/-/merge_requests/12]")]),
+                issue("AB-2", "二", "见 https://git.example.com/g/app/-/merge_requests/123", None, &[]),
+                issue("AB-3", "三", "无关", None, &[]),
+            ])
+            .unwrap();
+        let needles = vec!["g/app/-/merge_requests/12".to_string()];
+        let all = index.mentioning(&needles, |_| true, 10).unwrap();
+        assert_eq!(all.len(), 2, "子串匹配到 12 和 123");
+        let exact = index.mentioning(&needles, |t| t.to_lowercase().contains("merge_requests/12]") || t.ends_with("merge_requests/12"), 10).unwrap();
+        assert_eq!(exact.iter().map(|h| h.issue.key.as_str()).collect::<Vec<_>>(), vec!["AB-1"]);
+        assert_eq!(exact[0].snippet.as_ref().map(|s| s.source.as_str()), Some("comment"));
     }
 
     #[test]
@@ -778,7 +821,8 @@ mod tests {
 
     #[test]
     fn strips_wiki_markup() {
-        assert_eq!(wiki_plain("h2. 标题\n* *加粗* 文字 [~zs]\n{code:java}int a;{code}\n!img.png|thumbnail! [链接|http://x]"), "标题\n加粗 文字 @zs\nint a;\n链接");
+        assert_eq!(wiki_plain("h2. 标题\n* *加粗* 文字 [~zs]\n{code:java}int a;{code}\n!img.png|thumbnail! [链接|http://x] [问题|PROJ-1]"), "标题\n加粗 文字 @zs\nint a;\n链接 http://x 问题");
+        assert_eq!(wiki_plain(r#"<p>见 <a href="https://git.example.com/g/a/-/tree/dev" class="x">分支</a></p>"#), "见 https://git.example.com/g/a/-/tree/dev 分支");
         assert_eq!(wiki_plain("<p>补丁&nbsp;已上传</p><p>第二段<br>换行</p>"), "补丁 已上传\n第二段\n换行");
         assert_eq!(strip_order("project = A ORDER BY created DESC"), "project = A");
     }
