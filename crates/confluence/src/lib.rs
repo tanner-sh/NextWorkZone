@@ -4,6 +4,7 @@ pub mod browse;
 pub mod diff;
 pub mod edit;
 pub mod index;
+pub mod report;
 pub mod storage;
 pub mod text;
 pub mod weekly;
@@ -385,6 +386,21 @@ impl ConfluenceClient {
             overview,
             entry,
         })
+    }
+
+    /// `section` 之前（页面上在它下面）的最多 `count` 周中自己那一行，较近的在前；找不到自己那一行的周跳过。
+    pub async fn weekly_history(&self, page_id: &str, person_name: &str, section: &str, today: NaiveDate, count: usize) -> Result<Vec<weekly::WeekEntry>> {
+        let page = self.page(page_id).await?;
+        let overview = weekly::overview(&page.storage, today)?;
+        Ok(overview
+            .sections
+            .iter()
+            .skip_while(|s| s.title != section)
+            .skip(1)
+            .take(count)
+            .filter_map(|s| weekly::entry(&page.storage, &s.title, person_name).ok())
+            .filter(|e| e.row_found)
+            .collect())
     }
 
     /// 保存自己那一行。每次都基于最新版本改写；遇到并发保存（409）时重新读取再试。

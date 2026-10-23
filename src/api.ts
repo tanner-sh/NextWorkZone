@@ -454,16 +454,40 @@ export interface SaveResult {
   version: number;
 }
 
+export interface DraftItem {
+  /** 插入周报的文字，例如“修复导入 --100%” */
+  text: string;
+  /** 对应的 Jira 问题 */
+  key: string | null;
+  /** 依据：流转、评论、推送、合并请求、完成的待办等 */
+  evidence: string[];
+  /** 上周周报中同一件事的进度 */
+  lastWeek: string | null;
+}
+
 export interface DraftGroup {
   title: string;
-  source: "jira" | "worklog" | "gitlab" | "todo" | "daily";
-  items: string[];
+  source: "jira" | "worklog" | "gitlab" | "wiki" | "todo" | "daily";
+  items: DraftItem[];
+}
+
+/** 上周没有完成的条目；thisWeek 为本周草稿中对应的条目，为空表示这一周没有相关记录。 */
+export interface CarryOver {
+  group: string;
+  text: string;
+  progress: string | null;
+  thisWeek: string | null;
 }
 
 export interface Draft {
   from: string;
   to: string;
   groups: DraftGroup[];
+  carryOver: CarryOver[];
+  /** 上周周报所在的小节 */
+  lastWeekTitle: string | null;
+  /** 往周使用的进度写法，例如 " --" */
+  separator: string;
   notes: string[];
 }
 

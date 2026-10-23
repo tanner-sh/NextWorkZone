@@ -106,13 +106,7 @@ async fn gitlab_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEven
     let Ok(gitlab) = state.gitlab() else { return Ok(Vec::new()) };
     // GitLab 按 UTC 日期过滤，前后各多查一天，再按本地时间筛选
     let found = gitlab.my_events(&(date - Duration::days(2)).to_string(), &(date + Duration::days(2)).to_string()).await?;
-    let mut names = PROJECT_NAMES.lock().unwrap().clone().unwrap_or_default();
-    for id in found.iter().map(|e| e.project_id) {
-        if let std::collections::hash_map::Entry::Vacant(slot) = names.entry(id) {
-            slot.insert(gitlab.project(id).await.map(|p| p.name).unwrap_or_else(|_| format!("项目 {id}")));
-        }
-    }
-    *PROJECT_NAMES.lock().unwrap() = Some(names.clone());
+    let names = project_names(&gitlab, found.iter().map(|e| e.project_id)).await;
     Ok(found
         .into_iter()
         .filter_map(|e| {
@@ -124,6 +118,18 @@ async fn gitlab_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEven
             Some(WorkEvent { at: ms_of(&e.at)?, system: "gitlab", kind: e.kind, title, key, detail, project_id: Some(e.project_id) })
         })
         .collect())
+}
+
+/// GitLab 项目 id 对应的名称（查过的缓存起来）。
+pub(crate) async fn project_names(gitlab: &nextworkzone_gitlab::GitlabClient, ids: impl Iterator<Item = u64>) -> HashMap<u64, String> {
+    let mut names = PROJECT_NAMES.lock().unwrap().clone().unwrap_or_default();
+    for id in ids {
+        if let std::collections::hash_map::Entry::Vacant(slot) = names.entry(id) {
+            slot.insert(gitlab.project(id).await.map(|p| p.name).unwrap_or_else(|_| format!("项目 {id}")));
+        }
+    }
+    *PROJECT_NAMES.lock().unwrap() = Some(names.clone());
+    names
 }
 
 async fn wiki_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEvent>> {

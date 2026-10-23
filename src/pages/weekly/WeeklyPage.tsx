@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { api, errorMessage, type Draft, type OutlineItem, type WeeklyView } from "../../api";
-import { CalendarPlus, ExternalLink, RefreshCw, Save, Sparkles } from "lucide-react";
+import { api, errorMessage, type Draft, type DraftGroup, type OutlineItem, type WeeklyView } from "../../api";
+import { CalendarPlus, ExternalLink, History, RefreshCw, Save, Sparkles } from "lucide-react";
 import { ErrorBox, Modal, NotConfigured, Skeleton } from "../../components/common";
 import { formatTime } from "../../lib/format";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { OutlineEditor, withIds, withoutIds, type EditorItem } from "./OutlineEditor";
 import { diffOutline, sameOutline } from "./outlineDiff";
+import { mergeInto, presence } from "./mergeDraft";
+import { toast } from "../../components/Toast";
 
 /** 未保存的编辑内容暂存在本地，防止误关窗口丢失。 */
 const draftKey = (pageId: string, section: string) => `nextworkzone.weekly.${pageId}.${section}`;
@@ -164,8 +166,12 @@ export function WeeklyPage() {
     void load(title);
   };
 
-  const insertDraft = (items: OutlineItem[]) => {
-    setContent((list) => [...list.filter((i) => i.text.trim() !== ""), ...withIds(items)]);
+  /** 并入草稿条目：放到同名分组下，已有的同一条只更新进度 */
+  const insertDraft = (group: string | null, texts: string[]) => {
+    const result = mergeInto(content, group, texts);
+    setContent(result.next);
+    const parts = [result.added > 0 && `插入 ${result.added} 条`, result.updated > 0 && `更新 ${result.updated} 条的进度`].filter(Boolean);
+    toast(parts.length > 0 ? `已${parts.join("，")}` : "这些条目已在周报中");
   };
 
   return (
@@ -239,7 +245,7 @@ export function WeeklyPage() {
         )}
       </section>
 
-      {entry?.rowFound && <DraftPanel section={entry.sectionTitle} onInsert={insertDraft} />}
+      {entry?.rowFound && <DraftPanel section={entry.sectionTitle} content={content} onInsert={insertDraft} />}
 
       {confirmSave && entry && (
         <Modal
@@ -315,7 +321,10 @@ function DiffBlock({ title, before, after }: { title: string; before: OutlineIte
 
 const SOURCE_LABELS: Record<string, string> = { jira: "Jira", worklog: "工作日志", gitlab: "GitLab", wiki: "Wiki", todo: "待办", daily: "日记" };
 
-function DraftPanel({ section, onInsert }: { section: string; onInsert: (items: OutlineItem[]) => void }) {
+/** 作为周报条目的分组（问题、代码、工作日志）；其余（Wiki、待办、日记）是参考，单条插入时不加分组标题。 */
+const isWorkGroup = (g: DraftGroup) => g.source === "jira" || g.source === "gitlab" || g.source === "worklog";
+
+function DraftPanel({ section, content, onInsert }: { section: string; content: EditorItem[]; onInsert: (group: string | null, texts: string[]) => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -334,7 +343,11 @@ function DraftPanel({ section, onInsert }: { section: string; onInsert: (items: 
     }
   };
 
-  const groupItems = (title: string, items: string[]): OutlineItem[] => [{ level: 0, text: title }, ...items.map((text) => ({ level: 1, text }))];
+  const insertAll = () => {
+    for (const g of draft?.groups.filter(isWorkGroup) ?? []) onInsert(g.title, g.items.map((i) => i.text));
+  };
+  const pending = draft?.carryOver.filter((c) => !c.thisWeek) ?? [];
+  const progressed = draft?.carryOver.filter((c) => c.thisWeek) ?? [];
 
   return (
     <aside className="draft-panel">
@@ -343,11 +356,17 @@ function DraftPanel({ section, onInsert }: { section: string; onInsert: (items: 
           <Sparkles size={16} className="muted" />
           草稿
         </h2>
+        <span className="spacer" />
+        {draft && draft.groups.some(isWorkGroup) && (
+          <button className="btn subtle" onClick={insertAll} title="插入全部问题和代码条目；已在周报中的只更新进度">
+            全部插入
+          </button>
+        )}
         <button className="btn" onClick={generate} disabled={loading}>
           {loading ? "生成中…" : draft ? "重新生成" : "生成草稿"}
         </button>
       </div>
-      <p className="muted small">根据这一周你经手的 Jira 问题、登记的工作日志、GitLab 推送，以及完成的待办和日记生成，点击“插入”加入周报内容后再修改。</p>
+      <p className="muted small">按“一件事”整理这一周的工作：每个 Jira 问题一条，提到它的推送、合并请求和完成的待办作为依据；分组和进度写法沿用往周周报，并和上周对比。插入时放到同名分组下，已有的条目只更新进度。</p>
       {error && <ErrorBox message={error} />}
       {draft && (
         <>
@@ -359,24 +378,75 @@ function DraftPanel({ section, onInsert }: { section: string; onInsert: (items: 
               {n}
             </p>
           ))}
+          {draft.carryOver.length > 0 && (
+            <div className="draft-group carry-over">
+              <div className="draft-group-title">
+                <History size={14} className="muted" />
+                <strong className="ellipsis">上周（{draft.lastWeekTitle}）未完成 {draft.carryOver.length} 项</strong>
+              </div>
+              <ul>
+                {pending.map((c) => {
+                  const text = c.progress ? `${c.text}${draft.separator}${c.progress}` : c.text;
+                  const state = presence(content, text);
+                  return (
+                    <li key={`p-${c.group}-${c.text}`}>
+                      <button className="draft-item" onClick={() => onInsert(c.group || null, [text])} title="沿用到本周，插入后再修改进度">
+                        <span className="draft-item-text">{c.text}</span>
+                        <span className="draft-item-meta">
+                          {c.progress && <span className="draft-chip">上周 {c.progress}</span>}
+                          <span className="warn-text">本周没有记录</span>
+                          {state !== "none" && <span className="muted">· 已在周报中</span>}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {progressed.map((c) => (
+                  <li key={`d-${c.group}-${c.text}`} className="draft-item static">
+                    <span className="draft-item-text">{c.text}</span>
+                    <span className="draft-item-meta">
+                      {c.progress && <span className="draft-chip">上周 {c.progress}</span>}
+                      <span className="ok-text">本周：{c.thisWeek}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {draft.groups.length === 0 && <p className="muted">这一周没有找到相关记录。</p>}
           {draft.groups.map((g) => (
             <div className="draft-group" key={`${g.source}-${g.title}`}>
               <div className="draft-group-title">
                 <span className={`source source-${g.source}`}>{SOURCE_LABELS[g.source] ?? g.source}</span>
                 <strong className="ellipsis">{g.title}</strong>
-                <button className="btn subtle" onClick={() => onInsert(groupItems(g.title, g.items))}>
+                <button className="btn subtle" onClick={() => onInsert(g.title, g.items.map((i) => i.text))}>
                   插入
                 </button>
               </div>
               <ul>
-                {g.items.map((item) => (
-                  <li key={item}>
-                    <button className="draft-item" onClick={() => onInsert([{ level: 1, text: item }])} title="插入这一条">
-                      {item}
-                    </button>
-                  </li>
-                ))}
+                {g.items.map((item) => {
+                  const state = presence(content, item.text);
+                  return (
+                    <li key={item.text}>
+                      <button
+                        className={`draft-item${state === "same" ? " present" : ""}`}
+                        onClick={() => onInsert(isWorkGroup(g) ? g.title : null, [item.text])}
+                        title={state === "changed" ? "周报中已有这一条，点击更新进度" : "插入这一条"}
+                      >
+                        <span className="draft-item-text">{item.text}</span>
+                        {(item.evidence.length > 0 || item.lastWeek || item.key || state !== "none") && (
+                          <span className="draft-item-meta">
+                            {item.key && <span className="issue-key">{item.key}</span>}
+                            {item.lastWeek && <span className="draft-chip">上周 {item.lastWeek}</span>}
+                            {state === "same" && <span className="muted">已在周报中</span>}
+                            {state === "changed" && <span className="accent-text">周报中进度不同，点击更新</span>}
+                            {item.evidence.length > 0 && <span className="muted ellipsis">{item.evidence.join(" · ")}</span>}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
