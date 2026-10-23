@@ -419,12 +419,13 @@ export function JiraPage() {
                             </div>
                           )}
                           {view.fields.some((f) => issue.extra?.[f.id]) && (
-                            <div className="issue-extra">
+                            // 额外字段排成一行（名称灰色、值正常色），放不下时截断，悬停看全部
+                            <div className="issue-extra small" title={view.fields.filter((f) => issue.extra?.[f.id]).map((f) => `${f.name}：${issue.extra![f.id]}`).join("\n")}>
                               {view.fields.map(
                                 (f) =>
                                   issue.extra?.[f.id] && (
-                                    <span key={f.id} className="extra-chip" title={`${f.name}：${issue.extra[f.id]}`}>
-                                      <span className="muted">{f.name}</span>
+                                    <span key={f.id}>
+                                      <span className="muted">{f.name} </span>
                                       {f.kind === "datetime" ? formatTime(issue.extra[f.id]) : issue.extra[f.id]}
                                     </span>
                                   ),

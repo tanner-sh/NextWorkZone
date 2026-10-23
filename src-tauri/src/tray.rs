@@ -27,7 +27,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .text("page:inbox", "收件箱")
         .text("page:todos", "待办")
         .text("page:notes", "笔记")
-        .text("page:jira", "我的问题")
+        .text("page:jira", "Jira")
         .text("page:activity", "动态")
         .text("page:weekly", "周报")
         .text("page:wiki", "Wiki")

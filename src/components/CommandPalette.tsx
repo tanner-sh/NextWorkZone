@@ -24,11 +24,11 @@ const PAGES: { page: PageId; label: string; keywords: string }[] = [
   { page: "todos", label: "待办", keywords: "todo 待办 任务 db" },
   { page: "notes", label: "笔记", keywords: "notes 笔记 日记 bj rj" },
   { page: "kb", label: "知识库", keywords: "kb wiki 知识库 文档 zsk" },
-  { page: "jira", label: "我的问题", keywords: "jira issue 问题 wt" },
+  { page: "jira", label: "Jira", keywords: "jira issue 问题 我的问题 wt" },
   { page: "activity", label: "动态", keywords: "activity 动态 通知 提醒 dt tz" },
   { page: "weekly", label: "周报", keywords: "weekly wiki 周报 zb" },
   { page: "wiki", label: "Wiki", keywords: "wiki confluence 文档 页面 空间 wd" },
-  { page: "gitlab", label: "代码", keywords: "gitlab code 代码 项目 dm" },
+  { page: "gitlab", label: "GitLab", keywords: "gitlab code 代码 项目 合并请求 dm" },
   { page: "stats", label: "统计", keywords: "stats 统计 报表 tj" },
   { page: "settings", label: "设置", keywords: "settings 设置 sz" },
 ];

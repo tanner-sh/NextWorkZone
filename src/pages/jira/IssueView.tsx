@@ -4,7 +4,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, errorMessage, type Attachment, type HistoryEntry, type IssueDetail, type IssueHit, type IssueSummary, type SimilarIssues, type TimeTracking, type Transition, type Watchers, type WikiPageHit } from "../../api";
 import { RichHtml } from "../../components/RichHtml";
 import { useDropTarget } from "../../components/FileDropLayer";
-import { BookOpen, BookText, CheckSquare, ChevronDown, ChevronRight, Eye, EyeOff, ExternalLink, FileText, History, NotepadText, Paperclip, Pencil, Plus, RefreshCw, Sparkles, Upload, X, Zap } from "lucide-react";
+import { BookOpen, BookText, CheckSquare, ChevronDown, ChevronRight, Eye, ExternalLink, FileText, History, NotepadText, Paperclip, Pencil, Plus, RefreshCw, Sparkles, Upload, X, Zap } from "lucide-react";
 import { useContextMenu, type MenuInput } from "../../components/ContextMenu";
 import { contributeMenu, useMenus } from "../../components/MenuHost";
 import { guarded, toast } from "../../components/Toast";
@@ -154,23 +154,34 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
           {issue.resolution && <span className="muted small">解决结果：{issue.resolution}</span>}
           {reminder && !issue.resolution && <span className={`due-chip ${reminder.kind}`}>{reminderLabel(reminder.kind, reminder.days)}</span>}
           <span className="spacer" />
-          <TimerButton target={{ issueKey: issue.key, title: issue.summary }} match={{ issueKey: issue.key }} />
-          <WatchButton issueKey={issue.key} />
-          <button className="btn" onClick={() => setEditing(true)}>
-            <Pencil size={14} />
-            编辑
-          </button>
-          {transitions.map((t) => (
+          {/* 流转放在前面：前两个直接显示（与 Jira 网页一致），其余和模板收进“更多” */}
+          {transitions.slice(0, 2).map((t) => (
             <button key={t.id} className="btn" onClick={() => setActiveTransition({ transition: t })} title={`流转到「${t.to.name}」`}>
               {t.name}
             </button>
           ))}
-          {quickTemplates.map(({ tpl, t }) => (
-            <button key={tpl.id} className="btn" onClick={() => setActiveTransition({ transition: t, template: tpl })} title={`按模板「${tpl.name}」流转到「${t.to.name}」`}>
-              <Zap size={14} />
-              {tpl.name}
+          {transitions.length + quickTemplates.length > 2 && (
+            <button
+              className="btn"
+              onClick={(e) =>
+                menus.openAt(e.currentTarget, [
+                  ...transitions.slice(2).map((t): MenuInput => ({ label: t.name, onSelect: () => setActiveTransition({ transition: t }) })),
+                  quickTemplates.length > 0 && transitions.length > 2 && "separator",
+                  ...quickTemplates.map(({ tpl, t }): MenuInput => ({ label: `${tpl.name}（${t.name}）`, icon: <Zap size={14} />, onSelect: () => setActiveTransition({ transition: t, template: tpl }) })),
+                ])
+              }
+            >
+              更多
+              <ChevronDown size={14} />
             </button>
-          ))}
+          )}
+          {(transitions.length > 0 || quickTemplates.length > 0) && <span className="toolbar-divider" />}
+          <button className="btn" onClick={() => setEditing(true)}>
+            <Pencil size={14} />
+            编辑
+          </button>
+          <WatchButton issueKey={issue.key} />
+          <TimerButton target={{ issueKey: issue.key, title: issue.summary }} match={{ issueKey: issue.key }} compact />
         </div>
       </header>
 
@@ -471,9 +482,13 @@ function WatchButton({ issueKey }: { issueKey: string }) {
     }
   };
   return (
-    <button className={`btn${watchers.watching ? " on" : ""}`} disabled={busy} onClick={toggle} title={watchers.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）"}>
-      {watchers.watching ? <EyeOff size={14} /> : <Eye size={14} />}
-      {watchers.watching ? "取消关注" : "关注"}
+    <button
+      className={`btn${watchers.watching ? " on" : ""}`}
+      disabled={busy}
+      onClick={toggle}
+      title={`${watchers.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）"}${watchers.count > 0 ? `\n${watchers.count} 人关注` : ""}`}
+    >
+      <Eye size={14} />
       {watchers.count > 0 && <span className="muted">{watchers.count}</span>}
     </button>
   );

@@ -124,7 +124,7 @@ export function StatsPage() {
   }
 
   return (
-    <section className="page wide stats-page">
+    <section className="page stats-page">
       <header className="page-header">
         <div>
           <h1>统计</h1>

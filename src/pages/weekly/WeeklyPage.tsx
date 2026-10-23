@@ -115,7 +115,7 @@ export function WeeklyPage() {
   }
   if (!view)
     return (
-      <section className="page wide">
+      <section className="page">
         <Skeleton lines={2} height={22} />
         <Skeleton lines={8} />
       </section>
@@ -170,7 +170,7 @@ export function WeeklyPage() {
 
   return (
     <div className="weekly">
-      <section className="page wide">
+      <section className="page">
         <header className="page-header">
           <div>
             <h1>周报</h1>

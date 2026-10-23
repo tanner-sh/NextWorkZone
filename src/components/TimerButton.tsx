@@ -1,8 +1,8 @@
 import { Timer } from "lucide-react";
 import { elapsedMs, formatClock, isTiming, requestStop, startTimer, useTimer, type TimerTarget } from "../lib/timer";
 
-/** 开始计时；正在为这个条目计时时显示时长，点击停止并登记。 */
-export function TimerButton({ target, match }: { target: TimerTarget; match: { issueKey?: string | null; todoId?: string | null } }) {
+/** 开始计时；正在为这个条目计时时显示时长，点击停止并登记。`compact` 时未计时只显示图标。 */
+export function TimerButton({ target, match, compact }: { target: TimerTarget; match: { issueKey?: string | null; todoId?: string | null }; compact?: boolean }) {
   const timer = useTimer();
   if (timer && isTiming(timer, match)) {
     return (
@@ -13,9 +13,9 @@ export function TimerButton({ target, match }: { target: TimerTarget; match: { i
     );
   }
   return (
-    <button className="btn" onClick={() => startTimer(target)} title={timer ? "停止当前计时并开始为这里计时" : "开始计时，停止后登记为工作日志"}>
+    <button className={`btn${compact ? " icon" : ""}`} onClick={() => startTimer(target)} title={timer ? "停止当前计时并开始为这里计时" : "开始计时，停止后登记为工作日志"}>
       <Timer size={14} />
-      开始计时
+      {!compact && "开始计时"}
     </button>
   );
 }

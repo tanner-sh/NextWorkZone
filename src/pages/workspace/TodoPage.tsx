@@ -115,6 +115,15 @@ export function TodoPage() {
     }
   };
 
+  // 安排日期（“未安排”中的今天、明天）：收件箱转来的待办在这里排进日程
+  const plan = async (todo: Todo, due: string) => {
+    try {
+      replace(await api.wsSaveTodo(todoInput(todo, { due })));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
   return (
     <div className="split todo-page">
       <aside className="list-pane todo-list-pane">
@@ -159,6 +168,7 @@ export function TodoPage() {
               menuOpen={contextMenu.target === todo.id}
               onSelect={() => setSelected(todo.id)}
               onToggle={() => toggle(todo)}
+              onPlan={view === "unscheduled" ? (due) => plan(todo, due) : undefined}
               onContextMenu={(e) =>
                 contextMenu.open(
                   e,
@@ -270,7 +280,16 @@ function QuickAdd({ view, onAdded }: { view: View; onAdded: (todo: Todo) => void
   );
 }
 
-function TodoRow(props: { todo: Todo; day: string; selected: boolean; menuOpen: boolean; onSelect: () => void; onToggle: () => void; onContextMenu: (e: React.MouseEvent) => void }) {
+function TodoRow(props: {
+  todo: Todo;
+  day: string;
+  selected: boolean;
+  menuOpen: boolean;
+  onSelect: () => void;
+  onToggle: () => void;
+  onPlan?: (due: string) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}) {
   const { todo, day, selected, menuOpen, onSelect, onToggle } = props;
   const overdue = !todo.done && todo.due !== null && todo.due < day;
   return (
@@ -331,6 +350,16 @@ function TodoRow(props: { todo: Todo; day: string; selected: boolean; menuOpen: 
           </div>
         )}
       </div>
+      {props.onPlan && (
+        <span className="row-actions todo-plan" onClick={(e) => e.stopPropagation()}>
+          <button className="btn small-btn" onClick={() => props.onPlan!(day)}>
+            今天
+          </button>
+          <button className="btn subtle small-btn" onClick={() => props.onPlan!(addDays(day, 1))}>
+            明天
+          </button>
+        </span>
+      )}
     </li>
   );
 }

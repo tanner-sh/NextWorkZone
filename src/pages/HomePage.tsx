@@ -57,7 +57,7 @@ export function HomePage() {
   const greeting = now.getHours() < 12 ? "上午好" : now.getHours() < 18 ? "下午好" : "晚上好";
 
   return (
-    <section className="page wide">
+    <section className="page">
       <header className="page-header">
         <div>
           <h1>{greeting}</h1>

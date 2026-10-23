@@ -16,6 +16,7 @@ import { ProjectView } from "./ProjectView";
 const STARRED_KEY = "nextworkzone.gitlab.starred";
 const MODE_KEY = "nextworkzone.gitlab.mode";
 const SCOPE_KEY = "nextworkzone.gitlab.mrScope";
+const LAST_PROJECT_KEY = "nextworkzone.gitlab.lastProject";
 
 type Mode = "mrs" | "projects";
 
@@ -39,6 +40,14 @@ function writePref(key: string, value: string) {
     localStorage.setItem(key, value);
   } catch {
     // 忽略
+  }
+}
+
+function readLastProject(): number | null {
+  try {
+    return Number(localStorage.getItem(LAST_PROJECT_KEY)) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -167,6 +176,16 @@ export function GitlabPage() {
     return [...list.filter((p) => starred.includes(p.id)), ...list.filter((p) => !starred.includes(p.id))];
   }, [projects, filter, starred]);
 
+  // 记住上次打开的项目；没有指定项目时打开它（不在列表里就打开第一个），右侧不留空
+  useEffect(() => {
+    if (selected !== null) writePref(LAST_PROJECT_KEY, String(selected));
+  }, [selected]);
+  useEffect(() => {
+    if (selected !== null || !projects?.length || (current.page === "gitlab" && current.projectPath)) return;
+    const last = readLastProject();
+    setSelected(projects.some((p) => p.id === last) ? last : (visible[0]?.id ?? null));
+  }, [projects, selected, visible, current]);
+
   if (!ready) {
     return (
       <section className="page">
@@ -271,6 +290,7 @@ export function GitlabPage() {
               >
                 <div className="issue-item-top">
                   <span className="issue-key ellipsis">{p.name}</span>
+                  <span className="muted small nowrap project-time">{formatTime(p.lastActivityAt)}</span>
                   <button
                     className={`star${starred.includes(p.id) ? " on" : ""}`}
                     onClick={(e) => {
@@ -282,10 +302,9 @@ export function GitlabPage() {
                     <Star size={14} fill={starred.includes(p.id) ? "currentColor" : "none"} />
                   </button>
                 </div>
-                <div className="muted small ellipsis">{p.pathWithNamespace}</div>
-                <div className="issue-item-bottom muted small">
-                  <span className="ellipsis">{p.description ?? ""}</span>
-                  <span>{formatTime(p.lastActivityAt)}</span>
+                <div className="muted small ellipsis" title={p.description ? `${p.pathWithNamespace}\n${p.description}` : p.pathWithNamespace}>
+                  {p.pathWithNamespace}
+                  {p.description && ` · ${p.description}`}
                 </div>
               </div>
             </li>

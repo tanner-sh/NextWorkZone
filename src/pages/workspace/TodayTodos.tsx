@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookText, ArrowRight, CalendarDays, Check, CheckSquare, CircleDot, Plus } from "lucide-react";
+import { BookText, ArrowRight, CalendarDays, Check, CheckSquare, CircleDot } from "lucide-react";
 import { api, type Todo } from "../../api";
 import { formatDay, today, useWorkspaceRefresh, workspaceChanged } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
 import { useContextMenu } from "../../components/ContextMenu";
 import { todoMenu } from "./todoMenu";
 
-/** 首页的“今天”：到期（含逾期）的待办，可直接勾选、添加。 */
+/** 首页的“今天”：到期（含逾期）的待办，可直接勾选；添加和安排在“待办”页（或 ⌘⇧N）。 */
 export function TodayTodos() {
   const { navigate } = useNav();
   const [todos, setTodos] = useState<Todo[] | null>(null);
-  const [draft, setDraft] = useState("");
   const contextMenu = useContextMenu();
   const day = today();
 
@@ -19,13 +18,6 @@ export function TodayTodos() {
   }, [day]);
   useEffect(load, [load]);
   useWorkspaceRefresh(load);
-
-  const add = async () => {
-    if (!draft.trim()) return;
-    await api.wsSaveTodo({ title: draft.trim(), due: day });
-    setDraft("");
-    workspaceChanged();
-  };
 
   const complete = async (todo: Todo) => {
     setTodos((list) => list?.filter((t) => t.id !== todo.id) ?? list);
@@ -82,22 +74,16 @@ export function TodayTodos() {
             </div>
           </li>
         ))}
-        {todos && todos.length === 0 && <li className="muted small" style={{ padding: "4px 0" }}>今天没有到期的待办</li>}
+        {todos && todos.length === 0 && (
+          <li className="muted small" style={{ padding: "4px 0" }}>
+            今天没有到期的待办。按 ⌘⇧N 随时记一条，或到
+            <button className="link small" onClick={() => navigate({ page: "todos" })}>
+              待办
+            </button>
+            中安排。
+          </li>
+        )}
       </ul>
-      <div className="input-icon quick-add">
-        <Plus size={15} />
-        <input
-          value={draft}
-          placeholder="添加今天的待办，回车保存"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void add();
-            }
-          }}
-        />
-      </div>
       {contextMenu.menu}
     </div>
   );

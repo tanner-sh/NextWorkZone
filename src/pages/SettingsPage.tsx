@@ -113,6 +113,18 @@ export function SettingsPage() {
   const setAccount = (service: Service, patch: Partial<{ username: string; password: string }>) =>
     setWebAccounts((all) => ({ ...all, [service]: { username: "", password: "", ...all[service], ...patch } }));
 
+  const jiraConnected = Boolean(settings?.services.some((s) => s.service === "jira" && s.baseUrl && s.hasToken));
+  const wikiConnected = Boolean(settings?.services.some((s) => s.service === "confluence" && s.baseUrl && s.hasToken));
+  const sections = [
+    { id: "settings-workspace", group: "常规", label: "工作空间" },
+    { id: "settings-tools", group: "常规", label: "工具" },
+    ...(jiraConnected ? [{ id: "settings-jira-tools", group: "常规", label: "Jira 本机问题库" }] : []),
+    ...(wikiConnected ? [{ id: "settings-wiki-tools", group: "常规", label: "Wiki 本机库" }] : []),
+    { id: "settings-network", group: "连接", label: "网络" },
+    ...(settings?.services ?? []).map((s) => ({ id: `settings-${s.service}`, group: "连接", label: s.label })),
+    { id: "settings-weekly", group: "连接", label: "周报" },
+  ];
+
   if (!settings) {
     return <section className="page">{notice ? <p className="notice error">{notice.text}</p> : <p className="muted">加载中…</p>}</section>;
   }
@@ -122,146 +134,185 @@ export function SettingsPage() {
       <header className="page-header">
         <div>
           <h1>设置</h1>
-          <p className="muted">连接的系统地址与凭据。凭据只保存在本机。</p>
+          <p className="muted">工作空间、工具，以及连接的系统地址与凭据。凭据只保存在本机。</p>
         </div>
-        <div className="actions">
-          {import.meta.env.DEV && (
-            <button className="btn" onClick={importEnv} title="开发用：从 ~/.nextworkzone/tokens.env 导入">
-              <FileDown size={14} />
-              导入 tokens.env
-            </button>
-          )}
-          <button className="btn primary" disabled={!dirty || saving} onClick={save}>
-            {saving ? "保存中…" : "保存"}
+        {import.meta.env.DEV && (
+          <button className="btn" onClick={importEnv} title="开发用：从 ~/.nextworkzone/tokens.env 导入">
+            <FileDown size={14} />
+            导入 tokens.env
           </button>
-        </div>
+        )}
       </header>
 
       {notice && <p className={`notice ${notice.kind}`}>{notice.text}</p>}
 
-      <WorkspaceSettingsCard />
-      <ToolsSettingsCard />
-
-      {settings.services.some((s) => s.service === "jira" && s.baseUrl && s.hasToken) && <JiraToolsSettingsCard />}
-      {settings.services.some((s) => s.service === "confluence" && s.baseUrl && s.hasToken) && <WikiToolsSettingsCard />}
-
-      <div className="card">
-        <div className="service-head">
-          <span className="service-icon">
-            <Globe size={16} />
-          </span>
-          <h2>网络</h2>
-        </div>
-        <label className="field">
-          <span>代理</span>
-          <input value={proxy} placeholder="留空则使用系统代理，例如 http://127.0.0.1:7890" onChange={(e) => setProxy(e.target.value)} />
-        </label>
-      </div>
-
-      {settings.services.map((s) => {
-        const state = tests[s.service] ?? { status: "idle" };
-        const meta = SERVICE_META[s.service];
-        const Icon = meta.icon;
-        const account = webAccounts[s.service] ?? { username: "", password: "" };
-        const access = webAccess(s.service);
-        return (
-          <div className="card" key={s.service}>
-            <div className="card-title">
-              <div className="service-head">
-                <span className="service-icon">
-                  <Icon size={16} />
-                </span>
-                <div>
-                  <h2>{s.label}</h2>
-                  <p className="muted small">{meta.kind}</p>
-                </div>
-              </div>
-              <TestResult state={state} />
-            </div>
-            <label className="field">
-              <span>地址</span>
-              <input value={baseUrls[s.service] ?? ""} placeholder={meta.placeholder} onChange={(e) => setBaseUrls((u) => ({ ...u, [s.service]: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>访问令牌</span>
-              <input
-                type="password"
-                value={tokens[s.service] ?? ""}
-                placeholder={s.hasToken ? "已保存（留空则不修改）" : "个人访问令牌（Personal Access Token）"}
-                onChange={(e) => setTokens((t) => ({ ...t, [s.service]: e.target.value }))}
-              />
-            </label>
-            <div className="card-actions">
-              <button className="btn" disabled={dirty || !s.baseUrl || !s.hasToken || state.status === "testing"} onClick={() => test(s.service)}>
-                测试连接
+      <div className="settings-layout">
+        <nav className="settings-nav">
+          {sections.map((sec, i) => (
+            <div key={sec.id}>
+              {(i === 0 || sec.group !== sections[i - 1].group) && <div className="settings-nav-group">{sec.group}</div>}
+              <button className="settings-nav-item" onClick={() => document.getElementById(sec.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                {sec.label}
               </button>
-              {s.hasToken && (
-                <button className="btn subtle" onClick={() => clearToken(s.service)}>
-                  删除令牌
-                </button>
-              )}
-              {dirty && <span className="muted small">保存后可测试</span>}
             </div>
+          ))}
+        </nav>
+        <div className="settings-body">
+          <h2 className="settings-group">
+            常规<span className="muted small">修改后立即生效</span>
+          </h2>
+          <div id="settings-workspace">
+            <WorkspaceSettingsCard />
+          </div>
+          <div id="settings-tools">
+            <ToolsSettingsCard />
+          </div>
+          {jiraConnected && (
+            <div id="settings-jira-tools">
+              <JiraToolsSettingsCard />
+            </div>
+          )}
+          {wikiConnected && (
+            <div id="settings-wiki-tools">
+              <WikiToolsSettingsCard />
+            </div>
+          )}
 
-            {s.supportsWebLogin && (
-              <div className="card-section">
-                <div className="session-row">
-                  <div>
-                    <h3>网页登录</h3>
-                    <p className="muted small">附件、图片等网页内容不走 API。若服务器要求单独的网页登录（例如启用了 2FA 或 SSO），在这里登录一次即可。</p>
+          <h2 className="settings-group">
+            连接<span className="muted small">修改后需要保存</span>
+          </h2>
+          <div className="card" id="settings-network">
+            <div className="service-head">
+              <span className="service-icon">
+                <Globe size={16} />
+              </span>
+              <h2>网络</h2>
+            </div>
+            <label className="field">
+              <span>代理</span>
+              <input value={proxy} placeholder="留空则使用系统代理，例如 http://127.0.0.1:7890" onChange={(e) => setProxy(e.target.value)} />
+            </label>
+          </div>
+
+          {settings.services.map((s) => {
+            const state = tests[s.service] ?? { status: "idle" };
+            const meta = SERVICE_META[s.service];
+            const Icon = meta.icon;
+            const account = webAccounts[s.service] ?? { username: "", password: "" };
+            const access = webAccess(s.service);
+            return (
+              <div className="card" key={s.service} id={`settings-${s.service}`}>
+                <div className="card-title">
+                  <div className="service-head">
+                    <span className="service-icon">
+                      <Icon size={16} />
+                    </span>
+                    <div>
+                      <h2>{s.label}</h2>
+                      <p className="muted small">{meta.kind}</p>
+                    </div>
                   </div>
-                  <WebAccessState access={access} />
+                  <TestResult state={state} />
                 </div>
                 <label className="field">
-                  <span>账号</span>
-                  <input value={account.username} autoComplete="off" placeholder="可选，用于登录窗口自动填写" onChange={(e) => setAccount(s.service, { username: e.target.value })} />
+                  <span>地址</span>
+                  <input value={baseUrls[s.service] ?? ""} placeholder={meta.placeholder} onChange={(e) => setBaseUrls((u) => ({ ...u, [s.service]: e.target.value }))} />
                 </label>
                 <label className="field">
-                  <span>密码</span>
+                  <span>访问令牌</span>
                   <input
                     type="password"
-                    autoComplete="new-password"
-                    value={account.password}
-                    placeholder={s.hasWebPassword ? "已保存（留空则不修改）" : "可选"}
-                    onChange={(e) => setAccount(s.service, { password: e.target.value })}
+                    value={tokens[s.service] ?? ""}
+                    placeholder={s.hasToken ? "已保存（留空则不修改）" : "个人访问令牌（Personal Access Token）"}
+                    onChange={(e) => setTokens((t) => ({ ...t, [s.service]: e.target.value }))}
                   />
                 </label>
                 <div className="card-actions">
-                  {access === "session" ? (
-                    <button className="btn" onClick={() => api.webLogout(s.service).then(refreshSessions)}>
-                      退出网页登录
-                    </button>
-                  ) : (
-                    <button className="btn" disabled={!s.baseUrl || access === "token"} onClick={() => api.webLogin(s.service).catch((e) => setNotice({ kind: "error", text: errorMessage(e) }))}>
-                      网页登录
+                  <button className="btn" disabled={dirty || !s.baseUrl || !s.hasToken || state.status === "testing"} onClick={() => test(s.service)}>
+                    测试连接
+                  </button>
+                  {s.hasToken && (
+                    <button className="btn subtle" onClick={() => clearToken(s.service)}>
+                      删除令牌
                     </button>
                   )}
-                  <span className="muted small">填写账号密码后，登录窗口会自动填写并提交，你只需完成额外的验证步骤。</span>
+                  {dirty && <span className="muted small">保存后可测试</span>}
                 </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
 
-      <div className="card">
-        <div className="service-head">
-          <span className="service-icon">
-            <NotebookPen size={16} />
-          </span>
-          <div>
-            <h2>周报</h2>
-            <p className="muted small">每周一个以日期范围开头的一级标题，表格中第一列是人名的那一行即为你的周报。</p>
+                {s.supportsWebLogin && (
+                  <div className="card-section">
+                    <div className="session-row">
+                      <div>
+                        <h3>网页登录</h3>
+                        <p className="muted small">附件、图片等网页内容不走 API。若服务器要求单独的网页登录（例如启用了 2FA 或 SSO），在这里登录一次即可。</p>
+                      </div>
+                      <WebAccessState access={access} />
+                    </div>
+                    <label className="field">
+                      <span>账号</span>
+                      <input value={account.username} autoComplete="off" placeholder="可选，用于登录窗口自动填写" onChange={(e) => setAccount(s.service, { username: e.target.value })} />
+                    </label>
+                    <label className="field">
+                      <span>密码</span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={account.password}
+                        placeholder={s.hasWebPassword ? "已保存（留空则不修改）" : "可选"}
+                        onChange={(e) => setAccount(s.service, { password: e.target.value })}
+                      />
+                    </label>
+                    <div className="card-actions">
+                      {access === "session" ? (
+                        <button className="btn" onClick={() => api.webLogout(s.service).then(refreshSessions)}>
+                          退出网页登录
+                        </button>
+                      ) : (
+                        <button className="btn" disabled={!s.baseUrl || access === "token"} onClick={() => api.webLogin(s.service).catch((e) => setNotice({ kind: "error", text: errorMessage(e) }))}>
+                          网页登录
+                        </button>
+                      )}
+                      <span className="muted small">填写账号密码后，登录窗口会自动填写并提交，你只需完成额外的验证步骤。</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="card" id="settings-weekly">
+            <div className="service-head">
+              <span className="service-icon">
+                <NotebookPen size={16} />
+              </span>
+              <div>
+                <h2>周报</h2>
+                <p className="muted small">每周一个以日期范围开头的一级标题，表格中第一列是人名的那一行即为你的周报。</p>
+              </div>
+            </div>
+            <label className="field">
+              <span>周报页面</span>
+              <input value={weeklyPage} placeholder="Wiki 页面地址或页面 ID" onChange={(e) => setWeeklyPage(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>我的名字</span>
+              <input value={weeklyName} placeholder="表格第一列中你的名字，留空则使用 Wiki 显示名" onChange={(e) => setWeeklyName(e.target.value)} />
+            </label>
           </div>
+
+          {/* 有未保存的修改时固定在底部，滚到哪里都能保存 */}
+          {dirty && (
+            <div className="save-bar">
+              <span className="grow">连接设置有未保存的修改</span>
+              <button className="btn subtle" disabled={saving} onClick={() => fill(settings)}>
+                放弃修改
+              </button>
+              <button className="btn primary" disabled={saving} onClick={save}>
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          )}
         </div>
-        <label className="field">
-          <span>周报页面</span>
-          <input value={weeklyPage} placeholder="Wiki 页面地址或页面 ID" onChange={(e) => setWeeklyPage(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>我的名字</span>
-          <input value={weeklyName} placeholder="表格第一列中你的名字，留空则使用 Wiki 显示名" onChange={(e) => setWeeklyName(e.target.value)} />
-        </label>
       </div>
     </section>
   );

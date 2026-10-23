@@ -7,18 +7,13 @@ import { guarded } from "../../components/Toast";
 import { formatTime } from "../../lib/format";
 import { handleItem, itemDetail, itemTarget, itemToTodo, refreshInbox, snoozeItem, useInbox } from "../../lib/inbox";
 import { openLink } from "../../lib/links";
-import { addDays, formatDay, formatMoment, momentPresets, today, useWorkspaceRefresh, workspaceChanged } from "../../lib/workspace";
+import { addDays, formatMoment, momentPresets, today, useWorkspaceRefresh } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
-import { todoInput } from "./todoMenu";
-
-/** 拖动时携带的数据类型：收件箱条目或未安排的待办。 */
-const DRAG_ITEM = "application/x-nextworkzone-inbox";
-const DRAG_TODO = "application/x-nextworkzone-todo";
 
 /**
- * 收件箱：需要我处理的事（记下的内容、动态、到期问题、合并请求）和未安排日期的待办；
- * 右侧是今天的计划——把条目拖过去（或点“今天”）就加入今天的待办。
+ * 收件箱：还没处理的事（记下的内容、动态、到期问题、合并请求）。每条可以处理掉、转为待办或稍后提醒；
+ * 安排哪天做在“待办”页，这里不重复显示待办。
  */
 export function InboxPage() {
   const { navigate } = useNav();
@@ -64,11 +59,6 @@ export function InboxPage() {
     else if (item.url) void openLink(item.url, baseUrl, navigate);
   };
   const toTodo = (item: InboxItem, due: string | null) => run(() => itemToTodo(item, due, todos ?? []).then(loadTodos));
-  const planTodo = (todo: Todo, due: string | null) =>
-    run(async () => {
-      await api.wsSaveTodo(todoInput(todo, { due }));
-      workspaceChanged();
-    });
 
   const snoozeMenu = (item: InboxItem): MenuInput[] => [
     ...momentPresets().map((p) => ({ label: p.label, icon: <AlarmClock size={14} />, onSelect: () => run(() => snoozeItem(item, p.at)) })),
@@ -94,144 +84,91 @@ export function InboxPage() {
 
   const items = view?.items ?? [];
   const snoozed = view?.snoozed ?? [];
-  const unscheduled = (todos ?? []).filter((t) => !t.done && t.due === null).sort((a, b) => b.priority - a.priority || a.sort - b.sort);
-  const planned = (todos ?? []).filter((t) => !t.done && t.due !== null && t.due <= day).sort((a, b) => (a.due ?? "").localeCompare(b.due ?? "") || b.priority - a.priority || a.sort - b.sort);
 
   return (
-    <section className="page wide inbox-page">
+    <section className="page inbox-page">
       <header className="page-header">
         <div>
           <h1>
             收件箱 {items.length > 0 && <span className="count">{items.length}</span>}
           </h1>
-          <p className="muted small">需要处理的事都在这里：处理完、转为待办，或者稍后再提醒。把条目拖到右侧，就加入今天的计划。</p>
+          <p className="muted small">需要处理的事都在这里：处理完、转为待办，或者稍后再提醒。转为待办后到“待办”页安排日期。</p>
         </div>
         <button className="btn subtle icon" title="刷新" onClick={refresh} disabled={loading}>
           <RefreshCw size={15} className={loading ? "spin" : ""} />
         </button>
       </header>
 
-      <div className="inbox-layout">
-        <div className="inbox-main">
-          <div className="input-icon quick-add">
-            <Plus size={15} />
-            <input
-              value={draft}
-              placeholder="记下要处理的事或链接，回车保存（任何应用中按快速记录快捷键也可以）"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  add();
-                }
-              }}
-            />
-          </div>
-          {error && <ErrorBox message={error} onRetry={refresh} />}
-          {view?.notes.map((n) => (
-            <p key={n} className="notice warn small">
-              {n}
-            </p>
-          ))}
-          {!view && !error && <Skeleton lines={6} height={18} />}
-
-          <ul className="inbox-list">
-            {items.map((item) => (
-              <InboxRow
-                key={item.id}
-                item={item}
-                menuOpen={contextMenu.target === item.id}
-                onOpen={() => open(item)}
-                onToday={() => toTodo(item, day)}
-                onDone={() => run(() => handleItem(item))}
-                onSnooze={(e) => contextMenu.open(e, snoozeMenu(item), item.id)}
-                onMenu={(e) => contextMenu.open(e, moreMenu(item), item.id)}
-              />
-            ))}
-            {view && items.length === 0 && (
-              <li className="empty-center inbox-empty">
-                <Inbox size={26} className="muted" />
-                <div className="muted">没有需要处理的事</div>
-              </li>
-            )}
-          </ul>
-
-          {snoozed.length > 0 && (
-            <div className="inbox-section">
-              <button className="section-toggle" onClick={() => setShowSnoozed((v) => !v)}>
-                {showSnoozed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                稍后提醒 <span className="count">{snoozed.length}</span>
-              </button>
-              {showSnoozed && (
-                <ul className="inbox-list">
-                  {snoozed.map((item) => (
-                    <li key={item.id} className="inbox-row snoozed">
-                      <ItemIcon item={item} />
-                      <div className="inbox-text">
-                        <button className="link-plain ellipsis" onClick={() => open(item)}>
-                          {item.title || "无标题"}
-                        </button>
-                        <span className="muted small">{item.snoozeUntil ? `${formatMoment(item.snoozeUntil)} 提醒` : ""}</span>
-                      </div>
-                      <button className="btn subtle small-btn" onClick={() => run(() => snoozeItem(item, null))}>
-                        <BellOff size={13} />
-                        取消稍后
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {unscheduled.length > 0 && (
-            <div className="inbox-section">
-              <h2 className="section-title">
-                未安排的待办 <span className="count">{unscheduled.length}</span>
-              </h2>
-              <ul className="inbox-list">
-                {unscheduled.map((todo) => (
-                  <li key={todo.id} className="inbox-row" draggable onDragStart={(e) => e.dataTransfer.setData(DRAG_TODO, todo.id)}>
-                    <button className={`check prio-${todo.priority}`} onClick={() => run(async () => (await api.wsSetTodoDone(todo.id, true), workspaceChanged()))} aria-label="完成">
-                      <Check size={11} strokeWidth={3} className="check-hover" />
-                    </button>
-                    <div className="inbox-text">
-                      <button className="link-plain ellipsis" onClick={() => navigate({ page: "todos", todoId: todo.id })}>
-                        {todo.title || "无标题"}
-                      </button>
-                      {todo.refKey && todo.refSystem === "jira" && <span className="muted small">{todo.refKey}</span>}
-                    </div>
-                    <span className="row-actions">
-                      <button className="btn small-btn" onClick={() => planTodo(todo, day)}>
-                        今天
-                      </button>
-                      <button className="btn subtle small-btn" onClick={() => planTodo(todo, addDays(day, 1))}>
-                        明天
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <TodayPlan
-          planned={planned}
-          day={day}
-          onDropItem={(id) => {
-            const item = items.find((i) => i.id === id);
-            if (item) toTodo(item, day);
+      <div className="input-icon quick-add">
+        <Plus size={15} />
+        <input
+          value={draft}
+          placeholder="记下要处理的事或链接，回车保存（任何应用中按快速记录快捷键也可以）"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              add();
+            }
           }}
-          onDropTodo={(id) => {
-            const todo = todos?.find((t) => t.id === id);
-            if (todo) planTodo(todo, day);
-          }}
-          onRemove={(todo) => planTodo(todo, null)}
-          onComplete={(todo) => run(async () => (await api.wsSetTodoDone(todo.id, true), workspaceChanged()))}
-          onOpen={(todo) => navigate({ page: "todos", todoId: todo.id })}
         />
       </div>
+      {error && <ErrorBox message={error} onRetry={refresh} />}
+      {view?.notes.map((n) => (
+        <p key={n} className="notice warn small">
+          {n}
+        </p>
+      ))}
+      {!view && !error && <Skeleton lines={6} height={18} />}
+
+      <ul className="inbox-list">
+        {items.map((item) => (
+          <InboxRow
+            key={item.id}
+            item={item}
+            menuOpen={contextMenu.target === item.id}
+            onOpen={() => open(item)}
+            onToday={() => toTodo(item, day)}
+            onDone={() => run(() => handleItem(item))}
+            onSnooze={(e) => contextMenu.open(e, snoozeMenu(item), item.id)}
+            onMenu={(e) => contextMenu.open(e, moreMenu(item), item.id)}
+          />
+        ))}
+        {view && items.length === 0 && (
+          <li className="empty-center inbox-empty">
+            <Inbox size={26} className="muted" />
+            <div className="muted">没有需要处理的事</div>
+          </li>
+        )}
+      </ul>
+
+      {snoozed.length > 0 && (
+        <div className="inbox-section">
+          <button className="section-toggle" onClick={() => setShowSnoozed((v) => !v)}>
+            {showSnoozed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            稍后提醒 <span className="count">{snoozed.length}</span>
+          </button>
+          {showSnoozed && (
+            <ul className="inbox-list">
+              {snoozed.map((item) => (
+                <li key={item.id} className="inbox-row snoozed">
+                  <ItemIcon item={item} />
+                  <div className="inbox-text">
+                    <button className="link-plain ellipsis" onClick={() => open(item)}>
+                      {item.title || "无标题"}
+                    </button>
+                    <span className="muted small">{item.snoozeUntil ? `${formatMoment(item.snoozeUntil)} 提醒` : ""}</span>
+                  </div>
+                  <button className="btn subtle small-btn" onClick={() => run(() => snoozeItem(item, null))}>
+                    <BellOff size={13} />
+                    取消稍后
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {contextMenu.menu}
     </section>
   );
@@ -261,8 +198,6 @@ function InboxRow(props: {
   return (
     <li
       className={`inbox-row${props.menuOpen ? " menu-target" : ""}`}
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData(DRAG_ITEM, item.id)}
       onContextMenu={props.onMenu}
     >
       <ItemIcon item={item} />
@@ -292,84 +227,5 @@ function InboxRow(props: {
         </button>
       </span>
     </li>
-  );
-}
-
-function TodayPlan(props: {
-  planned: Todo[];
-  day: string;
-  onDropItem: (id: string) => void;
-  onDropTodo: (id: string) => void;
-  onRemove: (todo: Todo) => void;
-  onComplete: (todo: Todo) => void;
-  onOpen: (todo: Todo) => void;
-}) {
-  const [over, setOver] = useState(false);
-  const [draft, setDraft] = useState("");
-  const add = guarded(async () => {
-    if (!draft.trim()) return;
-    await api.wsSaveTodo({ title: draft.trim(), due: props.day });
-    setDraft("");
-    workspaceChanged();
-  });
-  return (
-    <aside
-      className={`card today-plan${over ? " drop-over" : ""}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(DRAG_ITEM) || e.dataTransfer.types.includes(DRAG_TODO)) {
-          e.preventDefault();
-          setOver(true);
-        }
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setOver(false);
-        const item = e.dataTransfer.getData(DRAG_ITEM);
-        const todo = e.dataTransfer.getData(DRAG_TODO);
-        if (item) props.onDropItem(item);
-        else if (todo) props.onDropTodo(todo);
-      }}
-    >
-      <div className="card-title">
-        <h2>
-          <CalendarDays size={16} className="muted" />
-          今天的计划 {props.planned.length > 0 && <span className="count">{props.planned.length}</span>}
-        </h2>
-      </div>
-      <ul className="home-list">
-        {props.planned.map((t) => (
-          <li key={t.id}>
-            <div className="home-row">
-              <button className={`check prio-${t.priority}`} onClick={() => props.onComplete(t)} aria-label="完成">
-                <Check size={11} strokeWidth={3} className="check-hover" />
-              </button>
-              <button className="link-plain ellipsis grow" onClick={() => props.onOpen(t)}>
-                {t.title || "无标题"}
-              </button>
-              {t.due && t.due < props.day && <span className="due-chip overdue">{formatDay(t.due)}</span>}
-              <button className="btn subtle icon plan-remove" title="移出今天（改为未安排）" onClick={() => props.onRemove(t)}>
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </li>
-        ))}
-        {props.planned.length === 0 && <li className="muted small plan-empty">把左侧的条目拖到这里，或点“今天”</li>}
-      </ul>
-      <div className="input-icon quick-add">
-        <Plus size={15} />
-        <input
-          value={draft}
-          placeholder="添加今天的待办"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              add();
-            }
-          }}
-        />
-      </div>
-    </aside>
   );
 }

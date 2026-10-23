@@ -50,9 +50,9 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
   {
     label: "集成",
     items: [
-      { id: "jira", label: "我的问题", icon: CircleDot },
+      { id: "jira", label: "Jira", icon: CircleDot },
       { id: "wiki", label: "Wiki", icon: BookText },
-      { id: "gitlab", label: "代码", icon: FolderGit2 },
+      { id: "gitlab", label: "GitLab", icon: FolderGit2 },
     ],
   },
   {
@@ -178,6 +178,11 @@ function Shell() {
           </span>
           NextWorkZone
         </div>
+        <button className="search-trigger" onClick={() => setPaletteOpen(true)} title="搜索问题、项目、文档，或跳转到页面">
+          <Search size={14} />
+          <span>搜索</span>
+          <kbd>⌘K</kbd>
+        </button>
         {NAV_GROUPS.map((group) => (
           <div className="nav-group" key={group.label}>
             <div className="nav-group-label">{group.label}</div>
@@ -207,13 +212,8 @@ function Shell() {
         <NavButton id="settings" label="设置" icon={Settings2} shortcut="," active={current.page === "settings"} onClick={() => navigate({ page: "settings" })} />
       </nav>
       <div className="main">
-        <header className="topbar" data-tauri-drag-region>
-          <button className="search-trigger" onClick={() => setPaletteOpen(true)}>
-            <Search size={15} />
-            <span>搜索问题、项目、文档</span>
-            <kbd>⌘K</kbd>
-          </button>
-        </header>
+        {/* 没有顶部栏：内容区顶端留一条可以拖动窗口的区域 */}
+        <div className="main-drag" data-tauri-drag-region />
         <main className="content">
           <ErrorBoundary resetKey={current.page}>
             <Suspense fallback={null}>

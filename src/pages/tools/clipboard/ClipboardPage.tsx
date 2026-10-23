@@ -101,7 +101,7 @@ function History({ switcher }: { switcher: React.ReactNode }) {
 
   return (
     <div className="split">
-      <aside className="list-pane clip-list-pane">
+      <aside className="list-pane">
         <div className="list-toolbar">
           {switcher}
           <div className="input-icon">
