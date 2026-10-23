@@ -49,13 +49,13 @@ pub struct DueField {
 #[serde(rename_all = "camelCase")]
 pub struct Reminder {
     #[serde(flatten)]
-    issue: IssueSummary,
+    pub(crate) issue: IssueSummary,
     /// `overdue` / `today` / `soon` / `stale`
-    kind: &'static str,
+    pub(crate) kind: &'static str,
     /// 到期日期 `YYYY-MM-DD`。
     due: Option<String>,
     /// 到期：距今天数（逾期为负）；停滞：多少天没有更新。
-    days: i64,
+    pub(crate) days: i64,
 }
 
 #[derive(Serialize)]
@@ -63,7 +63,7 @@ pub struct Reminder {
 pub struct Reminders {
     /// 使用的到期字段；识别不到时为空（只有停滞提醒）。
     due_field: Option<DueField>,
-    items: Vec<Reminder>,
+    pub(crate) items: Vec<Reminder>,
     /// 所有未解决问题的到期日期：问题键 → `YYYY-MM-DD`（列表中显示）。
     due_dates: std::collections::BTreeMap<String, String>,
     remind: bool,

@@ -43,11 +43,16 @@ pub struct WorkspaceConfig {
     pub sync_dir: String,
     /// 自动把分配给我的未解决 Jira 问题加入待办。
     pub jira_todos: bool,
+    /// 在任何应用中打开“快速记录”的全局快捷键，例如 `Alt+Space`；为空表示不使用。
+    pub capture_shortcut: String,
 }
+
+/// 快速记录的默认快捷键（macOS 上为 ⌥Space）。
+pub const DEFAULT_CAPTURE_SHORTCUT: &str = "Alt+Space";
 
 impl Default for WorkspaceConfig {
     fn default() -> Self {
-        Self { sync_dir: String::new(), jira_todos: true }
+        Self { sync_dir: String::new(), jira_todos: true, capture_shortcut: DEFAULT_CAPTURE_SHORTCUT.into() }
     }
 }
 

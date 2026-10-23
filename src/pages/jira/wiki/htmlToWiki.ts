@@ -245,6 +245,8 @@ function linkToWiki(a: HTMLAnchorElement, ctx: Ctx): string {
   // @提及
   if (a.classList.contains("user-hover") && a.getAttribute("rel")) return `[~${a.getAttribute("rel")}]`;
   if (a.dataset.username) return `[~${a.dataset.username}]`;
+  // 拖进编辑器、待上传的附件
+  if (a.dataset.attachment) return `[^${a.dataset.attachment}]`;
   // 问题键会被 Jira 自动链接
   if (a.classList.contains("issue-link") && a.dataset.issueKey && (a.textContent ?? "").trim() === a.dataset.issueKey) return a.dataset.issueKey;
   // 附件图片外面包着的预览链接

@@ -100,7 +100,8 @@ pub async fn weekly_draft(state: State<'_, AppState>, section: Option<String>) -
             (monday, monday + Duration::days(6))
         });
 
-    let (jira, worklogs, gitlab) = tokio::join!(jira_draft(&state, from, to), worklog_draft(&state, from, to), gitlab_draft(&state, from, to));
+    let (jira, worklogs, gitlab, wiki) =
+        tokio::join!(jira_draft(&state, from, to), worklog_draft(&state, from, to), gitlab_draft(&state, from, to), wiki_draft(&state, from, to));
     let mut groups = Vec::new();
     let mut notes = Vec::new();
     match jira {
@@ -114,6 +115,10 @@ pub async fn weekly_draft(state: State<'_, AppState>, section: Option<String>) -
     match gitlab {
         Ok(g) => groups.extend(g),
         Err(e) => notes.push(format!("GitLab：{e}")),
+    }
+    match wiki {
+        Ok(g) => groups.extend(g),
+        Err(e) => notes.push(format!("Wiki：{e}")),
     }
     match workspace_draft(&state, from, to) {
         Ok(g) => groups.extend(g),
@@ -169,6 +174,21 @@ fn format_duration(seconds: u64) -> String {
     }
 }
 
+/// 这一周创建、修改过的 Wiki 页面（周报页面本身除外）。
+async fn wiki_draft(state: &AppState, from: NaiveDate, to: NaiveDate) -> Result<Vec<DraftGroup>> {
+    let Ok(confluence) = state.confluence() else { return Ok(Vec::new()) };
+    let weekly_page = state.config().weekly.page_id;
+    let work = confluence.my_work(&from.to_string(), &(to + Duration::days(1)).to_string()).await?;
+    let mut items: Vec<String> = Vec::new();
+    for w in work.into_iter().filter(|w| w.kind != "comment" && w.page_id != weekly_page) {
+        let line = if w.kind == "create" { format!("新建 Wiki 页面：{}", w.title) } else { format!("更新 Wiki 页面：{}", w.title) };
+        if !items.iter().any(|i| i.ends_with(&format!("：{}", w.title))) {
+            items.push(line);
+        }
+    }
+    Ok(if items.is_empty() { Vec::new() } else { vec![DraftGroup { title: "Wiki".into(), source: "wiki", items }] })
+}
+
 /// 工作空间：这一周手动完成的待办（Jira 问题已在上面列出），以及日记中的内容。
 fn workspace_draft(state: &AppState, from: NaiveDate, to: NaiveDate) -> Result<Vec<DraftGroup>> {
     let ws = &state.workspace;
@@ -203,6 +223,21 @@ fn workspace_draft(state: &AppState, from: NaiveDate, to: NaiveDate) -> Result<V
     }
     if !lines.is_empty() {
         groups.push(DraftGroup { title: "日记".into(), source: "daily", items: lines });
+    }
+    // 计时记录：按事项合计
+    if let (Some(start), Some(end)) = (start, end) {
+        let mut totals: Vec<(String, i64)> = Vec::new();
+        for entry in ws.time_entries(start, end)? {
+            match totals.iter_mut().find(|(title, _)| *title == entry.title) {
+                Some((_, ms)) => *ms += entry.duration_ms,
+                None => totals.push((entry.title, entry.duration_ms)),
+            }
+        }
+        if !totals.is_empty() {
+            let total: i64 = totals.iter().map(|(_, ms)| ms).sum();
+            let items = totals.into_iter().map(|(title, ms)| format!("{title}（{}）", format_duration((ms / 1000) as u64))).collect();
+            groups.push(DraftGroup { title: format!("计时 · 合计 {}", format_duration((total / 1000) as u64)), source: "timer", items });
+        }
     }
     Ok(groups)
 }

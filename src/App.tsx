@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
+import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, Inbox, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { listen } from "@tauri-apps/api/event";
@@ -7,6 +7,8 @@ import { api, TRAY_EVENT } from "./api";
 import { countMyIssues } from "./lib/notify";
 import { ACTIVITY_INTERVAL_MS, pollActivity, useActivityFeed } from "./lib/activity";
 import { checkReminders, useReminders } from "./lib/reminders";
+import { refreshInbox, useInbox } from "./lib/inbox";
+import { InboxPage } from "./pages/workspace/InboxPage";
 import { ActivityPage } from "./pages/jira/ActivityPage";
 import { StatsPage } from "./pages/jira/StatsPage";
 import { workspaceChanged } from "./lib/workspace";
@@ -15,6 +17,7 @@ import { KnowledgePage } from "./pages/workspace/KnowledgePage";
 import { NotesPage } from "./pages/workspace/NotesPage";
 import { QuickTodo } from "./pages/workspace/QuickTodo";
 import { Toasts } from "./components/Toast";
+import { FileDropLayer } from "./components/FileDropLayer";
 import { TimerWidget } from "./components/TimerWidget";
 import { TodoPage } from "./pages/workspace/TodoPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -32,6 +35,7 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
     label: "工作空间",
     items: [
       { id: "home", label: "今天", icon: LayoutDashboard },
+      { id: "inbox", label: "收件箱", icon: Inbox },
       { id: "todos", label: "待办", icon: CheckSquare },
       { id: "notes", label: "笔记", icon: NotepadText },
       { id: "kb", label: "知识库", icon: BookOpen },
@@ -99,6 +103,10 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [navigate]);
 
+  useEffect(() => {
+    void refreshInbox().catch(() => {});
+  }, []);
+
   // 托盘菜单：后端已显示窗口，这里打开对应的页面或对话框
   useEffect(() => {
     const unlisten = listen<string>(TRAY_EVENT, ({ payload }) => {
@@ -116,13 +124,17 @@ function Shell() {
   const jiraReady = isReady("jira");
   const wikiReady = isReady("confluence");
   const activity = useActivityFeed();
+  const inbox = useInbox();
   const reminders = useReminders();
   const overdue = reminders?.items.filter((r) => r.kind === "overdue" || r.kind === "today").length ?? 0;
   useEffect(() => {
     if (!jiraReady && !wikiReady) return;
     let rounds = 0;
     const run = () => {
-      void pollActivity().catch(() => {});
+      // 新的动态也会进入收件箱
+      void pollActivity()
+        .catch(() => {})
+        .finally(() => void refreshInbox().catch(() => {}));
       // 问题数和待办不需要那么频繁，大约每 9 分钟一次
       if (jiraReady && rounds++ % 3 === 0) {
         void countMyIssues().then(setIssueCount, () => {});
@@ -152,9 +164,9 @@ function Shell() {
               <NavButton
                 key={item.id}
                 {...item}
-                shortcut={String((NAV_ORDER.indexOf(item.id) + 1) % 10)}
+                shortcut={NAV_ORDER.indexOf(item.id) < 10 ? String((NAV_ORDER.indexOf(item.id) + 1) % 10) : undefined}
                 active={current.page === item.id}
-                count={item.id === "jira" ? issueCount : item.id === "activity" ? activity?.unread || null : null}
+                count={item.id === "jira" ? issueCount : item.id === "activity" ? activity?.unread || null : item.id === "inbox" ? inbox?.items.length || null : null}
                 alert={item.id === "jira" && overdue > 0 ? `${overdue} 个问题已逾期或今天到期` : undefined}
                 onClick={() => navigate({ page: item.id })}
               />
@@ -176,6 +188,7 @@ function Shell() {
         <main className="content">
           <ErrorBoundary resetKey={current.page}>
             {current.page === "home" && <HomePage />}
+            {current.page === "inbox" && <InboxPage />}
             {current.page === "todos" && <TodoPage />}
             {current.page === "notes" && <NotesPage />}
             {current.page === "kb" && <KnowledgePage />}
@@ -191,15 +204,16 @@ function Shell() {
       </div>
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} onQuickTodo={() => setQuickTodo(true)} />}
       {quickTodo && <QuickTodo onClose={() => setQuickTodo(false)} />}
+      <FileDropLayer />
       <Toasts />
     </div>
   );
 }
 
-function NavButton(props: { id: PageId; label: string; icon: ComponentType<LucideProps>; shortcut: string; active: boolean; count?: number | null; alert?: string; onClick: () => void }) {
+function NavButton(props: { id: PageId; label: string; icon: ComponentType<LucideProps>; shortcut?: string; active: boolean; count?: number | null; alert?: string; onClick: () => void }) {
   const Icon = props.icon;
   return (
-    <button className={`nav-item${props.active ? " active" : ""}`} onClick={props.onClick} title={`${props.label}（⌘${props.shortcut}）${props.alert ? `\n${props.alert}` : ""}`}>
+    <button className={`nav-item${props.active ? " active" : ""}`} onClick={props.onClick} title={`${props.label}${props.shortcut ? `（⌘${props.shortcut}）` : ""}${props.alert ? `\n${props.alert}` : ""}`}>
       <Icon size={16} strokeWidth={2} />
       {props.label}
       {props.count ? <span className={`nav-count${props.alert ? " alert" : ""}`}>{props.count}</span> : null}

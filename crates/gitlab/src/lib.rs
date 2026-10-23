@@ -259,6 +259,65 @@ pub struct PushEvent {
     pub created_at: String,
 }
 
+/// 自己在 GitLab 上的一次操作（工作记录用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyEvent {
+    pub at: String,
+    /// `push` 推送 / `mr_open` 发起合并请求 / `mr_merge` 合并 / `mr_approve` 批准 / `mr_close` 关闭 / `comment` 评论
+    pub kind: String,
+    pub project_id: u64,
+    /// 合并请求标题或分支名。
+    pub title: String,
+    /// 提交说明、评论摘要等。
+    pub detail: String,
+    /// 合并请求编号（项目内的 !iid）。
+    pub iid: Option<u64>,
+    pub commit_count: u64,
+}
+
+/// 把 GitLab 事件转换为工作记录；与工作无关的事件（加入项目、删除分支等）返回 `None`。
+pub fn my_event(e: &serde_json::Value) -> Option<MyEvent> {
+    let text = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let action = e["action_name"].as_str().unwrap_or_default();
+    let target = e["target_type"].as_str().unwrap_or_default();
+    let mut event = MyEvent {
+        at: text(&e["created_at"]),
+        kind: String::new(),
+        project_id: e["project_id"].as_u64()?,
+        title: text(&e["target_title"]),
+        detail: String::new(),
+        iid: e["target_iid"].as_u64(),
+        commit_count: 0,
+    };
+    match (action, target) {
+        ("pushed to" | "pushed new", _) => {
+            let push = &e["push_data"];
+            event.kind = "push".into();
+            event.title = text(&push["ref"]);
+            event.detail = text(&push["commit_title"]);
+            event.commit_count = push["commit_count"].as_u64().unwrap_or(0);
+            if event.commit_count == 0 {
+                return None;
+            }
+        }
+        ("opened", "MergeRequest") => event.kind = "mr_open".into(),
+        ("accepted", "MergeRequest") => event.kind = "mr_merge".into(),
+        ("approved", "MergeRequest") => event.kind = "mr_approve".into(),
+        ("closed", "MergeRequest") => event.kind = "mr_close".into(),
+        ("commented on", _) => {
+            let note = &e["note"];
+            event.kind = "comment".into();
+            event.detail = text(&note["body"]).split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
+            if note["noteable_type"] == "MergeRequest" {
+                event.iid = note["noteable_iid"].as_u64();
+            }
+        }
+        _ => return None,
+    }
+    Some(event)
+}
+
 impl GitlabClient {
     pub fn new(http: Client, base_url: impl Into<String>, token: impl Into<String>) -> Self {
         Self { http, base_url: base_url.into(), token: token.into() }
@@ -453,6 +512,14 @@ impl GitlabClient {
     }
 
     /// 自己在 `after`（YYYY-MM-DD，不含当天）之后的推送记录。
+    /// 自己在 `(after, before)` 两个日期之间（都不含）的操作，按时间先后排列。
+    pub async fn my_events(&self, after: &str, before: &str) -> Result<Vec<MyEvent>> {
+        let raw: Vec<serde_json::Value> = self.all_pages(&["events"], &[("after", after), ("before", before)], 500).await?;
+        let mut events: Vec<MyEvent> = raw.iter().filter_map(my_event).collect();
+        events.sort_by(|a, b| a.at.cmp(&b.at));
+        Ok(events)
+    }
+
     pub async fn my_pushes(&self, after: &str) -> Result<Vec<PushEvent>> {
         let raw: Vec<serde_json::Value> =
             self.all_pages(&["events"], &[("action", "pushed"), ("after", after)], 500).await?;
@@ -484,4 +551,30 @@ fn image_mime(path: &str) -> Option<&'static str> {
         "bmp" => "image/bmp",
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn converts_events_to_work_records() {
+        let push = json!({ "action_name": "pushed to", "project_id": 7, "created_at": "2026-10-22T03:00:00.000Z",
+            "push_data": { "ref": "feature-x", "commit_title": "修复导入", "commit_count": 2 } });
+        let e = my_event(&push).unwrap();
+        assert_eq!((e.kind.as_str(), e.title.as_str(), e.detail.as_str(), e.commit_count), ("push", "feature-x", "修复导入", 2));
+
+        let merged = json!({ "action_name": "accepted", "target_type": "MergeRequest", "target_iid": 12, "target_title": "jira=ABC-1 修复", "project_id": 7, "created_at": "x" });
+        let e = my_event(&merged).unwrap();
+        assert_eq!((e.kind.as_str(), e.iid), ("mr_merge", Some(12)));
+
+        let note = json!({ "action_name": "commented on", "target_type": "Note", "target_title": "jira=ABC-1 修复", "project_id": 7, "created_at": "x",
+            "note": { "body": "看起来\n没问题", "noteable_type": "MergeRequest", "noteable_iid": 12 } });
+        let e = my_event(&note).unwrap();
+        assert_eq!((e.kind.as_str(), e.detail.as_str(), e.iid), ("comment", "看起来 没问题", Some(12)));
+
+        assert!(my_event(&json!({ "action_name": "joined", "project_id": 7 })).is_none());
+        assert!(my_event(&json!({ "action_name": "deleted", "project_id": 7, "push_data": { "commit_count": 0 } })).is_none());
+    }
 }

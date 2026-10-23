@@ -70,6 +70,16 @@ fn time_of(e: &ActivityEvent) -> Option<DateTime<FixedOffset>> {
     parse_time(&e.at).or_else(|| DateTime::parse_from_rfc3339(&e.at).ok())
 }
 
+/// 已保存的动态（收件箱据此汇总需要处理的条目）。
+pub(crate) fn stored_events(state: &AppState) -> Vec<ActivityEvent> {
+    Store::load(state).events
+}
+
+/// 动态发生的时间（毫秒）。
+pub(crate) fn event_ms(e: &ActivityEvent) -> i64 {
+    time_of(e).map_or(0, |t| t.timestamp_millis())
+}
+
 #[tauri::command]
 pub fn jira_activity(state: State<'_, AppState>) -> ActivityFeed {
     Store::load(&state).feed()

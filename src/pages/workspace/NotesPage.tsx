@@ -7,6 +7,7 @@ import { formatTime } from "../../lib/format";
 import { today, useWorkspaceRefresh, weekdayOf, workspaceChanged } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
 import { DocPane } from "./DocPane";
+import { WorkLogPanel } from "./WorkLog";
 import { copyTitleItem, deleteItem, pinItem } from "./docMenu";
 
 type Tab = "daily" | "notes";
@@ -167,6 +168,7 @@ export function NotesPage() {
         <DocPane
           key={selected}
           docId={selected}
+          footer={(doc) => doc.kind === "daily" && doc.day && <WorkLogPanel key={doc.day} doc={doc} />}
           onSaved={(doc) => {
             // 列表里的标题、摘要随编辑更新
             if (doc.kind === "note") setNotes((list) => list?.map((n) => (n.id === doc.id ? { ...n, title: doc.title, updatedAt: doc.updatedAt, pinned: doc.pinned, tags: doc.tags } : n)) ?? list);

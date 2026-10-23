@@ -38,6 +38,23 @@ CREATE TABLE IF NOT EXISTS todos (
     updated_at INTEGER NOT NULL,
     updated_by TEXT NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0,
+    dirty INTEGER NOT NULL DEFAULT 1,
+    remind_at INTEGER,
+    repeat TEXT,
+    checklist TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS inbox (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    url TEXT,
+    handled_at INTEGER,
+    snooze_until INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    updated_by TEXT NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
     dirty INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS docs (
@@ -69,6 +86,19 @@ CREATE TABLE IF NOT EXISTS assets (
     created_at INTEGER NOT NULL,
     dirty INTEGER NOT NULL DEFAULT 1
 );
+-- 以下只保存在本机，不参与同步
+CREATE TABLE IF NOT EXISTS time_entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    issue_key TEXT,
+    todo_id TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS time_entries_start ON time_entries(started_at);
+-- 已经发出的提醒：条目 id → 提醒时间，提醒时间改了会再次提醒
+CREATE TABLE IF NOT EXISTS fired_alerts (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 -- 以下由内容派生，不参与同步
 CREATE TABLE IF NOT EXISTS refs (
     item_type TEXT NOT NULL,
@@ -82,7 +112,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(item_type UNINDEXED, item_i
 CREATE TABLE IF NOT EXISTS sync_cursors (device TEXT PRIMARY KEY, offset INTEGER NOT NULL, generation TEXT NOT NULL DEFAULT '');
 "#;
 
-pub(crate) const TODO_COLUMNS: &str = "id, title, notes, done, completed_at, due, priority, sort, ref_system, ref_key, ref_title, source, auto_done, created_at, updated_at, updated_by, deleted";
+pub(crate) const TODO_COLUMNS: &str = "id, title, notes, done, completed_at, due, priority, sort, ref_system, ref_key, ref_title, source, auto_done, created_at, updated_at, updated_by, deleted, remind_at, repeat, checklist";
+pub(crate) const INBOX_COLUMNS: &str = "id, kind, title, body, url, handled_at, snooze_until, created_at, updated_at, updated_by, deleted";
 pub(crate) const DOC_COLUMNS: &str = "id, kind, title, content, parent_id, sort, tags, day, pinned, source_system, source_key, source_url, created_at, updated_at, updated_by, base_at, deleted, published_url";
 
 pub struct Workspace {
@@ -210,6 +241,7 @@ impl Workspace {
             None => None,
         };
         let updated_at = Self::stamp(existing.as_ref().map(|t| t.updated_at));
+        let was_done = existing.as_ref().is_some_and(|t| t.done);
         let todo = match existing {
             Some(old) => Todo {
                 completed_at: match (old.done, input.done) {
@@ -227,6 +259,9 @@ impl Workspace {
                 ref_system: input.ref_system,
                 ref_key: input.ref_key,
                 ref_title: input.ref_title,
+                remind_at: input.remind_at,
+                repeat: input.repeat.filter(|r| !r.is_empty()),
+                checklist: input.checklist,
                 updated_at,
                 updated_by: self.device.clone(),
                 ..old
@@ -253,10 +288,43 @@ impl Workspace {
                     updated_at,
                     updated_by: self.device.clone(),
                     deleted: false,
+                    remind_at: input.remind_at,
+                    repeat: input.repeat.filter(|r| !r.is_empty()),
+                    checklist: input.checklist,
                 }
             }
         };
-        write_todo(&conn, &todo, true)?;
+        self.finish(&conn, todo, was_done)
+    }
+
+    /// 写入待办；重复的待办从未完成变为完成时生成下一次，本条不再重复（再次取消、勾选不会重复生成）。
+    fn finish(&self, conn: &Connection, mut todo: Todo, was_done: bool) -> Result<Todo> {
+        let next = match (&todo.repeat, todo.done && !was_done && !todo.deleted) {
+            (Some(repeat), true) => next_occurrence(todo.due.as_deref(), repeat, chrono::Local::now().date_naive()),
+            _ => None,
+        };
+        if let Some(next_due) = next {
+            let now = Self::stamp(Some(todo.updated_at));
+            // 提醒时间随日期顺延，保持一天中的时刻
+            let shift = todo.due.as_deref().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).map_or(0, |d| (next_due - d).num_days());
+            let following = Todo {
+                id: new_id(),
+                done: false,
+                completed_at: None,
+                auto_done: false,
+                due: Some(next_due.format("%Y-%m-%d").to_string()),
+                remind_at: todo.remind_at.map(|at| at + shift * 86_400_000),
+                checklist: todo.checklist.iter().map(|c| ChecklistItem { done: false, ..c.clone() }).collect(),
+                source: None,
+                created_at: now,
+                updated_at: now,
+                updated_by: self.device.clone(),
+                ..todo.clone()
+            };
+            write_todo(conn, &following, true)?;
+            todo.repeat = None;
+        }
+        write_todo(conn, &todo, true)?;
         Ok(todo)
     }
 
@@ -264,6 +332,7 @@ impl Workspace {
         let conn = self.conn.lock().unwrap();
         let old = load_todo(&conn, id)?.ok_or_else(|| Error::Other("待办不存在".into()))?;
         let updated_at = Self::stamp(Some(old.updated_at));
+        let was_done = old.done;
         let todo = Todo {
             done,
             completed_at: done.then_some(updated_at),
@@ -272,8 +341,7 @@ impl Workspace {
             updated_by: self.device.clone(),
             ..old
         };
-        write_todo(&conn, &todo, true)?;
-        Ok(todo)
+        self.finish(&conn, todo, was_done)
     }
 
     pub fn move_todo(&self, id: &str, sort: f64) -> Result<()> {
@@ -357,6 +425,9 @@ impl Workspace {
                             updated_at: now,
                             updated_by: self.device.clone(),
                             deleted: false,
+                            remind_at: None,
+                            repeat: None,
+                            checklist: Vec::new(),
                         },
                         true,
                     )?;
@@ -410,6 +481,138 @@ impl Workspace {
         }
         tx.commit().db()?;
         Ok(report)
+    }
+
+    // ---------- 收件箱 ----------
+
+    /// 收件箱的全部记录（记下的内容和外部条目的处理状态）。
+    pub fn inbox(&self) -> Result<Vec<InboxEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!("SELECT {INBOX_COLUMNS} FROM inbox WHERE deleted = 0 ORDER BY created_at DESC")).db()?;
+        stmt.query_map([], inbox_from_row).db()?.collect::<rusqlite::Result<Vec<_>>>().db()
+    }
+
+    /// 记下一条待处理的内容。
+    pub fn capture(&self, title: &str, body: &str, url: Option<&str>) -> Result<InboxEntry> {
+        let conn = self.conn.lock().unwrap();
+        let now = now_ms();
+        let entry = InboxEntry {
+            id: new_id(),
+            kind: "capture".into(),
+            title: title.trim().to_string(),
+            body: body.trim().to_string(),
+            url: url.map(str::to_string).filter(|u| !u.is_empty()),
+            handled_at: None,
+            snooze_until: None,
+            created_at: now,
+            updated_at: now,
+            updated_by: self.device.clone(),
+            deleted: false,
+        };
+        write_inbox(&conn, &entry, true)?;
+        Ok(entry)
+    }
+
+    /// 设置条目的处理状态；外部条目第一次处理时创建状态记录。`title` 只用于状态记录的说明。
+    pub fn set_inbox_state(&self, id: &str, title: &str, handled_at: Option<i64>, snooze_until: Option<i64>) -> Result<InboxEntry> {
+        let conn = self.conn.lock().unwrap();
+        let existing = load_inbox(&conn, id)?;
+        let updated_at = Self::stamp(existing.as_ref().map(|e| e.updated_at));
+        let entry = match existing {
+            Some(old) => InboxEntry { handled_at, snooze_until, deleted: false, updated_at, updated_by: self.device.clone(), ..old },
+            None => InboxEntry {
+                id: id.to_string(),
+                kind: "state".into(),
+                title: title.to_string(),
+                body: String::new(),
+                url: None,
+                handled_at,
+                snooze_until,
+                created_at: updated_at,
+                updated_at,
+                updated_by: self.device.clone(),
+                deleted: false,
+            },
+        };
+        write_inbox(&conn, &entry, true)?;
+        Ok(entry)
+    }
+
+    pub fn delete_inbox(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        if let Some(old) = load_inbox(&conn, id)? {
+            let entry = InboxEntry { deleted: true, updated_at: Self::stamp(Some(old.updated_at)), updated_by: self.device.clone(), ..old };
+            write_inbox(&conn, &entry, true)?;
+        }
+        Ok(())
+    }
+
+    // ---------- 计时记录 ----------
+
+    pub fn add_time_entry(&self, entry: &TimeEntry) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO time_entries (id, title, issue_key, todo_id, started_at, ended_at, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![entry.id, entry.title, entry.issue_key, entry.todo_id, entry.started_at, entry.ended_at, entry.duration_ms],
+        )
+        .db()?;
+        Ok(())
+    }
+
+    /// 与时间段 `[from, to)`（毫秒）有交集的计时记录。
+    pub fn time_entries(&self, from: i64, to: i64) -> Result<Vec<TimeEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, title, issue_key, todo_id, started_at, ended_at, duration_ms FROM time_entries WHERE started_at < ?2 AND ended_at > ?1 ORDER BY started_at")
+            .db()?;
+        stmt.query_map(params![from, to], |r| {
+            Ok(TimeEntry { id: r.get(0)?, title: r.get(1)?, issue_key: r.get(2)?, todo_id: r.get(3)?, started_at: r.get(4)?, ended_at: r.get(5)?, duration_ms: r.get(6)? })
+        })
+        .db()?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .db()
+    }
+
+    // ---------- 提醒 ----------
+
+    /// 到时间的提醒：待办的提醒时间、收件箱的“稍后提醒”。返回后即记为已提醒。
+    /// 过期太久（例如电脑休眠了一整夜）的只记为已提醒，不再通知。
+    pub fn take_due_alerts(&self, now: i64) -> Result<Vec<DueAlert>> {
+        const STALE_MS: i64 = 12 * 3600 * 1000;
+        let conn = self.conn.lock().unwrap();
+        let mut candidates: Vec<(String, i64, DueAlert)> = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT id, title, remind_at FROM todos WHERE remind_at IS NOT NULL AND remind_at <= ?1 AND done = 0 AND deleted = 0")
+                .db()?;
+            let rows = stmt.query_map(params![now], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))).db()?;
+            for row in rows {
+                let (id, title, at) = row.db()?;
+                candidates.push((format!("todo:{id}"), at, DueAlert { item_type: "todo".into(), id, title }));
+            }
+        }
+        {
+            let mut stmt = conn
+                .prepare("SELECT id, title, snooze_until FROM inbox WHERE snooze_until IS NOT NULL AND snooze_until <= ?1 AND handled_at IS NULL AND deleted = 0")
+                .db()?;
+            let rows = stmt.query_map(params![now], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))).db()?;
+            for row in rows {
+                let (id, title, at) = row.db()?;
+                candidates.push((format!("inbox:{id}"), at, DueAlert { item_type: "inbox".into(), id, title }));
+            }
+        }
+        let mut alerts = Vec::new();
+        for (key, at, alert) in candidates {
+            let fired: Option<i64> = conn.query_row("SELECT at FROM fired_alerts WHERE id = ?1", params![key], |r| r.get(0)).optional().db()?;
+            if fired == Some(at) {
+                continue;
+            }
+            conn.execute("INSERT OR REPLACE INTO fired_alerts (id, at) VALUES (?1, ?2)", params![key, at]).db()?;
+            if now - at <= STALE_MS {
+                alerts.push(alert);
+            }
+        }
+        Ok(alerts)
     }
 
     // ---------- 文档 ----------
@@ -718,9 +921,35 @@ impl Workspace {
     }
 }
 
+/// 重复待办的下一次日期：从截止日期（没有时从今天）起按规则推进，跳过已经过去的日期。
+pub fn next_occurrence(due: Option<&str>, repeat: &str, today: chrono::NaiveDate) -> Option<chrono::NaiveDate> {
+    use chrono::{Datelike, Duration, Months, Weekday};
+    let step = |d: chrono::NaiveDate| -> Option<chrono::NaiveDate> {
+        match repeat {
+            "daily" => Some(d + Duration::days(1)),
+            "weekdays" => {
+                let mut n = d + Duration::days(1);
+                while matches!(n.weekday(), Weekday::Sat | Weekday::Sun) {
+                    n += Duration::days(1);
+                }
+                Some(n)
+            }
+            "weekly" => Some(d + Duration::days(7)),
+            "monthly" => d.checked_add_months(Months::new(1)),
+            _ => None,
+        }
+    };
+    let start = due.and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).unwrap_or(today);
+    let mut next = step(start)?;
+    while next <= today {
+        next = step(next)?;
+    }
+    Some(next)
+}
+
 /// 给早期版本创建的数据库补上后来新增的列。
 fn migrate(conn: &Connection) -> Result<()> {
-    let added: &[(&str, &str, &str)] = &[("sync_cursors", "generation", "TEXT NOT NULL DEFAULT ''"), ("docs", "base_at", "INTEGER NOT NULL DEFAULT 0"), ("docs", "published_url", "TEXT")];
+    let added: &[(&str, &str, &str)] = &[("sync_cursors", "generation", "TEXT NOT NULL DEFAULT ''"), ("docs", "base_at", "INTEGER NOT NULL DEFAULT 0"), ("docs", "published_url", "TEXT"), ("todos", "remind_at", "INTEGER"), ("todos", "repeat", "TEXT"), ("todos", "checklist", "TEXT NOT NULL DEFAULT '[]'")];
     for (table, column, definition) in added {
         let exists: bool = conn
             .query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), params![column], |r| r.get(0))
@@ -753,7 +982,41 @@ pub(crate) fn todo_from_row(r: &Row) -> rusqlite::Result<Todo> {
         updated_at: r.get(14)?,
         updated_by: r.get(15)?,
         deleted: r.get(16)?,
+        remind_at: r.get(17)?,
+        repeat: r.get(18)?,
+        checklist: serde_json::from_str(&r.get::<_, String>(19)?).unwrap_or_default(),
     })
+}
+
+pub(crate) fn inbox_from_row(r: &Row) -> rusqlite::Result<InboxEntry> {
+    Ok(InboxEntry {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        title: r.get(2)?,
+        body: r.get(3)?,
+        url: r.get(4)?,
+        handled_at: r.get(5)?,
+        snooze_until: r.get(6)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        updated_by: r.get(9)?,
+        deleted: r.get(10)?,
+    })
+}
+
+pub(crate) fn load_inbox(conn: &Connection, id: &str) -> Result<Option<InboxEntry>> {
+    conn.query_row(&format!("SELECT {INBOX_COLUMNS} FROM inbox WHERE id = ?1"), params![id], inbox_from_row)
+        .optional()
+        .db()
+}
+
+pub(crate) fn write_inbox(conn: &Connection, e: &InboxEntry, dirty: bool) -> Result<()> {
+    conn.execute(
+        &format!("INSERT OR REPLACE INTO inbox ({INBOX_COLUMNS}, dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
+        params![e.id, e.kind, e.title, e.body, e.url, e.handled_at, e.snooze_until, e.created_at, e.updated_at, e.updated_by, e.deleted, dirty],
+    )
+    .db()?;
+    Ok(())
 }
 
 pub(crate) fn doc_from_row(r: &Row) -> rusqlite::Result<Doc> {
@@ -796,11 +1059,12 @@ pub(crate) fn load_doc(conn: &Connection, id: &str) -> Result<Option<Doc>> {
 pub(crate) fn write_todo(conn: &Connection, t: &Todo, dirty: bool) -> Result<()> {
     conn.execute(
         &format!(
-            "INSERT OR REPLACE INTO todos ({TODO_COLUMNS}, dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"
+            "INSERT OR REPLACE INTO todos ({TODO_COLUMNS}, dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)"
         ),
         params![
             t.id, t.title, t.notes, t.done, t.completed_at, t.due, t.priority, t.sort, t.ref_system, t.ref_key,
-            t.ref_title, t.source, t.auto_done, t.created_at, t.updated_at, t.updated_by, t.deleted, dirty
+            t.ref_title, t.source, t.auto_done, t.created_at, t.updated_at, t.updated_by, t.deleted, t.remind_at,
+            t.repeat, serde_json::to_string(&t.checklist).unwrap_or_else(|_| "[]".into()), dirty
         ],
     )
     .db()?;
@@ -808,7 +1072,8 @@ pub(crate) fn write_todo(conn: &Connection, t: &Todo, dirty: bool) -> Result<()>
     if let (Some(system), Some(key)) = (&t.ref_system, &t.ref_key) {
         keys.push((system.clone(), key.clone()));
     }
-    index(conn, "todo", &t.id, t.deleted, &t.title, &t.notes, keys)
+    let body = std::iter::once(t.notes.as_str()).chain(t.checklist.iter().map(|c| c.text.as_str())).collect::<Vec<_>>().join("\n");
+    index(conn, "todo", &t.id, t.deleted, &t.title, &body, keys)
 }
 
 pub(crate) fn write_doc(conn: &Connection, d: &Doc, dirty: bool) -> Result<()> {

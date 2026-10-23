@@ -28,7 +28,14 @@ export function TimerWidget() {
     [],
   );
 
-  const finish = (next: TimerTarget | null) => {
+  /** `keep`：记下这段时间（登记到 Jira 或只记在本机），用于工作记录和周报；放弃时不记。 */
+  const finish = (state: TimerState, next: TimerTarget | null, keep: boolean) => {
+    if (keep) {
+      const { target } = state;
+      void api
+        .wsAddTimeEntry({ title: target.issueKey && !target.todoId ? `${target.issueKey} ${target.issueSummary ?? target.title}` : target.title, issueKey: target.issueKey ?? null, todoId: target.todoId ?? null, startedAt: state.firstStartedAt, durationMs: elapsedMs(state) })
+        .catch(() => {});
+    }
     clearTimer();
     setStopping(null);
     if (next) startTimer(next);
@@ -69,14 +76,14 @@ export function TimerWidget() {
             if (stopping.wasRunning) resumeTimer();
             setStopping(null);
           }}
-          onDone={() => finish(stopping.next)}
+          onDone={(keep) => finish(stopping.state, stopping.next, keep)}
         />
       )}
     </>
   );
 }
 
-function LogWorkDialog({ state, next, onContinue, onDone }: { state: TimerState; next: TimerTarget | null; onContinue: () => void; onDone: () => void }) {
+function LogWorkDialog({ state, next, onContinue, onDone }: { state: TimerState; next: TimerTarget | null; onContinue: () => void; onDone: (keep: boolean) => void }) {
   const { isReady } = useSettings();
   const target = state.target;
   const [issue, setIssue] = useState<IssueChoice | null>(target.issueKey ? { key: target.issueKey, summary: target.issueSummary ?? (target.todoId ? "" : target.title) } : null);
@@ -95,7 +102,7 @@ function LogWorkDialog({ state, next, onContinue, onDone }: { state: TimerState;
     try {
       await api.jiraSaveWorklog(issue.key, null, { started: toJiraDateTime(started), timeSpent: timeSpent.trim(), comment: comment.trim() });
       toast(`已在 ${issue.key} 登记 ${timeSpent.trim()}`);
-      onDone();
+      onDone(true);
     } catch (e) {
       setError(errorMessage(e));
       setSaving(false);
@@ -111,7 +118,7 @@ function LogWorkDialog({ state, next, onContinue, onDone }: { state: TimerState;
         <>
           {confirmDiscard ? (
             <span className="inline-confirm">
-              <button className="btn danger small-btn" onClick={onDone}>
+              <button className="btn danger small-btn" onClick={() => onDone(false)}>
                 确认放弃
               </button>
               <button className="btn small-btn" onClick={() => setConfirmDiscard(false)}>
@@ -119,9 +126,14 @@ function LogWorkDialog({ state, next, onContinue, onDone }: { state: TimerState;
               </button>
             </span>
           ) : (
-            <button className="btn subtle" onClick={() => setConfirmDiscard(true)}>
-              不登记
-            </button>
+            <>
+              <button className="btn subtle" title="不记录这段时间" onClick={() => setConfirmDiscard(true)}>
+                放弃
+              </button>
+              <button className="btn" title="不登记到 Jira，只记在本机的工作记录中" onClick={() => onDone(true)}>
+                只记在本机
+              </button>
+            </>
           )}
           <span className="spacer" />
           <button className="btn" onClick={onContinue}>

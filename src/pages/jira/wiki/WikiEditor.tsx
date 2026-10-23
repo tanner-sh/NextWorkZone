@@ -20,20 +20,25 @@ import {
 import { api, errorMessage, type UserRef } from "../../../api";
 import { assetUrl, systemPath } from "../../../lib/asset";
 import { useSettings } from "../../../state/settings";
+import { FILE_DROP_EVENT } from "../../../components/FileDropLayer";
 import { htmlToWiki } from "./htmlToWiki";
 import { markAttachmentImages, unsupportedContent } from "./prepare";
 
-/** 粘贴进编辑器、尚未上传的图片。保存时作为附件上传，wiki 中以 `!文件名!` 引用。 */
+/** 粘贴或拖进编辑器、尚未上传的文件。保存时作为附件上传，wiki 中图片以 `!文件名!`、其他文件以 `[^文件名]` 引用。 */
 export interface PendingImage {
   filename: string;
   path: string;
 }
 
-/** 仍被文本引用的待上传图片（粘贴后又删掉的不再上传）。 */
+/** 仍被文本引用的待上传文件（插入后又删掉的不再上传）。 */
 export function referencedImages(pending: PendingImage[], texts: (string | null | undefined)[]): PendingImage[] {
   const all = texts.filter(Boolean).join("\n");
-  return pending.filter((img) => all.includes(`!${img.filename}`));
+  return pending.filter((img) => all.includes(`!${img.filename}`) || all.includes(`[^${img.filename}]`));
 }
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 type Mode = "visual" | "text";
 const MODE_KEY = "nextworkzone.jira.editorMode";
@@ -89,6 +94,7 @@ export function WikiEditor(props: Props) {
   const previews = useRef(new Map<string, string>());
   const savedRange = useRef<Range | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   /** 正在输入的 @提及：关键词、弹出位置，以及替换范围 */
   const [mention, setMention] = useState<Mention | null>(null);
   const mentionRef = useRef<MentionHandle>(null);
@@ -323,6 +329,58 @@ export function WikiEditor(props: Props) {
     }
   };
 
+  // ---------- 拖入文件 ----------
+
+  /** 拖进编辑器的文件：在光标处（没有光标时在末尾）插入引用，保存时作为附件上传。 */
+  const dropFiles = async (paths: string[]) => {
+    const files = paths.map((path) => ({ path, filename: path.split(/[\\/]/).pop() ?? path }));
+    if (mode === "text") {
+      const area = textRef.current;
+      const refs = files.map((f) => (IMAGE_EXT.test(f.filename) ? `!${f.filename}!` : `[^${f.filename}]`)).join(" ");
+      const at = area && document.activeElement === area ? area.selectionStart : value.length;
+      const before = value.slice(0, at);
+      const text = `${before}${before && !/\s$/.test(before) ? " " : ""}${refs} ${value.slice(at)}`;
+      emitted.current = text;
+      onChange(text);
+    } else {
+      let html = "";
+      for (const f of files) {
+        const preview = IMAGE_EXT.test(f.filename) ? await api.localImagePreview(f.path).catch(() => null) : null;
+        if (preview) {
+          previews.current.set(f.filename, preview);
+          html += `<img src="${preview}" data-filename="${escapeHtml(f.filename)}" alt="">&nbsp;`;
+        } else {
+          html += `<a href="#" data-attachment="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</a>&nbsp;`;
+        }
+      }
+      if (!editorRef.current?.contains(document.activeElement)) {
+        if (savedRange.current) restoreSelection();
+        else {
+          // 没有光标位置时放到末尾
+          const range = document.createRange();
+          range.selectNodeContents(editorRef.current!);
+          range.collapse(false);
+          window.getSelection()?.removeAllRanges();
+          window.getSelection()?.addRange(range);
+        }
+      }
+      editorRef.current?.focus();
+      document.execCommand("insertHTML", false, html);
+      schedule();
+    }
+    files.forEach((f) => props.onImage?.(f));
+  };
+  const dropRef = useRef(dropFiles);
+  dropRef.current = dropFiles;
+  const canDrop = Boolean(props.onImage);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !canDrop) return;
+    const onDrop = (e: Event) => void dropRef.current((e as CustomEvent<string[]>).detail);
+    root.addEventListener(FILE_DROP_EVENT, onDrop);
+    return () => root.removeEventListener(FILE_DROP_EVENT, onDrop);
+  }, [canDrop]);
+
   // ---------- 渲染 ----------
 
   const tools: { icon: ReactNode; title: string; run: () => void }[] = [
@@ -342,7 +400,7 @@ export function WikiEditor(props: Props) {
   ];
 
   return (
-    <div className={`wiki-editor${mode === "text" ? " text-mode" : ""}`}>
+    <div ref={rootRef} className={`wiki-editor${mode === "text" ? " text-mode" : ""}`} data-file-drop={canDrop ? "插入到编辑区，保存时作为附件上传" : undefined}>
       {mode === "visual" && (
         // 点击工具栏时保留编辑区里的选区；下拉框和输入框需要正常获得焦点
         <div className="wiki-toolbar" onMouseDown={(e) => !["INPUT", "SELECT", "OPTION"].includes((e.target as HTMLElement).tagName) && e.preventDefault()}>

@@ -18,10 +18,12 @@ interface Props {
   header?: (doc: Doc) => ReactNode;
   /** 标题栏右侧的额外操作 */
   actions?: (doc: Doc) => ReactNode;
+  /** 正文下方的额外内容（日记的工作记录） */
+  footer?: (doc: Doc) => ReactNode;
 }
 
 /** 文档编辑面板：标题、标签、正文编辑器、反向链接，修改自动保存。 */
-export function DocPane({ docId, onSaved, onDeleted, header, actions }: Props) {
+export function DocPane({ docId, onSaved, onDeleted, header, actions, footer }: Props) {
   const { navigate } = useNav();
   const [doc, setDoc] = useState<Doc | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +186,7 @@ export function DocPane({ docId, onSaved, onDeleted, header, actions }: Props) {
         }}
       />
       {saveError && <ErrorBox message={`保存失败：${saveError}`} />}
+      {footer?.(doc)}
 
       {exists && <Backlinks system="doc" itemKey={doc.id} title="引用了本文的内容" hideEmpty />}
 

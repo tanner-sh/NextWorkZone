@@ -109,6 +109,94 @@ pub fn events_from_issue(issue: &Value, me: &str, since: DateTime<FixedOffset>) 
     events
 }
 
+/// 我在 Jira 上做过的一件事（工作记录用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyAction {
+    pub at: String,
+    /// `create` 创建问题 / `transition` 流转 / `comment` 评论 / `assign` 分配 / `update` 修改字段
+    pub kind: String,
+    pub key: String,
+    pub summary: String,
+    pub detail: String,
+}
+
+/// 时间段 `[from, to)` 内我经手的问题（经办、报告、关注或由我流转），带评论和变更记录。
+pub fn my_actions_jql(from: &str, to: &str) -> String {
+    format!(
+        "updated >= \"{from}\" AND updated < \"{to}\" AND (assignee was currentUser() OR reporter = currentUser() OR watcher = currentUser() \
+         OR status changed by currentUser() DURING (\"{from}\", \"{to}\")) ORDER BY updated DESC"
+    )
+}
+
+/// 从一个问题（带 `comment` 字段和 `changelog`）中找出我在时间段内做的事。
+pub fn my_actions_in_issue(issue: &Value, me: &str, start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> Vec<MyAction> {
+    let key = value_text(&issue["key"]);
+    let fields = &issue["fields"];
+    let summary = value_text(&fields["summary"]);
+    let within = |at: &str| parse_time(at).is_some_and(|t| t >= start && t < end);
+    let by_me = |user: &Value| user["name"].as_str() == Some(me);
+    let action = |at: &str, kind: &str, detail: String| MyAction { at: at.to_string(), kind: kind.into(), key: key.clone(), summary: summary.clone(), detail };
+    let mut actions = Vec::new();
+
+    let created = value_text(&fields["created"]);
+    if within(&created) && by_me(&fields["reporter"]) {
+        actions.push(action(&created, "create", String::new()));
+    }
+    for c in fields["comment"]["comments"].as_array().into_iter().flatten() {
+        let at = value_text(&c["created"]);
+        if within(&at) && by_me(&c["author"]) {
+            actions.push(action(&at, "comment", excerpt(&value_text(&c["body"]))));
+        }
+    }
+    for h in issue["changelog"]["histories"].as_array().into_iter().flatten() {
+        let at = value_text(&h["created"]);
+        if !within(&at) || !by_me(&h["author"]) {
+            continue;
+        }
+        let mut changed: Vec<String> = Vec::new();
+        for it in h["items"].as_array().into_iter().flatten() {
+            let field = value_text(&it["field"]);
+            match field.as_str() {
+                "status" => actions.push(action(&at, "transition", format!("{} → {}", text_or(&it["fromString"], "无"), text_or(&it["toString"], "无")))),
+                "assignee" => actions.push(action(&at, "assign", format!("分配给 {}", text_or(&it["toString"], "未分配")))),
+                // 解决结果随流转一起变化，不单独列出
+                "resolution" | "WorklogId" | "timespent" | "timeestimate" => {}
+                _ => {
+                    let name = system_field_name(&field).map_or(field, str::to_string);
+                    if !changed.contains(&name) {
+                        changed.push(name);
+                    }
+                }
+            }
+        }
+        if !changed.is_empty() {
+            actions.push(action(&at, "update", format!("修改了{}", changed.join("、"))));
+        }
+    }
+    actions
+}
+
+/// 变更记录中系统字段的英文名称对应的中文名（自定义字段已是显示名称）。
+fn system_field_name(field: &str) -> Option<&'static str> {
+    Some(match field {
+        "Attachment" => "附件",
+        "description" => "描述",
+        "summary" => "概要",
+        "priority" => "优先级",
+        "labels" => "标签",
+        "duedate" => "到期日",
+        "Fix Version" => "修复版本",
+        "Version" => "影响版本",
+        "Component" => "模块",
+        "Link" => "链接",
+        "issuetype" => "问题类型",
+        "reporter" => "报告人",
+        "environment" => "环境",
+        _ => return None,
+    })
+}
+
 fn text_or(v: &Value, fallback: &str) -> String {
     let s = value_text(v);
     if s.trim().is_empty() { fallback.to_string() } else { s }
@@ -183,6 +271,45 @@ mod tests {
 
     fn user(name: &str) -> Value {
         json!({ "name": name, "displayName": name.to_uppercase() })
+    }
+
+    #[test]
+    fn finds_my_actions_within_range() {
+        let issue = json!({
+            "key": "ABC-1",
+            "fields": {
+                "summary": "导入失败",
+                "created": "2026-10-22T09:00:00.000+0800",
+                "reporter": user("me"),
+                "comment": { "comments": [
+                    { "id": "1", "author": user("me"), "created": "2026-10-22T11:00:00.000+0800", "body": "已修复，见 [~bob]" },
+                    { "id": "2", "author": user("bob"), "created": "2026-10-22T12:00:00.000+0800", "body": "好" },
+                    { "id": "3", "author": user("me"), "created": "2026-10-23T09:00:00.000+0800", "body": "第二天" }
+                ]}
+            },
+            "changelog": { "histories": [
+                { "id": "10", "author": user("me"), "created": "2026-10-22T14:00:00.000+0800", "items": [
+                    { "field": "status", "fromString": "处理中", "toString": "已解决" },
+                    { "field": "resolution", "fromString": null, "toString": "已修复" },
+                    { "field": "期望完成时间", "fromString": "a", "toString": "b" }
+                ]},
+                { "id": "11", "author": user("bob"), "created": "2026-10-22T15:00:00.000+0800", "items": [
+                    { "field": "assignee", "fromString": "me", "toString": "bob" }
+                ]}
+            ]}
+        });
+        let start = parse_time("2026-10-22T00:00:00.000+0800").unwrap();
+        let end = parse_time("2026-10-23T00:00:00.000+0800").unwrap();
+        let got: Vec<(String, String)> = my_actions_in_issue(&issue, "me", start, end).into_iter().map(|a| (a.kind, a.detail)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("create".to_string(), String::new()),
+                ("comment".to_string(), "已修复，见 @bob".to_string()),
+                ("transition".to_string(), "处理中 → 已解决".to_string()),
+                ("update".to_string(), "修改了期望完成时间".to_string()),
+            ]
+        );
     }
 
     #[test]

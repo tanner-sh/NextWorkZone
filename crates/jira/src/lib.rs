@@ -14,7 +14,7 @@ use reqwest::{Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub use activity::{ActivityEvent, parse_time};
+pub use activity::{ActivityEvent, MyAction, parse_time};
 pub use model::*;
 
 pub struct JiraClient {
@@ -538,6 +538,22 @@ impl JiraClient {
             raw["issues"].as_array().into_iter().flatten().flat_map(|issue| activity::events_from_issue(issue, me, cutoff)).collect();
         events.sort_by(|a, b| b.at.cmp(&a.at));
         Ok(events)
+    }
+
+    /// 时间段 `[from, to)`（`YYYY-MM-DD`，按 Jira 用户时区）内我在 Jira 上做的事，按时间先后排列。
+    pub async fn my_actions(&self, me: &str, from: &str, to: &str, start: chrono::DateTime<chrono::FixedOffset>, end: chrono::DateTime<chrono::FixedOffset>) -> Result<Vec<MyAction>> {
+        let raw = self
+            .get_json(self.get("/rest/api/2/search").query(&[
+                ("jql", activity::my_actions_jql(from, to).as_str()),
+                ("fields", "summary,created,reporter,comment"),
+                ("expand", "changelog"),
+                ("maxResults", "100"),
+            ]))
+            .await?;
+        let mut actions: Vec<MyAction> =
+            raw["issues"].as_array().into_iter().flatten().flat_map(|issue| activity::my_actions_in_issue(issue, me, start, end)).collect();
+        actions.sort_by_key(|a| parse_time(&a.at));
+        Ok(actions)
     }
 
     // ---------- 链接 ----------

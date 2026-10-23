@@ -251,3 +251,101 @@ fn migrates_old_databases() {
     let shared = dir.path().join("sync");
     ws.sync(&shared).unwrap();
 }
+
+#[test]
+fn next_occurrence_skips_past_dates() {
+    let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+    let today = d("2026-10-23"); // 星期五
+    assert_eq!(next_occurrence(Some("2026-10-23"), "daily", today), Some(d("2026-10-24")));
+    assert_eq!(next_occurrence(Some("2026-10-23"), "weekdays", today), Some(d("2026-10-26")));
+    // 逾期很久的跳到今天之后
+    assert_eq!(next_occurrence(Some("2026-10-01"), "weekly", today), Some(d("2026-10-29")));
+    // 提前完成的按截止日期推进
+    assert_eq!(next_occurrence(Some("2026-11-05"), "weekly", today), Some(d("2026-11-12")));
+    assert_eq!(next_occurrence(Some("2026-01-31"), "monthly", d("2026-01-31")), Some(d("2026-02-28")));
+    assert_eq!(next_occurrence(None, "daily", today), Some(d("2026-10-24")));
+    assert_eq!(next_occurrence(Some("2026-10-23"), "yearly", today), None);
+}
+
+#[test]
+fn completing_repeating_todo_creates_next() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = open(dir.path(), "a.db");
+    let due = chrono::Local::now().date_naive();
+    let remind = due.and_hms_opt(9, 30, 0).unwrap().and_local_timezone(chrono::Local).unwrap().timestamp_millis();
+    let t = ws
+        .save_todo(TodoInput {
+            title: "站会".into(),
+            due: Some(due.to_string()),
+            repeat: Some("daily".into()),
+            remind_at: Some(remind),
+            checklist: vec![ChecklistItem { id: "1".into(), text: "同步进度".into(), done: true }],
+            ..Default::default()
+        })
+        .unwrap();
+    let done = ws.set_todo_done(&t.id, true).unwrap();
+    assert!(done.done && done.repeat.is_none());
+    let open_todos: Vec<Todo> = ws.todos().unwrap().into_iter().filter(|t| !t.done).collect();
+    assert_eq!(open_todos.len(), 1);
+    let next = &open_todos[0];
+    assert_eq!(next.title, "站会");
+    assert_eq!(next.due.as_deref(), Some((due + chrono::Duration::days(1)).to_string().as_str()));
+    assert_eq!(next.remind_at, Some(remind + 86_400_000));
+    assert_eq!(next.repeat.as_deref(), Some("daily"));
+    assert!(!next.checklist[0].done);
+    // 取消再勾选已完成的那条不会再生成
+    ws.set_todo_done(&t.id, false).unwrap();
+    ws.set_todo_done(&t.id, true).unwrap();
+    assert_eq!(ws.todos().unwrap().len(), 2);
+}
+
+#[test]
+fn inbox_state_and_sync() {
+    let dir = tempfile::tempdir().unwrap();
+    let shared = dir.path().join("sync");
+    let a = open(dir.path(), "a.db");
+    let b = open(dir.path(), "b.db");
+    let c = a.capture("看一下这个链接", "https://example.com/x", Some("https://example.com/x")).unwrap();
+    a.set_inbox_state("mr:1:2", "评审 !2", Some(100), None).unwrap();
+    a.sync(&shared).unwrap();
+    b.sync(&shared).unwrap();
+    let entries = b.inbox().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|e| e.id == "mr:1:2" && e.kind == "state" && e.handled_at == Some(100)));
+    b.delete_inbox(&c.id).unwrap();
+    b.sync(&shared).unwrap();
+    a.sync(&shared).unwrap();
+    assert_eq!(a.inbox().unwrap().len(), 1);
+}
+
+#[test]
+fn due_alerts_fire_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = open(dir.path(), "a.db");
+    let now = now_ms();
+    let t = ws.save_todo(TodoInput { title: "开会".into(), remind_at: Some(now - 1000), ..Default::default() }).unwrap();
+    ws.save_todo(TodoInput { title: "很久以前".into(), remind_at: Some(now - 48 * 3600 * 1000), ..Default::default() }).unwrap();
+    ws.save_todo(TodoInput { title: "以后".into(), remind_at: Some(now + 3600 * 1000), ..Default::default() }).unwrap();
+    let e = ws.capture("回复邮件", "", None).unwrap();
+    ws.set_inbox_state(&e.id, "", None, Some(now - 10)).unwrap();
+    let alerts = ws.take_due_alerts(now).unwrap();
+    let titles: Vec<&str> = alerts.iter().map(|a| a.title.as_str()).collect();
+    assert_eq!(titles.len(), 2);
+    assert!(titles.contains(&"开会") && titles.contains(&"回复邮件"));
+    assert!(ws.take_due_alerts(now).unwrap().is_empty());
+    // 改了提醒时间会再次提醒
+    ws.save_todo(TodoInput { id: Some(t.id.clone()), title: "开会".into(), remind_at: Some(now - 500), ..Default::default() }).unwrap();
+    assert_eq!(ws.take_due_alerts(now).unwrap().len(), 1);
+}
+
+#[test]
+fn time_entries_by_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = open(dir.path(), "a.db");
+    let entry = |id: &str, start: i64, end: i64| TimeEntry { id: id.into(), title: id.into(), issue_key: None, todo_id: None, started_at: start, ended_at: end, duration_ms: end - start };
+    ws.add_time_entry(&entry("a", 100, 200)).unwrap();
+    ws.add_time_entry(&entry("b", 300, 400)).unwrap();
+    let got: Vec<String> = ws.time_entries(150, 350).unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(got, ["a", "b"]);
+    assert!(ws.time_entries(200, 300).unwrap().is_empty());
+}

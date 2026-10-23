@@ -146,6 +146,36 @@ pub struct PageChange {
     pub message: String,
 }
 
+/// 自己在 Wiki 上的一次操作（工作记录用）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WikiWork {
+    pub at: String,
+    /// `create` 创建页面 / `edit` 修改页面 / `comment` 评论
+    pub kind: String,
+    pub page_id: String,
+    pub title: String,
+    pub detail: String,
+}
+
+/// 把搜索结果中的页面转换为工作记录：页面由我创建且只有一个版本时算“创建”，否则算“修改”。
+/// 最后一版不是我改的（之后别人又改过）时，时间取最后一版的时间。
+pub fn wiki_work_from_page(r: &Value, me_key: &str) -> WikiWork {
+    let created_by_me = text(&r["history"]["createdBy"]["userKey"]) == me_key;
+    let version = r["version"]["number"].as_u64().unwrap_or(0);
+    let mine = text(&r["version"]["by"]["userKey"]) == me_key;
+    let kind = if created_by_me && version <= 1 { "create" } else { "edit" };
+    let detail = match (kind, mine) {
+        ("create", _) => String::new(),
+        (_, true) => {
+            let message = text(&r["version"]["message"]);
+            if message.is_empty() { format!("第 {version} 版") } else { format!("第 {version} 版：{message}") }
+        }
+        _ => "参与编辑".into(),
+    };
+    WikiWork { at: text(&r["version"]["when"]), kind: kind.into(), page_id: text(&r["id"]), title: text(&r["title"]), detail }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CqlQuery {
@@ -682,6 +712,29 @@ impl ConfluenceClient {
         Ok(out)
     }
 
+    /// 日期 `[from, to)`（`YYYY-MM-DD`）内我创建、修改过的页面和发表的评论，按时间先后排列。
+    pub async fn my_work(&self, from: &str, to: &str) -> Result<Vec<WikiWork>> {
+        let (me_key, _) = self.me().await?;
+        let pages_cql = format!("type in (page, blogpost) AND contributor = currentUser() AND lastmodified >= \"{from}\" AND lastmodified < \"{to}\" ORDER BY lastmodified");
+        let comments_cql = format!("type = comment AND creator = currentUser() AND created >= \"{from}\" AND created < \"{to}\" ORDER BY created");
+        let search = |cql: String, expand: &'static str| async move {
+            self.get_json(self.get("/rest/api/content/search").query(&[("cql", cql.as_str()), ("limit", "100"), ("expand", expand)])).await
+        };
+        let (pages, comments) = tokio::join!(search(pages_cql, "version,history"), search(comments_cql, "container,history,body.view"));
+        let mut out: Vec<WikiWork> = pages?["results"].as_array().into_iter().flatten().map(|r| wiki_work_from_page(r, &me_key)).collect();
+        for c in comments?["results"].as_array().into_iter().flatten() {
+            out.push(WikiWork {
+                at: text(&c["history"]["createdDate"]),
+                kind: "comment".into(),
+                page_id: text(&c["container"]["id"]),
+                title: text(&c["container"]["title"]),
+                detail: strip_html(&text(&c["body"]["view"]["value"])).chars().take(120).collect(),
+            });
+        }
+        out.sort_by(|a, b| a.at.cmp(&b.at));
+        Ok(out)
+    }
+
     /// `since` 之后修改过的、我关注或创建的页面。
     pub async fn watched_changes(&self, minutes: i64) -> Result<Vec<PageChange>> {
         let cql = format!(
@@ -810,6 +863,20 @@ fn normalize_action(action: &str, title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wiki_work_kinds() {
+        let page = |created_by: &str, version: u64, by: &str, message: &str| {
+            serde_json::json!({ "id": "9", "title": "设计", "history": { "createdBy": { "userKey": created_by } },
+                "version": { "number": version, "by": { "userKey": by }, "when": "2026-10-22T10:00:00.000+08:00", "message": message } })
+        };
+        let w = wiki_work_from_page(&page("me", 1, "me", ""), "me");
+        assert_eq!((w.kind.as_str(), w.detail.as_str()), ("create", ""));
+        let w = wiki_work_from_page(&page("bob", 5, "me", "补充接口"), "me");
+        assert_eq!((w.kind.as_str(), w.detail.as_str()), ("edit", "第 5 版：补充接口"));
+        let w = wiki_work_from_page(&page("me", 3, "bob", ""), "me");
+        assert_eq!((w.kind.as_str(), w.detail.as_str()), ("edit", "参与编辑"));
+    }
 
     #[test]
     fn tiny_links() {

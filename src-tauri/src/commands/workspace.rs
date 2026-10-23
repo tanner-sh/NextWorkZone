@@ -277,6 +277,9 @@ pub struct WorkspaceSettings {
     device_id: String,
     last_sync: Option<SyncReport>,
     last_error: Option<String>,
+    capture_shortcut: String,
+    /// 快捷键注册失败的原因。
+    capture_error: Option<String>,
 }
 
 fn settings(state: &AppState) -> WorkspaceSettings {
@@ -292,7 +295,24 @@ fn settings(state: &AppState) -> WorkspaceSettings {
         device_id: state.workspace.device_id().to_string(),
         last_sync,
         last_error,
+        capture_shortcut: config.capture_shortcut,
+        capture_error: crate::capture::register_error(),
     }
+}
+
+/// 修改快速记录的快捷键：先注册新的，失败时恢复原来的并返回错误。
+#[tauri::command]
+pub fn ws_save_capture_shortcut(app: AppHandle, state: State<'_, AppState>, shortcut: String) -> Result<WorkspaceSettings> {
+    let shortcut = shortcut.trim().to_string();
+    let mut config = state.config();
+    if let Err(e) = crate::capture::register(&app, &shortcut) {
+        let _ = crate::capture::register(&app, &config.workspace.capture_shortcut);
+        return Err(e);
+    }
+    crate::capture::set_register_error(None);
+    config.workspace.capture_shortcut = shortcut;
+    state.update_config(config)?;
+    Ok(settings(&state))
 }
 
 #[tauri::command]

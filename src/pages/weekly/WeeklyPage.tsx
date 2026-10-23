@@ -313,7 +313,7 @@ function DiffBlock({ title, before, after }: { title: string; before: OutlineIte
   );
 }
 
-const SOURCE_LABELS: Record<string, string> = { jira: "Jira", worklog: "工作日志", gitlab: "GitLab", todo: "待办", daily: "日记" };
+const SOURCE_LABELS: Record<string, string> = { jira: "Jira", worklog: "工作日志", gitlab: "GitLab", wiki: "Wiki", todo: "待办", daily: "日记", timer: "计时" };
 
 function DraftPanel({ section, onInsert }: { section: string; onInsert: (items: OutlineItem[]) => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);

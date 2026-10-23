@@ -94,11 +94,93 @@ export function WorkspaceSettingsCard() {
           </div>
         </div>
       )}
+      <div className="field">
+        <span>快速记录快捷键</span>
+        <div className="grow">
+          <ShortcutField
+            value={settings.captureShortcut}
+            disabled={busy}
+            onChange={async (shortcut) => {
+              setError(null);
+              try {
+                setSettings(await api.wsSaveCaptureShortcut(shortcut));
+              } catch (e) {
+                setError(errorMessage(e));
+              }
+            }}
+          />
+          <p className="muted small">在任何应用中按下即可弹出快速记录，记一条待办、写一笔日记或存入收件箱。</p>
+          {settings.captureError && <p className="notice error small">{settings.captureError}</p>}
+        </div>
+      </div>
       <label className="checkbox">
         <input type="checkbox" checked={settings.jiraTodos} disabled={busy} onChange={(e) => update(settings.syncDir, e.target.checked)} />
         自动把分配给我的未解决 Jira 问题加入待办（问题解决后自动完成）
       </label>
       {error && <p className="notice error">{error}</p>}
+    </div>
+  );
+}
+
+const DEFAULT_SHORTCUT = "Alt+Space";
+const isMac = navigator.userAgent.includes("Mac");
+
+/** 快捷键的显示：macOS 上用 ⌘⌥⇧⌃ 符号。 */
+function displayShortcut(shortcut: string): string {
+  if (!shortcut) return "未使用";
+  const names: Record<string, string> = isMac
+    ? { CommandOrControl: "⌘", Command: "⌘", Alt: "⌥", Shift: "⇧", Control: "⌃", Space: "Space" }
+    : { CommandOrControl: "Ctrl", Control: "Ctrl", Alt: "Alt", Shift: "Shift", Space: "Space" };
+  return shortcut
+    .split("+")
+    .map((part) => names[part] ?? part)
+    .join(isMac ? "" : "+");
+}
+
+/** 由按键事件得到快捷键（至少一个修饰键加一个普通键），例如 `Alt+Space`；只按了修饰键时返回 null。 */
+function shortcutOf(e: React.KeyboardEvent): string | null {
+  const key = e.code.startsWith("Key") ? e.code.slice(3) : e.code.startsWith("Digit") ? e.code.slice(5) : /^F\d+$/.test(e.code) || e.code === "Space" ? e.code : null;
+  if (!key) return null;
+  const mods = [e.metaKey && (isMac ? "Command" : "Super"), e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean) as string[];
+  if (mods.length === 0 && !key.startsWith("F")) return null;
+  return [...mods, key].join("+");
+}
+
+/** 点击后按下新的组合键来设置快捷键。 */
+function ShortcutField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (shortcut: string) => void }) {
+  const [recording, setRecording] = useState(false);
+  return (
+    <div className="row-actions">
+      <input
+        readOnly
+        className="shortcut-input"
+        value={recording ? "按下新的快捷键…（Esc 取消）" : displayShortcut(value)}
+        disabled={disabled}
+        onFocus={() => setRecording(true)}
+        onBlur={() => setRecording(false)}
+        onKeyDown={(e) => {
+          e.preventDefault();
+          if (e.key === "Escape") {
+            (e.target as HTMLInputElement).blur();
+            return;
+          }
+          const shortcut = shortcutOf(e);
+          if (shortcut) {
+            (e.target as HTMLInputElement).blur();
+            onChange(shortcut);
+          }
+        }}
+      />
+      {value !== DEFAULT_SHORTCUT && (
+        <button className="btn subtle" disabled={disabled} onClick={() => onChange(DEFAULT_SHORTCUT)}>
+          恢复默认
+        </button>
+      )}
+      {value && (
+        <button className="btn subtle" disabled={disabled} onClick={() => onChange("")}>
+          不使用
+        </button>
+      )}
     </div>
   );
 }

@@ -434,6 +434,27 @@ pub async fn jira_render_wiki(
 
 /// 保存编辑器中粘贴的图片（`data` 为 base64 编码的图片），返回本地路径。
 /// 图片在保存问题、发送评论时才作为附件上传，取消编辑不会在 Jira 留下多余附件。
+/// 拖进编辑器的本地图片的预览（data URL）；不是图片或文件太大时返回 `None`，编辑器中只显示文件名。
+#[tauri::command]
+pub fn local_image_preview(path: String) -> Option<String> {
+    use base64::Engine;
+    const MAX: u64 = 10 * 1024 * 1024;
+    let ext = Path::new(&path).extension()?.to_str()?.to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        _ => return None,
+    };
+    if std::fs::metadata(&path).ok()?.len() > MAX {
+        return None;
+    }
+    let bytes = std::fs::read(&path).ok()?;
+    Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 #[tauri::command]
 pub fn jira_save_pasted_image(app: AppHandle, data: String, filename: String) -> Result<String> {
     use base64::Engine;

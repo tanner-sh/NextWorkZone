@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errorMessage, type Attachment, type HistoryEntry, type IssueDetail, type IssueHit, type IssueSummary, type SimilarIssues, type TimeTracking, type Transition, type Watchers, type WikiPageHit } from "../../api";
 import { RichHtml } from "../../components/RichHtml";
+import { useDropTarget } from "../../components/FileDropLayer";
 import { BookOpen, BookText, CheckSquare, ChevronDown, ChevronRight, Eye, EyeOff, ExternalLink, FileText, History, NotepadText, Paperclip, Pencil, Sparkles, Upload, X, Zap } from "lucide-react";
 import { useContextMenu } from "../../components/ContextMenu";
 import { guarded, toast } from "../../components/Toast";
@@ -625,22 +625,28 @@ function TimeTrackingRow({ tt }: { tt: TimeTracking }) {
 function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; attachments: Attachment[]; onUploaded: (added: Attachment[]) => void }) {
   const { sessionVersion } = useSettings();
   const [failedThumbs, setFailedThumbs] = useState<string[]>([]);
-  const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 网页登录后重新尝试加载缩略图
   useEffect(() => setFailedThumbs([]), [sessionVersion]);
 
+  const block = useRef<HTMLElement>(null);
   const upload = useCallback(
     async (paths: string[]) => {
       if (paths.length === 0) return;
       setError(null);
       setBusy(`正在上传 ${paths.length} 个文件…`);
+      // 拖放时附件区可能不在视野内，滚动过去并用浮动提示告知进度
+      block.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      toast(`正在上传 ${paths.length} 个文件到 ${issueKey}…`);
       try {
-        onUploaded(await api.jiraUploadAttachments(issueKey, paths));
+        const added = await api.jiraUploadAttachments(issueKey, paths);
+        onUploaded(added);
+        toast(`已上传 ${added.length} 个附件到 ${issueKey}`);
       } catch (e) {
         setError(errorMessage(e));
+        toast(`上传失败：${errorMessage(e)}`, true);
       } finally {
         setBusy(null);
       }
@@ -648,21 +654,8 @@ function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; 
     [issueKey, onUploaded],
   );
 
-  // 把文件拖进窗口即可上传到当前问题
-  useEffect(() => {
-    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
-      const { type } = event.payload;
-      if (type === "enter" || type === "over") setDragging(true);
-      else if (type === "leave") setDragging(false);
-      else if (type === "drop") {
-        setDragging(false);
-        void upload(event.payload.paths);
-      }
-    });
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [upload]);
+  // 把文件拖进窗口（不是拖到评论等编辑区）即可上传到当前问题
+  useDropTarget(`上传到 ${issueKey} 的附件`, upload);
 
   const pick = async () => {
     const selected = await openDialog({ multiple: true, directory: false });
@@ -689,7 +682,7 @@ function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; 
   };
 
   return (
-    <section className="block">
+    <section className="block" ref={block}>
       <div className="block-title">
         <h2>
           <Paperclip size={16} className="muted" />
@@ -702,7 +695,7 @@ function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; 
       </div>
       {busy && <p className="muted small">{busy}</p>}
       {error && <ErrorBox message={error} />}
-      <div className={`attachments${dragging ? " dragging" : ""}`}>
+      <div className="attachments">
         {attachments.map((a) => (
           <button
             key={a.id}
@@ -734,7 +727,7 @@ function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; 
         ))}
         <div className="drop-hint muted small">
           <Upload size={13} />
-          {dragging ? "松开即可上传到 " + issueKey : "可将文件拖入窗口上传"}
+          把文件拖进窗口即可上传；拖到评论框会插入到评论中
         </div>
       </div>
       {attachmentMenu.menu}

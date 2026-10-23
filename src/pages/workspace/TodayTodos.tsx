@@ -45,7 +45,7 @@ export function TodayTodos() {
         <span className="row-actions">
           <button className="btn subtle" onClick={() => navigate({ page: "notes", docId: `daily-${day}` })}>
             <CalendarDays size={14} />
-            写日记
+            日记 · 日报
           </button>
           <button className="btn subtle" onClick={() => navigate({ page: "todos" })}>
             全部 <ArrowRight size={14} />

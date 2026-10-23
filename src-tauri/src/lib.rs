@@ -1,10 +1,11 @@
 mod asset;
+mod capture;
 mod commands;
 mod devbridge;
 mod state;
 mod tray;
 
-use commands::{activity, gitlab, jira, jira_index, jira_tools, search, session, settings, weekly, wiki, workspace};
+use commands::{activity, gitlab, inbox, jira, jira_index, jira_tools, search, session, settings, weekly, wiki, worklog, workspace};
 use nextworkzone_core::secrets::Store;
 use tauri::Manager;
 
@@ -13,6 +14,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol("nextworkzone", asset::handle)
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
@@ -29,7 +32,9 @@ pub fn run() {
             tauri::async_runtime::spawn(workspace::sync_loop(app.handle().clone()));
             tauri::async_runtime::spawn(jira_index::sync_loop(app.handle().clone()));
             tauri::async_runtime::spawn(wiki::sync_loop(app.handle().clone()));
+            tauri::async_runtime::spawn(inbox::alert_loop(app.handle().clone()));
             tray::setup(app.handle())?;
+            capture::setup(app.handle())?;
             // 本机测试通道只在开发构建中启动
             if cfg!(debug_assertions) {
                 devbridge::start(app.handle());
@@ -74,6 +79,7 @@ pub fn run() {
             activity::jira_activity_poll,
             activity::jira_activity_read,
             jira::jira_upload_attachments,
+            jira::local_image_preview,
             jira::jira_open_attachment,
             jira::jira_preview_attachment,
             jira::jira_edit_fields,
@@ -183,15 +189,31 @@ pub fn run() {
             workspace::ws_wiki_page,
             workspace::ws_publish_to_wiki,
             devbridge::dev_eval_result,
+            workspace::ws_save_capture_shortcut,
+            inbox::ws_inbox,
+            inbox::ws_capture,
+            inbox::ws_inbox_handle,
+            inbox::ws_inbox_snooze,
+            worklog::ws_worklog,
+            worklog::ws_add_time_entry,
+            capture::capture_hide,
+            capture::capture_clipboard,
         ])
         // 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从托盘或程序坞图标重新打开，⌘Q 或托盘菜单“退出”才退出
-        .on_window_event(|window, event| {
-            if window.label() == "main"
-                && let tauri::WindowEvent::CloseRequested { api, .. } = event
-            {
+        .on_window_event(|window, event| match (window.label(), event) {
+            ("main", tauri::WindowEvent::CloseRequested { api, .. }) => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // 快速记录窗口：关闭只是隐藏；切到别的应用时自动收起
+            (capture::CAPTURE_LABEL, tauri::WindowEvent::CloseRequested { api, .. }) => {
+                api.prevent_close();
+                capture::hide(window.app_handle());
+            }
+            (capture::CAPTURE_LABEL, tauri::WindowEvent::Focused(false)) => {
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("启动 NextWorkZone 失败")

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookText, Check, CircleDot, Flag, Plus, Trash2, X } from "lucide-react";
-import { api, errorMessage, type IssueChoice, type Todo } from "../../api";
+import { Bell, BookText, Check, CircleDot, Flag, ListChecks, Plus, Repeat as RepeatIcon, Trash2, X } from "lucide-react";
+import { api, errorMessage, type ChecklistItem, type IssueChoice, type Repeat, type Todo } from "../../api";
 import { ErrorBox, Skeleton } from "../../components/common";
 import { useContextMenu } from "../../components/ContextMenu";
-import { addDays, formatDay, nextMonday, today, useWorkspaceRefresh, workspaceChanged } from "../../lib/workspace";
+import { addDays, formatDay, formatMoment, fromLocalInput, momentPresets, nextMonday, REPEAT_LABELS, toLocalInput, today, useWorkspaceRefresh, workspaceChanged } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { CreateIssueDialog } from "../jira/CreateIssueDialog";
@@ -11,11 +11,11 @@ import { Picker } from "../jira/fieldForm";
 import { fromJiraSync, PRIORITIES, todoInput, todoMenu, todoTimerTarget } from "./todoMenu";
 import { TimerButton } from "../../components/TimerButton";
 
-type View = "today" | "inbox" | "upcoming" | "all" | "done";
+type View = "today" | "unscheduled" | "upcoming" | "all" | "done";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "today", label: "今天" },
-  { id: "inbox", label: "收件箱" },
+  { id: "unscheduled", label: "未安排" },
   { id: "upcoming", label: "计划" },
   { id: "all", label: "全部" },
   { id: "done", label: "已完成" },
@@ -27,7 +27,7 @@ function inView(todo: Todo, view: View, day: string): boolean {
   switch (view) {
     case "today":
       return todo.due !== null && todo.due <= day;
-    case "inbox":
+    case "unscheduled":
       return todo.due === null;
     case "upcoming":
       return todo.due !== null && todo.due > day;
@@ -216,7 +216,7 @@ export function TodoPage() {
 
 const EMPTY: Record<View, string> = {
   today: "今天没有到期的待办",
-  inbox: "收件箱是空的",
+  unscheduled: "没有未安排日期的待办",
   upcoming: "没有计划中的待办",
   all: "没有未完成的待办",
   done: "还没有完成的待办",
@@ -276,9 +276,27 @@ function TodoRow(props: { todo: Todo; day: string; selected: boolean; menuOpen: 
       </button>
       <div className="todo-main">
         <div className="todo-title">{todo.title || <span className="muted">无标题</span>}</div>
-        {(todo.due || todo.refKey || todo.notes || todo.priority > 0) && (
+        {(todo.due || todo.refKey || todo.notes || todo.priority > 0 || todo.remindAt || todo.repeat || todo.checklist.length > 0) && (
           <div className="todo-meta">
             {todo.due && <span className={`due-chip${overdue ? " overdue" : todo.due === day ? " today" : ""}`}>{formatDay(todo.due)}</span>}
+            {todo.remindAt && !todo.done && (
+              <span className={`meta-chip${todo.remindAt < Date.now() ? " overdue" : ""}`} title="提醒时间">
+                <Bell size={11} />
+                {formatMoment(todo.remindAt)}
+              </span>
+            )}
+            {todo.repeat && (
+              <span className="meta-chip" title="重复">
+                <RepeatIcon size={11} />
+                {REPEAT_LABELS[todo.repeat]}
+              </span>
+            )}
+            {todo.checklist.length > 0 && (
+              <span className="meta-chip" title="检查项">
+                <ListChecks size={11} />
+                {todo.checklist.filter((c) => c.done).length}/{todo.checklist.length}
+              </span>
+            )}
             {todo.priority > 0 && (
               <span className={`prio-flag prio-${todo.priority}`}>
                 <Flag size={11} />
@@ -414,6 +432,38 @@ function TodoDetail({ todo, onSaved, onDeleted }: { todo: Todo; onSaved: (todo: 
             ))}
           </div>
         </div>
+        <div className="prop-row">
+          <span className="field-name">提醒</span>
+          <div className="prop-value">
+            <input type="datetime-local" value={draft.remindAt ? toLocalInput(draft.remindAt) : ""} onChange={(e) => update({ remindAt: fromLocalInput(e.target.value) })} />
+            {momentPresets().map((p) => (
+              <button key={p.label} className="btn small-btn" onClick={() => update({ remindAt: p.at })}>
+                {p.label}
+              </button>
+            ))}
+            {draft.remindAt && (
+              <button className="btn subtle small-btn" onClick={() => update({ remindAt: null })}>
+                清除
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="prop-row">
+          <span className="field-name">重复</span>
+          <div className="segmented">
+            {([null, "daily", "weekdays", "weekly", "monthly"] as (Repeat | null)[]).map((r) => (
+              <button
+                key={r ?? "none"}
+                className={draft.repeat === r ? "active" : ""}
+                // 重复的待办需要一个起始日期，没有截止日期时从今天开始
+                onClick={() => update({ repeat: r, due: r && !draft.due ? today() : draft.due })}
+              >
+                {r ? REPEAT_LABELS[r] : "不重复"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {draft.repeat && <p className="muted small">完成后自动生成下一次{draft.remindAt ? "，提醒时间随之顺延" : ""}。</p>}
         {draft.refSystem === "wiki" && draft.refKey && (
           <div className="prop-row">
             <span className="field-name">Wiki 页面</span>
@@ -460,6 +510,8 @@ function TodoDetail({ todo, onSaved, onDeleted }: { todo: Todo; onSaved: (todo: 
         </div>
       </div>
 
+      <Checklist items={draft.checklist} onChange={(checklist, debounce) => update({ checklist }, debounce)} />
+
       <div className="form-field">
         <span>备注</span>
         <textarea className="todo-notes" rows={8} value={draft.notes} placeholder="补充说明、链接、检查项…" onChange={(e) => update({ notes: e.target.value }, true)} />
@@ -505,6 +557,58 @@ function TodoDetail({ todo, onSaved, onDeleted }: { todo: Todo; onSaved: (todo: 
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** 检查项（子任务）：勾选、改文字、删除，底部输入框回车添加。 */
+function Checklist({ items, onChange }: { items: ChecklistItem[]; onChange: (items: ChecklistItem[], debounce?: boolean) => void }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onChange([...items, { id: crypto.randomUUID(), text, done: false }]);
+    setDraft("");
+  };
+  const done = items.filter((i) => i.done).length;
+  return (
+    <div className="form-field checklist">
+      <span>
+        检查项{items.length > 0 && <span className="muted small"> {done}/{items.length}</span>}
+      </span>
+      {items.length > 0 && (
+        <ul>
+          {items.map((item) => (
+            <li key={item.id} className={item.done ? "done" : ""}>
+              <button
+                className={`check small${item.done ? " checked" : ""}`}
+                onClick={() => onChange(items.map((i) => (i.id === item.id ? { ...i, done: !i.done } : i)))}
+                aria-label={item.done ? "标记为未完成" : "标记为完成"}
+              >
+                {item.done && <Check size={10} strokeWidth={3} />}
+              </button>
+              <input value={item.text} onChange={(e) => onChange(items.map((i) => (i.id === item.id ? { ...i, text: e.target.value } : i)), true)} />
+              <button className="btn subtle icon" title="删除" onClick={() => onChange(items.filter((i) => i.id !== item.id))}>
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="input-icon quick-add">
+        <Plus size={14} />
+        <input
+          value={draft}
+          placeholder="添加检查项，回车保存"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+      </div>
     </div>
   );
 }

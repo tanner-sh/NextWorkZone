@@ -16,7 +16,7 @@ use nextworkzone_core::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::{AssetMeta, Db, Doc, SyncReport, Todo, Workspace, load_doc, load_todo, new_id, now_ms, write_doc, write_todo};
+use crate::{AssetMeta, Db, Doc, InboxEntry, SyncReport, Todo, Workspace, load_doc, load_inbox, load_todo, new_id, now_ms, write_doc, write_inbox, write_todo};
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "row", rename_all = "camelCase")]
@@ -26,6 +26,7 @@ enum Record {
     Todo(Todo),
     Doc(Doc),
     Asset(AssetMeta),
+    Inbox(InboxEntry),
 }
 
 impl Workspace {
@@ -65,6 +66,10 @@ fn export(conn: &Connection, file: &Path, assets_dir: &Path) -> Result<usize> {
         let mut stmt = conn.prepare(&format!("SELECT {} FROM docs WHERE dirty = 1", crate::DOC_COLUMNS)).db()?;
         stmt.query_map([], crate::doc_from_row).db()?.collect::<rusqlite::Result<_>>().db()?
     };
+    let inbox: Vec<InboxEntry> = {
+        let mut stmt = conn.prepare(&format!("SELECT {} FROM inbox WHERE dirty = 1", crate::INBOX_COLUMNS)).db()?;
+        stmt.query_map([], crate::inbox_from_row).db()?.collect::<rusqlite::Result<_>>().db()?
+    };
     let assets: Vec<(AssetMeta, Vec<u8>)> = {
         let mut stmt = conn.prepare("SELECT id, mime, created_at, data FROM assets WHERE dirty = 1 AND data IS NOT NULL").db()?;
         stmt.query_map([], |r| Ok((AssetMeta { id: r.get(0)?, mime: r.get(1)?, created_at: r.get(2)? }, r.get(3)?)))
@@ -72,7 +77,7 @@ fn export(conn: &Connection, file: &Path, assets_dir: &Path) -> Result<usize> {
             .collect::<rusqlite::Result<_>>()
             .db()?
     };
-    if todos.is_empty() && docs.is_empty() && assets.is_empty() {
+    if todos.is_empty() && docs.is_empty() && inbox.is_empty() && assets.is_empty() {
         return Ok(0);
     }
     // 图片先落盘，其他设备读到记录时内容已经在了
@@ -87,7 +92,8 @@ fn export(conn: &Connection, file: &Path, assets_dir: &Path) -> Result<usize> {
     let mut text = String::new();
     let records = assets.iter().map(|(m, _)| Record::Asset(m.clone()))
         .chain(todos.iter().cloned().map(Record::Todo))
-        .chain(docs.iter().cloned().map(Record::Doc));
+        .chain(docs.iter().cloned().map(Record::Doc))
+        .chain(inbox.iter().cloned().map(Record::Inbox));
     for record in records {
         text.push_str(&serde_json::to_string(&record)?);
         text.push('\n');
@@ -105,10 +111,13 @@ fn export(conn: &Connection, file: &Path, assets_dir: &Path) -> Result<usize> {
     for d in &docs {
         conn.execute("UPDATE docs SET dirty = 0 WHERE id = ?1 AND updated_at = ?2", params![d.id, d.updated_at]).db()?;
     }
+    for e in &inbox {
+        conn.execute("UPDATE inbox SET dirty = 0 WHERE id = ?1 AND updated_at = ?2", params![e.id, e.updated_at]).db()?;
+    }
     for (meta, _) in &assets {
         conn.execute("UPDATE assets SET dirty = 0 WHERE id = ?1", params![meta.id]).db()?;
     }
-    Ok(todos.len() + docs.len() + assets.len())
+    Ok(todos.len() + docs.len() + inbox.len() + assets.len())
 }
 
 /// 本设备日志超过该大小时整理（每次同步追加的是整行，文档反复修改会让日志不断变长）。
@@ -139,6 +148,13 @@ fn compact(conn: &Connection, file: &Path) -> Result<()> {
         let mut stmt = conn.prepare(&format!("SELECT {} FROM docs WHERE updated_by = ?1", crate::DOC_COLUMNS)).db()?;
         for doc in stmt.query_map(params![me], crate::doc_from_row).db()? {
             text.push_str(&serde_json::to_string(&Record::Doc(doc.db()?))?);
+            text.push('\n');
+        }
+    }
+    {
+        let mut stmt = conn.prepare(&format!("SELECT {} FROM inbox WHERE updated_by = ?1", crate::INBOX_COLUMNS)).db()?;
+        for entry in stmt.query_map(params![me], crate::inbox_from_row).db()? {
+            text.push_str(&serde_json::to_string(&Record::Inbox(entry.db()?))?);
             text.push('\n');
         }
     }
@@ -219,6 +235,13 @@ fn import(conn: &Connection, device: &str, file: &Path, assets_dir: &Path, me: &
                 }
                 write_doc(&tx, &incoming, false)?;
                 imported += 1;
+            }
+            Record::Inbox(incoming) => {
+                let local = load_inbox(&tx, &incoming.id)?;
+                if local.as_ref().is_none_or(|l| newer(incoming.updated_at, &incoming.updated_by, l.updated_at, &l.updated_by)) {
+                    write_inbox(&tx, &incoming, false)?;
+                    imported += 1;
+                }
             }
             Record::Asset(meta) => {
                 let data = fs::read(assets_dir.join(&meta.id)).ok();

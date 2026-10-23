@@ -19,6 +19,7 @@ interface Item {
 
 const PAGES: { page: PageId; label: string; keywords: string }[] = [
   { page: "home", label: "今天", keywords: "home 首页 今天 概览 jt" },
+  { page: "inbox", label: "收件箱", keywords: "inbox 收件箱 待处理 计划 sjx" },
   { page: "todos", label: "待办", keywords: "todo 待办 任务 db" },
   { page: "notes", label: "笔记", keywords: "notes 笔记 日记 bj rj" },
   { page: "kb", label: "知识库", keywords: "kb wiki 知识库 文档 zsk" },

@@ -75,3 +75,43 @@ export function weekdayOf(day: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return `星期${WEEKDAYS[new Date(y, m - 1, d).getDay()]}`;
 }
+
+// ---------- 提醒时间 ----------
+
+/** 毫秒时间戳 → `<input type="datetime-local">` 的值。 */
+export function toLocalInput(ms: number): string {
+  const d = new Date(ms);
+  return `${dayString(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** `<input type="datetime-local">` 的值 → 毫秒时间戳；无效时为 null。 */
+export function fromLocalInput(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** 某天某个钟点的时间戳。 */
+export function at(day: string, hour: number, minute = 0): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d, hour, minute).getTime();
+}
+
+/** 提醒时间的显示，例如“今天 18:00”“明天 09:00”“10月25日 09:00”。 */
+export function formatMoment(ms: number): string {
+  const d = new Date(ms);
+  return `${formatDay(dayString(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 常用的提醒、稍后提醒时间：1 小时后、今天傍晚（已过时不提供）、明天上午、下周一上午。 */
+export function momentPresets(): { label: string; at: number }[] {
+  const now = Date.now();
+  const t = today();
+  const list = [{ label: "1 小时后", at: now + 3600_000 }];
+  if (at(t, 18) - now > 3600_000) list.push({ label: "今天 18:00", at: at(t, 18) });
+  list.push({ label: "明天 09:00", at: at(addDays(t, 1), 9) });
+  list.push({ label: "下周一 09:00", at: at(nextMonday(), 9) });
+  return list;
+}
+
+export const REPEAT_LABELS: Record<string, string> = { daily: "每天", weekdays: "工作日", weekly: "每周", monthly: "每月" };

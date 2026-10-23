@@ -651,6 +651,18 @@ export interface Todo {
   autoDone: boolean;
   createdAt: number;
   updatedAt: number;
+  /** 提醒时间（毫秒） */
+  remindAt: number | null;
+  repeat: Repeat | null;
+  checklist: ChecklistItem[];
+}
+
+export type Repeat = "daily" | "weekdays" | "weekly" | "monthly";
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
 }
 
 export interface TodoInput {
@@ -663,6 +675,50 @@ export interface TodoInput {
   refSystem?: string | null;
   refKey?: string | null;
   refTitle?: string | null;
+  remindAt?: number | null;
+  repeat?: Repeat | null;
+  checklist?: ChecklistItem[];
+}
+
+/** 收件箱中的一条：记下的内容，或从各系统汇总的需要处理的事。 */
+export interface InboxItem {
+  id: string;
+  source: "capture" | "activity" | "due" | "mr";
+  title: string;
+  detail: string;
+  at: number;
+  system: "jira" | "wiki" | "gitlab" | null;
+  key: string | null;
+  url: string | null;
+  mr: { projectId: number; iid: number; reference: string } | null;
+  events: ActivityEvent[];
+  dueKind: "overdue" | "today" | null;
+  dueDays: number | null;
+  snoozeUntil: number | null;
+}
+
+export interface InboxView {
+  items: InboxItem[];
+  snoozed: InboxItem[];
+  notes: string[];
+}
+
+/** 工作记录中的一件事。 */
+export interface WorkEvent {
+  at: number;
+  system: "jira" | "gitlab" | "wiki" | "todo" | "timer";
+  kind: string;
+  title: string;
+  key: string | null;
+  detail: string;
+  projectId: number | null;
+  durationMs: number | null;
+}
+
+export interface WorkLog {
+  day: string;
+  events: WorkEvent[];
+  notes: string[];
 }
 
 export type DocKind = "note" | "daily" | "page";
@@ -750,6 +806,8 @@ export interface WorkspaceSettings {
   deviceId: string;
   lastSync: SyncReport | null;
   lastError: string | null;
+  captureShortcut: string;
+  captureError: string | null;
 }
 
 export interface JiraTodoSync {
@@ -762,6 +820,8 @@ export interface JiraTodoSync {
 export const WORKSPACE_SYNCED_EVENT = "workspace-synced";
 /** 托盘菜单中的操作（载荷为 `quick-todo`、`search` 或 `page:<页面>`），由后端发出。 */
 export const TRAY_EVENT = "tray-action";
+/** 收件箱有变化（提醒到时、快速记录存入）时由后端发出。 */
+export const INBOX_EVENT = "inbox-changed";
 
 // ---------- Wiki ----------
 
@@ -966,6 +1026,7 @@ export const api = {
   jiraToolsSettings: () => invoke<JiraToolsSettings>("jira_tools_settings"),
   jiraSaveToolsSettings: (settings: JiraToolsSettings) => invoke<JiraToolsSettings>("jira_save_tools_settings", { settings }),
   jiraReminders: () => invoke<Reminders>("jira_reminders"),
+  localImagePreview: (path: string) => invoke<string | null>("local_image_preview", { path }),
   jiraUploadAttachments: (key: string, paths: string[]) =>
     invoke<Attachment[]>("jira_upload_attachments", { key, paths }),
   jiraOpenAttachment: (url: string, filename: string, service: Service = "jira") =>
@@ -1067,6 +1128,16 @@ export const api = {
   wsSettings: () => invoke<WorkspaceSettings>("ws_settings"),
   wsSaveSettings: (syncDir: string, jiraTodos: boolean) => invoke<WorkspaceSettings>("ws_save_settings", { syncDir, jiraTodos }),
   wsSync: () => invoke<SyncReport | null>("ws_sync"),
+  wsSaveCaptureShortcut: (shortcut: string) => invoke<WorkspaceSettings>("ws_save_capture_shortcut", { shortcut }),
+  wsInbox: () => invoke<InboxView>("ws_inbox"),
+  wsCapture: (title: string, body = "", url: string | null = null) => invoke<unknown>("ws_capture", { title, body, url }),
+  wsInboxHandle: (input: { id: string; source: string; title: string; eventIds?: string[] }) => invoke<void>("ws_inbox_handle", { input }),
+  wsInboxSnooze: (id: string, title: string, until: number | null) => invoke<void>("ws_inbox_snooze", { id, title, until }),
+  wsWorklog: (day: string) => invoke<WorkLog>("ws_worklog", { day }),
+  wsAddTimeEntry: (input: { title: string; issueKey: string | null; todoId: string | null; startedAt: number; durationMs: number }) =>
+    invoke<void>("ws_add_time_entry", { input }),
+  captureHide: () => invoke<void>("capture_hide"),
+  captureClipboard: () => invoke<string | null>("capture_clipboard"),
   wsWikiPage: (page: string) => invoke<{ id: string; title: string; spaceKey: string; url: string; html: string; version: number }>("ws_wiki_page", { page }),
   /** mode：create 在 parent 下新建；update 更新上次发布的页面（被别人改过时报冲突）；overwrite 覆盖别人的修改 */
   wsPublishToWiki: (docId: string | null, mode: "create" | "update" | "overwrite", parent: string, title: string, storage: string, assets: string[]) =>

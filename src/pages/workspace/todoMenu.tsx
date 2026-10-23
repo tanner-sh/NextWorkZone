@@ -26,6 +26,9 @@ export function todoInput(todo: Todo, patch: Partial<Todo> = {}): TodoInput {
     refSystem: next.refSystem,
     refKey: next.refKey,
     refTitle: next.refTitle,
+    remindAt: next.remindAt,
+    repeat: next.repeat,
+    checklist: next.checklist,
   };
 }
 

@@ -12,10 +12,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let menu = MenuBuilder::new(app)
         .text("show", "打开 NextWorkZone")
         .separator()
+        .text("capture", "快速记录…")
         .text("quick-todo", "记一条待办…")
         .text("search", "搜索…")
         .separator()
         .text("page:home", "今天")
+        .text("page:inbox", "收件箱")
         .text("page:todos", "待办")
         .text("page:notes", "笔记")
         .text("page:jira", "我的问题")
@@ -37,6 +39,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
             "show" => show_main(app),
+            "capture" => crate::capture::toggle(app),
             action => {
                 show_main(app);
                 let _ = app.emit(TRAY_EVENT, action);
@@ -61,6 +64,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 
 /// 显示并聚焦主窗口（关闭窗口时只是隐藏了它）。
 pub fn show_main(app: &AppHandle) {
+    // 快速记录收起时可能隐藏了整个应用
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
