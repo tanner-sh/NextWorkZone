@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
-export type PageId = "home" | "inbox" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "settings";
+export type PageId = "home" | "inbox" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings";
 
-export const PAGE_IDS: PageId[] = ["home", "inbox", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "settings"];
+export const PAGE_IDS: PageId[] = ["home", "inbox", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "tools", "settings"];
 
 /** 跳转时附带的目标，例如打开某个 Jira 问题或 GitLab 项目。 */
 export interface NavTarget {
@@ -25,6 +25,10 @@ export interface NavTarget {
   projectPath?: string;
   /** GitLab 合并请求编号（项目内的 !iid），与 projectId 或 projectPath 一起使用 */
   mrIid?: number;
+  /** 工具 id（见 tools/registry），与 page: "tools" 一起使用 */
+  tool?: string;
+  /** 工具页面中的标签，例如 settings */
+  toolTab?: string;
 }
 
 interface NavContextValue {
@@ -34,19 +38,20 @@ interface NavContextValue {
 
 const NavContext = createContext<NavContextValue | null>(null);
 const STORAGE_KEY = "nextworkzone.lastPage";
+const TOOL_KEY = "nextworkzone.lastTool";
 
-function initialPage(): PageId {
+function initialTarget(): NavTarget {
   try {
     const saved = localStorage.getItem(STORAGE_KEY) as PageId | null;
-    if (saved && PAGE_IDS.includes(saved)) return saved;
+    if (saved && PAGE_IDS.includes(saved)) return saved === "tools" ? { page: saved, tool: localStorage.getItem(TOOL_KEY) ?? undefined } : { page: saved };
   } catch {
     // 本地存储不可用时使用默认页面
   }
-  return "home";
+  return { page: "home" };
 }
 
 export function NavProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<NavTarget>(() => ({ page: initialPage() }));
+  const [current, setCurrent] = useState<NavTarget>(initialTarget);
 
   const value = useMemo<NavContextValue>(
     () => ({
@@ -55,6 +60,7 @@ export function NavProvider({ children }: { children: ReactNode }) {
         setCurrent(target);
         try {
           localStorage.setItem(STORAGE_KEY, target.page);
+          if (target.tool) localStorage.setItem(TOOL_KEY, target.tool);
         } catch {
           // 忽略
         }

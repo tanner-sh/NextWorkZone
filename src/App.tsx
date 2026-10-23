@@ -26,6 +26,8 @@ import { JiraPage } from "./pages/jira/JiraPage";
 import { WeeklyPage } from "./pages/weekly/WeeklyPage";
 import { WikiPage } from "./pages/wiki/WikiPage";
 import { NavProvider, PAGE_IDS, useNav, type PageId } from "./state/nav";
+import { openLink } from "./lib/links";
+import { TOOLS, toolById, useHiddenTools } from "./tools/registry";
 import { SettingsProvider, useSettings } from "./state/settings";
 
 type NavEntry = { id: PageId; label: string; icon: ComponentType<LucideProps> };
@@ -73,7 +75,8 @@ export function App() {
 
 function Shell() {
   const { current, navigate } = useNav();
-  const { isReady } = useSettings();
+  const { isReady, baseUrl } = useSettings();
+  const [hiddenTools] = useHiddenTools();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickTodo, setQuickTodo] = useState(false);
   const [issueCount, setIssueCount] = useState<number | null>(null);
@@ -121,10 +124,16 @@ function Shell() {
       else if (payload.startsWith("page:")) {
         const page = payload.slice(5) as PageId;
         if (PAGE_IDS.includes(page)) navigate({ page });
+      } else if (payload.startsWith("tool:")) {
+        // tool:<工具>[:<标签>]
+        const [tool, toolTab] = payload.slice(5).split(":");
+        if (toolById(tool)) navigate({ page: "tools", tool, toolTab });
+      } else if (payload.startsWith("url:")) {
+        void openLink(payload.slice(4), baseUrl, navigate);
       }
     });
     return () => void unlisten.then((fn) => fn());
-  }, [navigate]);
+  }, [navigate, baseUrl]);
 
   // 定期检查 Jira 和 Wiki 动态（有新动态时通知），并更新侧边栏的问题数、同步分配给我的问题为待办
   const jiraReady = isReady("jira");
@@ -179,6 +188,14 @@ function Shell() {
             ))}
           </div>
         ))}
+        {TOOLS.some((t) => !hiddenTools.includes(t.id)) && (
+          <div className="nav-group">
+            <div className="nav-group-label">工具</div>
+            {TOOLS.filter((t) => !hiddenTools.includes(t.id)).map((tool) => (
+              <NavButton key={tool.id} id="tools" label={tool.name} icon={tool.icon} active={current.page === "tools" && (current.tool ?? TOOLS[0].id) === tool.id} onClick={() => navigate({ page: "tools", tool: tool.id })} />
+            ))}
+          </div>
+        )}
         <div className="sidebar-spacer" />
         <TimerWidget />
         <NavButton id="settings" label="设置" icon={Settings2} shortcut="," active={current.page === "settings"} onClick={() => navigate({ page: "settings" })} />
@@ -204,6 +221,7 @@ function Shell() {
             {current.page === "wiki" && <WikiPage />}
             {current.page === "gitlab" && <GitlabPage />}
             {current.page === "stats" && <StatsPage />}
+            {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
             {current.page === "settings" && <SettingsPage />}
           </ErrorBoundary>
         </main>
@@ -214,6 +232,12 @@ function Shell() {
       <Toasts />
     </div>
   );
+}
+
+/** 工具页面：按注册表找到对应的工具。 */
+function ToolHost({ tool, tab }: { tool?: string; tab?: string }) {
+  const def = toolById(tool) ?? TOOLS[0];
+  return <def.Page key={def.id} tab={tab} />;
 }
 
 function NavButton(props: { id: PageId; label: string; icon: ComponentType<LucideProps>; shortcut?: string; active: boolean; count?: number | null; alert?: string; onClick: () => void }) {

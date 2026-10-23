@@ -345,6 +345,21 @@ impl IssueIndex {
         Ok(rows.iter().filter_map(|data| serde_json::from_str::<IndexedIssue>(data).ok()).map(|i| hit(i, &terms, None)).collect())
     }
 
+    /// 按 key 取本机问题库中的问题（没有的忽略），按给定顺序返回。
+    pub fn by_keys(&self, keys: &[String]) -> Result<Vec<IssueHit>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT data FROM issues WHERE key = ?1").db()?;
+        let mut hits = Vec::new();
+        for key in keys {
+            if let Some(data) = stmt.query_row([key.to_uppercase()], |r| r.get::<_, String>(0)).optional().db()?
+                && let Ok(item) = serde_json::from_str::<IndexedIssue>(&data)
+            {
+                hits.push(hit(item, &[], None));
+            }
+        }
+        Ok(hits)
+    }
+
     /// 本机问题库中与给定概要相似的问题。问题库中没有这个项目的问题时返回 `None`（由调用方改用 Jira 搜索）。
     ///
     /// 关键词的权重按“越少见越重要”计算：在概要中出现计 3 倍，在描述开头出现计 1 倍；至少要有一个关键词出现在概要中。

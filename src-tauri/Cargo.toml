@@ -17,6 +17,8 @@ nextworkzone-confluence.workspace = true
 nextworkzone-gitlab.workspace = true
 nextworkzone-workspace.workspace = true
 nextworkzone-preview.workspace = true
+nextworkzone-clipboard.workspace = true
+nextworkzone-desktop.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 chrono.workspace = true
@@ -28,6 +30,7 @@ tauri-plugin-global-shortcut.workspace = true
 tauri-plugin-notification.workspace = true
 tauri-plugin-opener.workspace = true
 percent-encoding = "2"
+drag = "2.1"
 base64.workspace = true
 tokio.workspace = true
 uuid = { version = "1.28", features = ["v4"] }

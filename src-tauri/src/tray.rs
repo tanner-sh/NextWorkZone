@@ -1,20 +1,27 @@
 //! 托盘（macOS 菜单栏）图标：关闭窗口后应用留在后台，从这里重新打开或直接执行常用操作。
 
 use tauri::image::Image;
-use tauri::menu::MenuBuilder;
+use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// 托盘菜单中需要界面处理的操作，载荷为菜单项 id（`quick-todo`、`search`、`page:<页面>`）。
 pub const TRAY_EVENT: &str = "tray-action";
 
+/// 托盘菜单中“暂停记录剪贴板”一项，暂停状态变化时更新文字。
+struct ClipboardPauseItem(MenuItem<tauri::Wry>);
+
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
+    let pause = MenuItem::with_id(app, "clipboard-pause", "暂停记录剪贴板", true, None::<&str>)?;
     let menu = MenuBuilder::new(app)
         .text("show", "打开 NextWorkZone")
         .separator()
         .text("capture", "快速记录…")
         .text("quick-todo", "记一条待办…")
         .text("search", "搜索…")
+        .separator()
+        .text("clipboard", "剪贴板…")
+        .item(&pause)
         .separator()
         .text("page:home", "今天")
         .text("page:inbox", "收件箱")
@@ -40,6 +47,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "show" => show_main(app),
             "capture" => crate::capture::toggle(app),
+            "clipboard" => crate::clipboard::toggle(app),
+            "clipboard-pause" => crate::clipboard::toggle_paused(app),
             action => {
                 show_main(app);
                 let _ = app.emit(TRAY_EVENT, action);
@@ -59,7 +68,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             let _ = (tray, event);
         })
         .build(app)?;
+    app.manage(ClipboardPauseItem(pause));
     Ok(())
+}
+
+pub fn update_clipboard_pause(app: &AppHandle, paused: bool) {
+    if let Some(item) = app.try_state::<ClipboardPauseItem>() {
+        let _ = item.0.set_text(if paused { "恢复记录剪贴板" } else { "暂停记录剪贴板" });
+    }
 }
 
 /// 显示并聚焦主窗口（关闭窗口时只是隐藏了它）。

@@ -1,21 +1,15 @@
 //! 快速记录：在任何应用中按全局快捷键弹出一个小窗口，记一条待办、一段日记或存入收件箱。
 //! 窗口启动时就创建好并隐藏，按下快捷键时立即显示；失去焦点或记完后隐藏。
 
-use std::sync::Mutex;
-
-use nextworkzone_core::{Error, Result};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+use crate::shortcuts::{self, Action};
 use crate::state::AppState;
 
 pub const CAPTURE_LABEL: &str = "capture";
 /// 显示窗口时发给快速记录界面的事件（界面据此清空输入、读取剪贴板）。
 const OPEN_EVENT: &str = "capture-open";
-
-/// 启动时注册快捷键失败的原因（例如已被其他应用占用），设置页中显示。
-static REGISTER_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, CAPTURE_LABEL, WebviewUrl::App("index.html#capture".into()))
@@ -31,33 +25,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .center()
         .build()?;
     let shortcut = app.state::<AppState>().config().workspace.capture_shortcut;
-    *REGISTER_ERROR.lock().unwrap() = register(app, &shortcut).err().map(|e| e.to_string());
+    shortcuts::init(app, Action::Capture, &shortcut);
     Ok(())
-}
-
-/// 注册快捷键（替换之前的）；为空时只取消注册。
-pub fn register(app: &AppHandle, shortcut: &str) -> Result<()> {
-    let manager = app.global_shortcut();
-    let _ = manager.unregister_all();
-    let shortcut = shortcut.trim();
-    if shortcut.is_empty() {
-        return Ok(());
-    }
-    manager
-        .on_shortcut(shortcut, |app, _, event| {
-            if event.state == ShortcutState::Pressed {
-                toggle(app);
-            }
-        })
-        .map_err(|e| Error::Other(format!("无法使用快捷键 {shortcut}：{e}（可能已被其他应用占用）")))
-}
-
-pub fn register_error() -> Option<String> {
-    REGISTER_ERROR.lock().unwrap().clone()
-}
-
-pub fn set_register_error(error: Option<String>) {
-    *REGISTER_ERROR.lock().unwrap() = error;
 }
 
 /// 显示或隐藏快速记录窗口。

@@ -818,10 +818,100 @@ export interface JiraTodoSync {
 
 /** 其他设备的修改合并进来后 Rust 发出的事件。 */
 export const WORKSPACE_SYNCED_EVENT = "workspace-synced";
-/** 托盘菜单中的操作（载荷为 `quick-todo`、`search` 或 `page:<页面>`），由后端发出。 */
+/** 托盘菜单中的操作（载荷为 `quick-todo`、`search`、`page:<页面>`、`tool:<工具>[:<标签>]` 或 `url:<地址>`），由后端发出。 */
 export const TRAY_EVENT = "tray-action";
 /** 收件箱有变化（提醒到时、快速记录存入）时由后端发出。 */
 export const INBOX_EVENT = "inbox-changed";
+
+// ---------- 剪贴板 ----------
+
+/** text / link / code / color / image / file */
+export type ClipKind = "text" | "link" | "code" | "color" | "image" | "file";
+
+export interface ClipItem {
+  id: string;
+  kind: ClipKind;
+  /** 文字的开头一部分（完整内容用 clipText 取） */
+  text: string;
+  textLength: number;
+  hasHtml: boolean;
+  /** 用户起的名字 */
+  title: string;
+  image: { width: number; height: number; bytes: number } | null;
+  files: string[];
+  appId: string | null;
+  appName: string | null;
+  /** 来源应用图标的主色 */
+  appColor: string | null;
+  appIcon: boolean;
+  createdAt: number;
+  copiedAt: number;
+  copyCount: number;
+  pinboard: string | null;
+}
+
+export interface ClipQuery {
+  text?: string;
+  kind?: ClipKind | null;
+  /** 置顶板 id；"*" 表示所有置顶的条目 */
+  pinboard?: string | null;
+  app?: string | null;
+  before?: number | null;
+  limit?: number;
+}
+
+export interface Pinboard {
+  id: string;
+  name: string;
+  color: string;
+  sort: number;
+  count: number;
+}
+
+export interface IgnoredApp {
+  id: string;
+  name: string;
+}
+
+export interface ClipboardConfig {
+  enabled: boolean;
+  shortcut: string;
+  autoPaste: boolean;
+  plainText: boolean;
+  keepDays: number;
+  maxItems: number;
+  saveImages: boolean;
+  maxImageMb: number;
+  skipSecrets: boolean;
+  ignoredApps: IgnoredApp[];
+}
+
+export interface ClipSettings {
+  config: ClipboardConfig;
+  builtinIgnored: IgnoredApp[];
+  stats: { items: number; pinned: number; imageBytes: number };
+  pasteSupport: "ready" | "needsPermission" | "unsupported";
+  pasteNote: string | null;
+  /** 暂停记录到何时；Number.MAX_SAFE_INTEGER 以上表示直到手动恢复 */
+  pausedUntil: number | null;
+  shortcutError: string | null;
+  dataDir: string;
+}
+
+export interface ClipApp {
+  id: string;
+  name: string;
+  color: string | null;
+  icon: boolean;
+  count: number;
+}
+
+/** 剪贴板记录到新内容时由后端发出，载荷为 ClipItem。 */
+export const CLIP_CHANGED_EVENT = "clipboard-changed";
+/** 剪贴板的设置、暂停状态或条目（删除、置顶等）有变化时由后端发出。 */
+export const CLIP_SETTINGS_EVENT = "clipboard-settings";
+/** 显示剪贴板面板时发给面板，载荷为 { target: 将要粘贴到的应用名称 }。 */
+export const CLIP_OPEN_EVENT = "clipboard-open";
 
 // ---------- Wiki ----------
 
@@ -1138,6 +1228,37 @@ export const api = {
     invoke<void>("ws_add_time_entry", { input }),
   captureHide: () => invoke<void>("capture_hide"),
   captureClipboard: () => invoke<string | null>("capture_clipboard"),
+  toolsHidden: () => invoke<string[]>("tools_hidden"),
+  toolsSetHidden: (hidden: string[]) => invoke<string[]>("tools_set_hidden", { hidden }),
+  clipList: (query: ClipQuery) => invoke<ClipItem[]>("clip_list", { query }),
+  clipText: (id: string) => invoke<{ text: string; html: string | null }>("clip_text", { id }),
+  /** 粘贴到打开面板前使用的应用；返回 pasted（已粘贴）或 copied（只复制了） */
+  clipPaste: (ids: string[], plain?: boolean, edited?: string) => invoke<"pasted" | "copied">("clip_paste", { ids, plain, edited }),
+  clipCopy: (ids: string[], plain?: boolean, edited?: string) => invoke<void>("clip_copy", { ids, plain, edited }),
+  clipHide: (restore: boolean) => invoke<void>("clip_hide", { restore }),
+  /** 收起面板，在主窗口中打开（载荷格式同托盘菜单事件） */
+  clipOpenMain: (target: string) => invoke<void>("clip_open_main", { target }),
+  clipDelete: (ids: string[]) => invoke<void>("clip_delete", { ids }),
+  clipClear: () => invoke<number>("clip_clear"),
+  clipSetPinboard: (ids: string[], pinboard: string | null) => invoke<void>("clip_set_pinboard", { ids, pinboard }),
+  clipRename: (id: string, title: string) => invoke<ClipItem | null>("clip_rename", { id, title }),
+  clipUpdateText: (id: string, text: string) => invoke<ClipItem | null>("clip_update_text", { id, text }),
+  clipPinboards: () => invoke<Pinboard[]>("clip_pinboards"),
+  clipSavePinboard: (id: string | null, name: string, color: string) => invoke<Pinboard>("clip_save_pinboard", { id, name, color }),
+  clipDeletePinboard: (id: string) => invoke<void>("clip_delete_pinboard", { id }),
+  clipOrderPinboards: (ids: string[]) => invoke<void>("clip_order_pinboards", { ids }),
+  clipApps: () => invoke<ClipApp[]>("clip_apps"),
+  clipIssues: (keys: string[]) => invoke<IssueHit[]>("clip_issues", { keys }),
+  clipSettings: () => invoke<ClipSettings>("clip_settings"),
+  clipSaveSettings: (config: ClipboardConfig) => invoke<ClipSettings>("clip_save_settings", { config }),
+  /** 暂停记录：minutes 为 0 表示恢复，负数表示直到手动恢复 */
+  clipPause: (minutes: number) => invoke<ClipSettings>("clip_pause", { minutes }),
+  clipRequestPermission: () => invoke<void>("clip_request_permission"),
+  clipIgnoreCandidates: () => invoke<IgnoredApp[]>("clip_ignore_candidates"),
+  /** 标记为刚刚使用（拖到其他应用后） */
+  clipTouch: (ids: string[]) => invoke<void>("clip_touch", { ids }),
+  /** 把图片、文件条目作为文件拖到其他应用（需在按住鼠标拖动时调用） */
+  clipDrag: (ids: string[]) => invoke<void>("clip_drag", { ids }),
   wsWikiPage: (page: string) => invoke<{ id: string; title: string; spaceKey: string; url: string; html: string; version: number }>("ws_wiki_page", { page }),
   /** mode：create 在 parent 下新建；update 更新上次发布的页面（被别人改过时报冲突）；overwrite 覆盖别人的修改 */
   wsPublishToWiki: (docId: string | null, mode: "create" | "update" | "overwrite", parent: string, title: string, storage: string, assets: string[]) =>

@@ -1,11 +1,13 @@
 mod asset;
 mod capture;
+mod clipboard;
 mod commands;
 mod devbridge;
+mod shortcuts;
 mod state;
 mod tray;
 
-use commands::{activity, gitlab, inbox, jira, jira_index, jira_tools, search, session, settings, weekly, wiki, worklog, workspace};
+use commands::{activity, gitlab, inbox, jira, jira_index, jira_tools, search, session, settings, tools, weekly, wiki, worklog, workspace};
 use nextworkzone_core::secrets::Store;
 use tauri::Manager;
 
@@ -35,6 +37,7 @@ pub fn run() {
             tauri::async_runtime::spawn(inbox::alert_loop(app.handle().clone()));
             tray::setup(app.handle())?;
             capture::setup(app.handle())?;
+            clipboard::setup(app.handle())?;
             // 本机测试通道只在开发构建中启动
             if cfg!(debug_assertions) {
                 devbridge::start(app.handle());
@@ -198,6 +201,32 @@ pub fn run() {
             worklog::ws_add_time_entry,
             capture::capture_hide,
             capture::capture_clipboard,
+            tools::tools_hidden,
+            tools::tools_set_hidden,
+            clipboard::clip_paste,
+            clipboard::clip_copy,
+            clipboard::clip_hide,
+            clipboard::clip_open_main,
+            clipboard::clip_list,
+            clipboard::clip_text,
+            clipboard::clip_delete,
+            clipboard::clip_clear,
+            clipboard::clip_set_pinboard,
+            clipboard::clip_rename,
+            clipboard::clip_update_text,
+            clipboard::clip_pinboards,
+            clipboard::clip_save_pinboard,
+            clipboard::clip_delete_pinboard,
+            clipboard::clip_order_pinboards,
+            clipboard::clip_apps,
+            clipboard::clip_issues,
+            clipboard::clip_settings,
+            clipboard::clip_save_settings,
+            clipboard::clip_pause,
+            clipboard::clip_request_permission,
+            clipboard::clip_ignore_candidates,
+            clipboard::clip_touch,
+            clipboard::clip_drag,
         ])
         // 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从托盘或程序坞图标重新打开，⌘Q 或托盘菜单“退出”才退出
         .on_window_event(|window, event| match (window.label(), event) {
@@ -211,6 +240,14 @@ pub fn run() {
                 capture::hide(window.app_handle());
             }
             (capture::CAPTURE_LABEL, tauri::WindowEvent::Focused(false)) => {
+                let _ = window.hide();
+            }
+            // 剪贴板面板：同上，切到别的应用时收起
+            (clipboard::PANEL_LABEL, tauri::WindowEvent::CloseRequested { api, .. }) => {
+                api.prevent_close();
+                clipboard::hide(window.app_handle(), false);
+            }
+            (clipboard::PANEL_LABEL, tauri::WindowEvent::Focused(false)) => {
                 let _ = window.hide();
             }
             _ => {}

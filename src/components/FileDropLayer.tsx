@@ -55,6 +55,8 @@ export function FileDropLayer() {
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       const payload = event.payload;
       if (payload.type === "enter") count = payload.paths.length;
+      // 拖动的是文字（例如从剪贴板页面拖出的条目）时没有文件，不显示提示
+      if ((payload.type === "enter" || payload.type === "over") && count === 0) return;
       if (payload.type === "enter" || payload.type === "over") {
         const where = locate(payload.position);
         highlight(where.zone);

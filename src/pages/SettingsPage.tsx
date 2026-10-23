@@ -5,6 +5,7 @@ import { useSettings } from "../state/settings";
 import { WorkspaceSettingsCard } from "./workspace/WorkspaceSettingsCard";
 import { JiraToolsSettingsCard } from "./jira/JiraToolsSettingsCard";
 import { WikiToolsSettingsCard } from "./wiki/WikiToolsSettingsCard";
+import { ToolsSettingsCard } from "../tools/ToolsSettingsCard";
 
 type TestState =
   | { status: "idle" }
@@ -139,6 +140,7 @@ export function SettingsPage() {
       {notice && <p className={`notice ${notice.kind}`}>{notice.text}</p>}
 
       <WorkspaceSettingsCard />
+      <ToolsSettingsCard />
 
       {settings.services.some((s) => s.service === "jira" && s.baseUrl && s.hasToken) && <JiraToolsSettingsCard />}
       {settings.services.some((s) => s.service === "confluence" && s.baseUrl && s.hasToken) && <WikiToolsSettingsCard />}

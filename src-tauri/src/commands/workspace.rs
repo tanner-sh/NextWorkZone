@@ -296,7 +296,7 @@ fn settings(state: &AppState) -> WorkspaceSettings {
         last_sync,
         last_error,
         capture_shortcut: config.capture_shortcut,
-        capture_error: crate::capture::register_error(),
+        capture_error: crate::shortcuts::error(crate::shortcuts::Action::Capture),
     }
 }
 
@@ -305,11 +305,7 @@ fn settings(state: &AppState) -> WorkspaceSettings {
 pub fn ws_save_capture_shortcut(app: AppHandle, state: State<'_, AppState>, shortcut: String) -> Result<WorkspaceSettings> {
     let shortcut = shortcut.trim().to_string();
     let mut config = state.config();
-    if let Err(e) = crate::capture::register(&app, &shortcut) {
-        let _ = crate::capture::register(&app, &config.workspace.capture_shortcut);
-        return Err(e);
-    }
-    crate::capture::set_register_error(None);
+    crate::shortcuts::set(&app, crate::shortcuts::Action::Capture, &shortcut)?;
     config.workspace.capture_shortcut = shortcut;
     state.update_config(config)?;
     Ok(settings(&state))

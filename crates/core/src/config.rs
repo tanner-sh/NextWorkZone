@@ -18,6 +18,7 @@ pub struct AppConfig {
     pub workspace: WorkspaceConfig,
     pub jira_tools: JiraToolsConfig,
     pub wiki_tools: WikiToolsConfig,
+    pub tools: ToolsConfig,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -109,6 +110,69 @@ pub struct WikiToolsConfig {
 impl Default for WikiToolsConfig {
     fn default() -> Self {
         Self { index_enabled: true, index_spaces: Vec::new(), task_todos: true, activity: true, muted_pages: Vec::new() }
+    }
+}
+
+/// 小工具的本机设置。
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ToolsConfig {
+    /// 不在侧边栏显示的工具 id（仍可从搜索、托盘和快捷键打开）。
+    pub hidden: Vec<String>,
+    pub clipboard: ClipboardConfig,
+}
+
+/// 剪贴板历史。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipboardConfig {
+    /// 记录剪贴板历史；关闭后不再记录，快捷键也不再生效。
+    pub enabled: bool,
+    /// 在任何应用中打开剪贴板面板的全局快捷键；为空表示不使用。
+    pub shortcut: String,
+    /// 选择后直接粘贴到之前使用的应用（否则只复制）。
+    pub auto_paste: bool,
+    /// 默认粘贴为纯文本（去掉格式）。
+    pub plain_text: bool,
+    /// 历史保留天数；0 表示不限。置顶的条目始终保留。
+    pub keep_days: u32,
+    /// 最多保留多少条历史；0 表示不限。
+    pub max_items: u32,
+    /// 记录复制的图片。
+    pub save_images: bool,
+    /// 不记录超过这个大小（MB，按未压缩的像素计算）的图片。
+    pub max_image_mb: u32,
+    /// 不记录疑似密码、密钥的内容。
+    pub skip_secrets: bool,
+    /// 不记录这些应用中复制的内容。
+    pub ignored_apps: Vec<IgnoredApp>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IgnoredApp {
+    /// macOS 上是 Bundle ID，Windows 上是可执行文件名。
+    pub id: String,
+    pub name: String,
+}
+
+/// 剪贴板面板的默认快捷键（macOS 上为 ⌥⌘V，其他系统为 Ctrl+Alt+V）。
+pub const DEFAULT_CLIPBOARD_SHORTCUT: &str = "CommandOrControl+Alt+V";
+
+impl Default for ClipboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            shortcut: DEFAULT_CLIPBOARD_SHORTCUT.into(),
+            auto_paste: true,
+            plain_text: false,
+            keep_days: 30,
+            max_items: 5000,
+            save_images: true,
+            max_image_mb: 50,
+            skip_secrets: true,
+            ignored_apps: Vec::new(),
+        }
     }
 }
 

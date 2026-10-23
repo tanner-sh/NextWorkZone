@@ -1,15 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口和快速记录窗口的默认权限",
+  "description": "主窗口、快速记录和剪贴板面板的默认权限",
   "windows": [
     "main",
-    "capture"
+    "capture",
+    "clipboard"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "opener:default",
+    "opener:allow-reveal-item-in-dir",
     "dialog:default",
     "notification:default"
   ]

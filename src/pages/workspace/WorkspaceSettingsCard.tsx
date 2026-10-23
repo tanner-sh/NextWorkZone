@@ -126,15 +126,16 @@ const DEFAULT_SHORTCUT = "Alt+Space";
 const isMac = navigator.userAgent.includes("Mac");
 
 /** 快捷键的显示：macOS 上用 ⌘⌥⇧⌃ 符号。 */
-function displayShortcut(shortcut: string): string {
+export function displayShortcut(shortcut: string): string {
   if (!shortcut) return "未使用";
   const names: Record<string, string> = isMac
     ? { CommandOrControl: "⌘", Command: "⌘", Alt: "⌥", Shift: "⇧", Control: "⌃", Space: "Space" }
     : { CommandOrControl: "Ctrl", Control: "Ctrl", Alt: "Alt", Shift: "Shift", Space: "Space" };
-  return shortcut
-    .split("+")
-    .map((part) => names[part] ?? part)
-    .join(isMac ? "" : "+");
+  const parts = shortcut.split("+").map((part) => names[part] ?? part);
+  // macOS 菜单中修饰键的惯用顺序：⌃⌥⇧⌘
+  const rank = (part: string) => (part.length === 1 && "⌃⌥⇧⌘".includes(part) ? "⌃⌥⇧⌘".indexOf(part) : 9);
+  if (isMac) parts.sort((a, b) => rank(a) - rank(b));
+  return parts.join(isMac ? "" : "+");
 }
 
 /** 由按键事件得到快捷键（至少一个修饰键加一个普通键），例如 `Alt+Space`；只按了修饰键时返回 null。 */
@@ -147,7 +148,7 @@ function shortcutOf(e: React.KeyboardEvent): string | null {
 }
 
 /** 点击后按下新的组合键来设置快捷键。 */
-function ShortcutField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (shortcut: string) => void }) {
+export function ShortcutField({ value, disabled, onChange, defaultValue = DEFAULT_SHORTCUT }: { value: string; disabled: boolean; onChange: (shortcut: string) => void; defaultValue?: string }) {
   const [recording, setRecording] = useState(false);
   return (
     <div className="row-actions">
@@ -171,8 +172,8 @@ function ShortcutField({ value, disabled, onChange }: { value: string; disabled:
           }
         }}
       />
-      {value !== DEFAULT_SHORTCUT && (
-        <button className="btn subtle" disabled={disabled} onClick={() => onChange(DEFAULT_SHORTCUT)}>
+      {value !== defaultValue && (
+        <button className="btn subtle" disabled={disabled} onClick={() => onChange(defaultValue)}>
           恢复默认
         </button>
       )}

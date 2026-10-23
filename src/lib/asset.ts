@@ -17,3 +17,8 @@ export function systemPath(src: string, baseUrl: string): string | null {
   if (baseUrl && (src === baseUrl || src.startsWith(`${baseUrl}/`))) return src;
   return null;
 }
+
+/** 剪贴板历史中的图片：缩略图、原图或来源应用的图标（`id` 为应用标识）。 */
+export function clipAssetUrl(kind: "thumb" | "image" | "icon", id: string): string {
+  return `${PREFIX}clip/${kind}/${encodeURIComponent(id)}`;
+}

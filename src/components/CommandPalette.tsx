@@ -6,6 +6,7 @@ import { backlinkTarget } from "../pages/workspace/Backlinks";
 import { StatusPill } from "./common";
 import { openLink, routeUrl } from "../lib/links";
 import { useSettings } from "../state/settings";
+import { TOOLS } from "../tools/registry";
 
 interface Item {
   id: string;
@@ -91,6 +92,10 @@ export function CommandPalette({ onClose, onQuickTodo }: { onClose: () => void; 
       title: p.label,
       run: go(() => navigate({ page: p.page })),
     }));
+    for (const tool of TOOLS) {
+      if (q && !tool.name.includes(q) && !tool.keywords.includes(q)) continue;
+      list.push({ id: `tool-${tool.id}`, icon: tool.icon, group: "工具", title: tool.name, subtitle: tool.description, run: go(() => navigate({ page: "tools", tool: tool.id })) });
+    }
     // 粘贴的 Jira、Wiki、GitLab 地址：直接在应用内打开
     if (/^https?:\/\//.test(query.trim())) {
       const url = query.trim();

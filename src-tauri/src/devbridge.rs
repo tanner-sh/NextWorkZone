@@ -8,7 +8,8 @@
 //!      --data 'return document.title' http://127.0.0.1:17890/eval
 //! ```
 //!
-//! 请求体是异步函数体，用 `return` 返回值；结果以 JSON 返回。
+//! 请求体是异步函数体，用 `return` 返回值；结果以 JSON 返回。默认在主窗口执行，
+//! 请求头 `x-window: <窗口 label>` 可以指定其他窗口。
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -64,7 +65,12 @@ fn handle(mut stream: TcpStream, app: &AppHandle, pending: &Pending, token: &str
         respond(&mut stream, 403, "forbidden");
         return;
     }
-    let Some(window) = app.get_webview_window("main") else {
+    // 默认在主窗口执行；请求头 `x-window: <窗口 label>` 可以指定其他窗口（例如 clipboard）
+    let label = headers
+        .lines()
+        .find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case("x-window")).map(|(_, v)| v.trim().to_string()))
+        .unwrap_or_else(|| "main".into());
+    let Some(window) = app.get_webview_window(&label) else {
         respond(&mut stream, 500, "no window");
         return;
     };
