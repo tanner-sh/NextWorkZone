@@ -281,6 +281,9 @@ impl Store {
         let (app_id, app_name) = capture.app.unzip();
         {
             let conn = self.conn.lock().unwrap();
+            // 复制时间严格递增：同一毫秒内连续复制时，最近复制的仍排在最前
+            let latest: i64 = conn.query_row("SELECT COALESCE(MAX(copied_at), 0) FROM items", [], |r| r.get(0)).db()?;
+            let now = now.max(latest + 1);
             let existing: Option<String> = conn.query_row("SELECT id FROM items WHERE hash = ?1", [&item_hash], |r| r.get(0)).optional().db()?;
             if let Some(id) = existing {
                 // 再次复制：移到最前面；来源记为最近一次复制的应用，网页上复制的格式可能更完整
@@ -396,7 +399,8 @@ impl Store {
             conditions.push("i.app_id = ?".into());
             values.push(app.to_string().into());
         }
-        let order = if pinned_order { "i.pinned_at DESC" } else { "i.copied_at DESC" };
+        // 同一毫秒内复制的条目按写入顺序，后写入的在前
+        let order = if pinned_order { "i.pinned_at DESC, i.rowid DESC" } else { "i.copied_at DESC, i.rowid DESC" };
         if let Some(before) = query.before {
             conditions.push(if pinned_order { "i.pinned_at < ?" } else { "i.copied_at < ?" }.into());
             values.push(before.into());
@@ -458,7 +462,7 @@ impl Store {
             let mut stmt = conn
                 .prepare(
                     "SELECT id FROM items WHERE pinboard IS NULL AND (copied_at < ?1 OR id IN (
-                        SELECT id FROM items WHERE pinboard IS NULL ORDER BY copied_at DESC LIMIT -1 OFFSET ?2))",
+                        SELECT id FROM items WHERE pinboard IS NULL ORDER BY copied_at DESC, rowid DESC LIMIT -1 OFFSET ?2))",
                 )
                 .db()?;
             stmt.query_map(params![cutoff, offset], |r| r.get(0)).db()?.collect::<rusqlite::Result<Vec<_>>>().db()?
