@@ -760,6 +760,8 @@ export interface JiraTodoSync {
 
 /** 其他设备的修改合并进来后 Rust 发出的事件。 */
 export const WORKSPACE_SYNCED_EVENT = "workspace-synced";
+/** 托盘菜单中的操作（载荷为 `quick-todo`、`search` 或 `page:<页面>`），由后端发出。 */
+export const TRAY_EVENT = "tray-action";
 
 // ---------- Wiki ----------
 

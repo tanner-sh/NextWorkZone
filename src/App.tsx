@@ -2,7 +2,8 @@ import { useEffect, useState, type ComponentType } from "react";
 import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { api } from "./api";
+import { listen } from "@tauri-apps/api/event";
+import { api, TRAY_EVENT } from "./api";
 import { countMyIssues } from "./lib/notify";
 import { ACTIVITY_INTERVAL_MS, pollActivity, useActivityFeed } from "./lib/activity";
 import { checkReminders, useReminders } from "./lib/reminders";
@@ -21,7 +22,7 @@ import { GitlabPage } from "./pages/gitlab/GitlabPage";
 import { JiraPage } from "./pages/jira/JiraPage";
 import { WeeklyPage } from "./pages/weekly/WeeklyPage";
 import { WikiPage } from "./pages/wiki/WikiPage";
-import { NavProvider, useNav, type PageId } from "./state/nav";
+import { NavProvider, PAGE_IDS, useNav, type PageId } from "./state/nav";
 import { SettingsProvider, useSettings } from "./state/settings";
 
 type NavEntry = { id: PageId; label: string; icon: ComponentType<LucideProps> };
@@ -96,6 +97,19 @@ function Shell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [navigate]);
+
+  // 托盘菜单：后端已显示窗口，这里打开对应的页面或对话框
+  useEffect(() => {
+    const unlisten = listen<string>(TRAY_EVENT, ({ payload }) => {
+      if (payload === "quick-todo") setQuickTodo(true);
+      else if (payload === "search") setPaletteOpen(true);
+      else if (payload.startsWith("page:")) {
+        const page = payload.slice(5) as PageId;
+        if (PAGE_IDS.includes(page)) navigate({ page });
+      }
+    });
+    return () => void unlisten.then((fn) => fn());
   }, [navigate]);
 
   // 定期检查 Jira 和 Wiki 动态（有新动态时通知），并更新侧边栏的问题数、同步分配给我的问题为待办

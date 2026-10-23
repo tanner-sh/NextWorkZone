@@ -2,6 +2,7 @@ mod asset;
 mod commands;
 mod devbridge;
 mod state;
+mod tray;
 
 use commands::{activity, gitlab, jira, jira_index, jira_tools, search, session, settings, weekly, wiki, workspace};
 use nextworkzone_core::secrets::Store;
@@ -28,6 +29,7 @@ pub fn run() {
             tauri::async_runtime::spawn(workspace::sync_loop(app.handle().clone()));
             tauri::async_runtime::spawn(jira_index::sync_loop(app.handle().clone()));
             tauri::async_runtime::spawn(wiki::sync_loop(app.handle().clone()));
+            tray::setup(app.handle())?;
             // 本机测试通道只在开发构建中启动
             if cfg!(debug_assertions) {
                 devbridge::start(app.handle());
@@ -182,6 +184,23 @@ pub fn run() {
             workspace::ws_publish_to_wiki,
             devbridge::dev_eval_result,
         ])
-        .run(tauri::generate_context!())
-        .expect("启动 NextWorkZone 失败");
+        // 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从托盘或程序坞图标重新打开，⌘Q 或托盘菜单“退出”才退出
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("启动 NextWorkZone 失败")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::show_main(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
