@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
-export type PageId = "home" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings";
+export type PageId = "home" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings" | "search";
 
-export const PAGE_IDS: PageId[] = ["home", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "tools", "settings"];
+export const PAGE_IDS: PageId[] = ["home", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "tools", "settings", "search"];
 
 /** 跳转时附带的目标，例如打开某个 Jira 问题或 GitLab 项目。 */
 export interface NavTarget {
@@ -33,6 +33,12 @@ export interface NavTarget {
   tool?: string;
   /** 工具页面中的标签，例如 settings */
   toolTab?: string;
+  /** 工具页面中的搜索文字（例如在剪贴板历史中查找） */
+  toolQuery?: string;
+  /** 搜索页的搜索文字 */
+  searchQuery?: string;
+  /** 搜索页的范围，见 SearchPage */
+  searchScope?: string;
 }
 
 interface NavContextValue {
@@ -47,7 +53,8 @@ const TOOL_KEY = "nextworkzone.lastTool";
 function initialTarget(): NavTarget {
   try {
     const saved = localStorage.getItem(STORAGE_KEY) as PageId | null;
-    if (saved && PAGE_IDS.includes(saved)) return saved === "tools" ? { page: saved, tool: localStorage.getItem(TOOL_KEY) ?? undefined } : { page: saved };
+    // 搜索页需要搜索文字，启动时不恢复
+    if (saved && PAGE_IDS.includes(saved) && saved !== "search") return saved === "tools" ? { page: saved, tool: localStorage.getItem(TOOL_KEY) ?? undefined } : { page: saved };
   } catch {
     // 本地存储不可用时使用默认页面
   }

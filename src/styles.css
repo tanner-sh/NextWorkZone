@@ -630,6 +630,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .palette-item svg { color: var(--muted); }
 .palette-item.active { background: var(--accent-soft); }
 .palette-item.active svg { color: var(--accent); }
+/* ============ 搜索页 ============ */
+.search-input { flex: none; max-width: 560px; }
+.search-input input { height: 38px; font-size: 14px; }
+.seg-count { margin-left: 4px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.search-group { display: flex; flex-direction: column; gap: 6px; }
+.search-group h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0 0; }
+.search-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--radius); cursor: pointer; min-width: 0; }
+.search-row:hover, .search-row.menu-target, .search-row:focus-visible { background: var(--hover); outline: none; }
+.search-row-icon { padding-top: 2px; flex-shrink: 0; }
+.search-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-row-title { font-size: 13.5px; }
+.search-row-snippet { font-size: 12.5px; color: var(--text-2); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.search-row-title mark, .palette-item mark { background: var(--warn-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+.search-row-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.search-more { margin-left: auto; }
 .palette-footer { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--surface-2); }
 
 /* ============ 代码 ============ */

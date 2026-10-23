@@ -48,12 +48,13 @@ export function ClipboardPage({ tab }: { tab?: string }) {
 }
 
 function History({ switcher }: { switcher: React.ReactNode }) {
-  const { navigate } = useNav();
+  const { navigate, current } = useNav();
   const { baseUrl, isReady } = useSettings();
   const jiraReady = isReady("jira");
   const { settings } = useClipSettings();
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
+  // 从搜索页“在剪贴板中查看”进来时带着搜索文字
+  const [input, setInput] = useState(current.toolQuery ?? "");
+  const [query, setQuery] = useState(current.toolQuery ?? "");
   const [kind, setKind] = useState<ClipKind | null>(null);
   const [board, setBoard] = useState<string | null>(null);
   const [app, setApp] = useState<string | null>(null);

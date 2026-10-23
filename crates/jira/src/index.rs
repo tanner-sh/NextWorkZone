@@ -288,6 +288,12 @@ impl IssueIndex {
         Ok(())
     }
 
+    /// 问题库中还没有任何问题（未启用或首次同步尚未完成）。
+    pub fn is_empty(&self) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT NOT EXISTS (SELECT 1 FROM issues)", [], |r| r.get::<_, bool>(0)).db()
+    }
+
     pub fn stats(&self) -> Result<IndexStats> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn

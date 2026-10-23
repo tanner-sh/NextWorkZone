@@ -1141,11 +1141,22 @@ export interface WikiHit {
 }
 
 export interface SearchResults {
-  issues: IssueSummary[];
+  /** 本机问题库的结果带匹配处附近的文字 */
+  issues: IssueHit[];
+  /** local：本机问题库；jira：服务器搜索；没有搜索时为空 */
+  issuesSource: "local" | "jira" | null;
   projects: Project[];
+  mergeRequests: MergeRequest[];
   pages: WikiHit[];
   workspace: WorkspaceHit[];
+  clips: ClipItem[];
   errors: string[];
+}
+
+/** phase：local 只查本机数据（快），remote 只查服务器；不填两步都做。limit：每类结果的条数 */
+export interface SearchOptions {
+  phase?: "local" | "remote";
+  limit?: number;
 }
 
 export const api = {
@@ -1376,7 +1387,7 @@ export const api = {
   wikiToolsSettings: () => invoke<WikiToolsSettings>("wiki_tools_settings"),
   wikiSaveToolsSettings: (settings: WikiToolsSettings) => invoke<WikiToolsSettings>("wiki_save_tools_settings", { settings }),
 
-  globalSearch: (query: string) => invoke<SearchResults>("global_search", { query }),
+  globalSearch: (query: string, options?: SearchOptions) => invoke<SearchResults>("global_search", { query, options }),
 
   webAccessStatus: () => invoke<Partial<Record<Service, WebAccess>>>("web_access_status"),
   webLogin: (service: Service) => invoke<void>("web_login", { service }),

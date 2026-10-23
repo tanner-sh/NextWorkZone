@@ -31,6 +31,7 @@ const GitlabPage = page(() => import("./pages/gitlab/GitlabPage"), "GitlabPage")
 const JiraPage = page(() => import("./pages/jira/JiraPage"), "JiraPage");
 const WeeklyPage = page(() => import("./pages/weekly/WeeklyPage"), "WeeklyPage");
 const WikiPage = page(() => import("./pages/wiki/WikiPage"), "WikiPage");
+const SearchPage = page(() => import("./pages/SearchPage"), "SearchPage");
 
 type NavEntry = { id: PageId; label: string; icon: ComponentType<LucideProps> };
 
@@ -233,6 +234,7 @@ function Shell() {
               {current.page === "stats" && <StatsPage />}
               {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
               {current.page === "settings" && <SettingsPage />}
+              {current.page === "search" && <SearchPage />}
             </Suspense>
           </ErrorBoundary>
         </main>
