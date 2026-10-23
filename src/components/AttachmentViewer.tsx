@@ -1,10 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, ExternalLink, Eye, Maximize2, Minimize2, X } from "lucide-react";
 import { api, errorMessage, type Attachment, type AttachmentPreview, type Service } from "../api";
 import { assetUrl } from "../lib/asset";
 import { formatSize, formatTime } from "../lib/format";
 import { useSettings } from "../state/settings";
+import { copyText } from "../lib/clipboard";
 import { Spinner } from "./common";
+import type { MenuInput } from "./ContextMenu";
+import { guarded, toast } from "./Toast";
+
+/** 附件的右键菜单（Jira 问题、Wiki 页面共用）。 */
+export function attachmentMenu(a: Attachment, preview: () => void, openExternal: (a: Attachment) => unknown): MenuInput[] {
+  return [
+    { label: "预览", icon: <Eye size={14} />, onSelect: preview },
+    { label: "用系统应用打开", icon: <ExternalLink size={14} />, onSelect: () => openExternal(a) },
+    "separator",
+    {
+      label: "复制文件名",
+      icon: <Copy size={14} />,
+      onSelect: guarded(async () => {
+        await copyText(a.filename);
+        toast("已复制");
+      }),
+    },
+  ];
+}
 
 type Kind = "image" | "pdf" | "media" | "html" | "converted" | "none";
 

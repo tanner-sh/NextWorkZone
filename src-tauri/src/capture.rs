@@ -65,3 +65,9 @@ pub fn capture_hide(app: AppHandle) {
 pub fn capture_clipboard(app: AppHandle) -> Option<String> {
     app.clipboard().read_text().ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
 }
+
+/// 剪贴板中的原样文字：右键菜单的“粘贴”（WebView 读取剪贴板会弹出系统确认）。
+#[tauri::command]
+pub fn clipboard_read_text(app: AppHandle) -> Option<String> {
+    app.clipboard().read_text().ok().filter(|t| !t.is_empty())
+}

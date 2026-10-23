@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookText, ChevronDown, ChevronRight, Clock3, FileText, Folder, Globe, Loader2, Plus, RefreshCw, Search, Star } from "lucide-react";
 import { api, errorMessage, type WikiNode, type WikiPageDetail, type WikiPageHit, type WikiRecent, type WikiSpace } from "../../api";
 import { ErrorBox, NotConfigured, Skeleton } from "../../components/common";
+import { useMenus } from "../../components/MenuHost";
 import { formatTime } from "../../lib/format";
 import { useFavorites } from "../../lib/wiki";
 import { useNav } from "../../state/nav";
@@ -163,7 +164,11 @@ export function WikiPage() {
 
 // ---------- 最近、收藏 ----------
 
+/** 列表项的样式：选中、右键菜单所在。 */
+const itemClass = (base: string, selected: boolean, menuTarget: boolean) => `${base}${selected ? " selected" : ""}${menuTarget ? " menu-target" : ""}`;
+
 function RecentList({ selected, onOpen }: { selected: string | null; onOpen: (id: string) => void }) {
+  const menus = useMenus();
   const [list, setList] = useState<WikiRecent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -182,7 +187,7 @@ function RecentList({ selected, onOpen }: { selected: string | null; onOpen: (id
       <ul className="doc-list">
         {list?.map((p) => (
           <li key={p.id}>
-            <button className={`doc-item${selected === p.id ? " selected" : ""}`} onClick={() => onOpen(p.id)}>
+            <button className={itemClass("doc-item", selected === p.id, menus.target === p.id)} onClick={() => onOpen(p.id)} onContextMenu={(e) => menus.open(e, menus.wikiPage(p), p.id)}>
               <span className="doc-item-title">{p.title}</span>
               <span className="doc-item-excerpt muted small">
                 {p.space} · {formatTime(new Date(p.at).toISOString())}
@@ -199,11 +204,12 @@ function RecentList({ selected, onOpen }: { selected: string | null; onOpen: (id
 
 function FavoriteList({ selected, onOpen }: { selected: string | null; onOpen: (id: string) => void }) {
   const favorites = useFavorites();
+  const menus = useMenus();
   return (
     <ul className="doc-list">
       {favorites.map((p) => (
         <li key={p.id}>
-          <button className={`doc-item${selected === p.id ? " selected" : ""}`} onClick={() => onOpen(p.id)}>
+          <button className={itemClass("doc-item", selected === p.id, menus.target === p.id)} onClick={() => onOpen(p.id)} onContextMenu={(e) => menus.open(e, menus.wikiPage(p), p.id)}>
             <span className="doc-item-title">{p.title}</span>
             <span className="doc-item-excerpt muted small">{p.space}</span>
           </button>
@@ -293,13 +299,14 @@ function useSpaceTree(): SpaceTreeState {
 }
 
 function SpaceTree({ tree, selected, onOpen, onCreate }: { tree: SpaceTreeState; selected: string | null; onOpen: (id: string) => void; onCreate: (space: string, parent: string | null) => void }) {
+  const menus = useMenus();
   const [filter, setFilter] = useState("");
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return (tree.spaces ?? []).filter((s) => !q || `${s.name} ${s.key}`.toLowerCase().includes(q));
   }, [tree.spaces, filter]);
 
-  const renderChildren = (id: string, space: string, depth: number): React.ReactNode => {
+  const renderChildren = (id: string, space: WikiSpace, depth: number): React.ReactNode => {
     const list = tree.children[id];
     if (list === undefined || list === "loading") {
       return (
@@ -326,7 +333,24 @@ function SpaceTree({ tree, selected, onOpen, onCreate }: { tree: SpaceTreeState;
       const open = tree.expanded.has(node.id);
       return (
         <li key={node.id}>
-          <div className={`tree-item${selected === node.id ? " selected" : ""}`} style={{ paddingLeft: 4 + depth * 14 }} onClick={() => onOpen(node.id)} title={node.title}>
+          <div
+            className={itemClass("tree-item", selected === node.id, menus.target === node.id)}
+            style={{ paddingLeft: 4 + depth * 14 }}
+            onClick={() => onOpen(node.id)}
+            onContextMenu={(e) =>
+              menus.open(
+                e,
+                [
+                  ...menus.wikiPage({ id: node.id, title: node.title, space: space.name }, { onNewChild: () => onCreate(space.key, node.id) }),
+                  node.hasChildren && "separator",
+                  node.hasChildren && { label: open ? "收起" : "展开", onSelect: () => tree.toggle(node.id) },
+                  node.hasChildren && open && { label: "刷新子页面", onSelect: () => tree.refreshChildren(node.id) },
+                ],
+                node.id,
+              )
+            }
+            title={node.title}
+          >
             {node.hasChildren ? (
               <button
                 className="tree-toggle"
@@ -348,7 +372,7 @@ function SpaceTree({ tree, selected, onOpen, onCreate }: { tree: SpaceTreeState;
               title="新建子页面"
               onClick={(e) => {
                 e.stopPropagation();
-                onCreate(space, node.id);
+                onCreate(space.key, node.id);
               }}
             >
               <Plus size={13} />
@@ -385,7 +409,22 @@ function SpaceTree({ tree, selected, onOpen, onCreate }: { tree: SpaceTreeState;
           const open = tree.expanded.has(id);
           return (
             <li key={s.key}>
-              <div className="tree-item wiki-space" onClick={() => tree.toggle(id)} title={s.description || s.name}>
+              <div
+                className={itemClass("tree-item wiki-space", false, menus.target === id)}
+                onClick={() => tree.toggle(id)}
+                onContextMenu={(e) =>
+                  menus.open(
+                    e,
+                    [
+                      { label: open ? "收起" : "展开", onSelect: () => tree.toggle(id) },
+                      "separator",
+                      ...menus.wikiSpace(s, { onCreate: () => onCreate(s.key, null), onRefresh: open ? () => tree.refreshChildren(id) : undefined }),
+                    ],
+                    id,
+                  )
+                }
+                title={s.description || s.name}
+              >
                 <span className="tree-toggle">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                 <Globe size={13} className="muted" />
                 <span className="ellipsis grow">{s.name}</span>
@@ -412,7 +451,7 @@ function SpaceTree({ tree, selected, onOpen, onCreate }: { tree: SpaceTreeState;
                   <Plus size={13} />
                 </button>
               </div>
-              {open && <ul className="tree">{renderChildren(id, s.key, 1)}</ul>}
+              {open && <ul className="tree">{renderChildren(id, s, 1)}</ul>}
             </li>
           );
         })}
@@ -432,6 +471,7 @@ const DAY_OPTIONS = [
 ];
 
 function SearchPanel({ initial, spaces, selected, onOpen }: { initial?: string; spaces: WikiSpace[]; selected: string | null; onOpen: (id: string) => void }) {
+  const menus = useMenus();
   const [text, setText] = useState(initial ?? "");
   const [space, setSpace] = useState("");
   const [days, setDays] = useState(0);
@@ -520,7 +560,7 @@ function SearchPanel({ initial, spaces, selected, onOpen }: { initial?: string; 
       <ul className="doc-list">
         {result?.hits.map((h) => (
           <li key={h.id}>
-            <button className={`doc-item${selected === h.id ? " selected" : ""}`} onClick={() => onOpen(h.id)}>
+            <button className={itemClass("doc-item", selected === h.id, menus.target === h.id)} onClick={() => onOpen(h.id)} onContextMenu={(e) => menus.open(e, menus.wikiPage({ id: h.id, title: h.title, space: h.spaceName }), h.id)}>
               <span className="doc-item-title">
                 <Highlight text={h.title} terms={terms} />
               </span>

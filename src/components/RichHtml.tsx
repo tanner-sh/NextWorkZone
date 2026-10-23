@@ -12,7 +12,7 @@ import { toast } from "./Toast";
 const IMAGE_FILE = /\.(png|jpe?g|gif|bmp|webp|svg)(\?|#|$)/i;
 
 /** 附件下载地址（Jira、Wiki）：在应用内预览。 */
-const ATTACHMENT_PATH = /\/(secure\/attachment|download\/attachments|download\/thumbnails)\//;
+export const ATTACHMENT_PATH = /\/(secure\/attachment|download\/attachments|download\/thumbnails)\//;
 
 /** 按扩展名推测文件类型，用于预览只有地址的附件链接。 */
 function guessMime(filename: string): string {

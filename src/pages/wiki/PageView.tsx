@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { BookOpen, CheckSquare, ChevronRight, CircleDot, Copy, ExternalLink, FilePlus2, FileText, History, MoreHorizontal, NotepadText, Paperclip, Pencil, RefreshCw, Star } from "lucide-react";
+import { ChevronRight, CircleDot, FilePlus2, FileText, History, MoreHorizontal, Paperclip, Pencil, RefreshCw, Star } from "lucide-react";
 import { api, errorMessage, type Attachment, type IssueSummary, type WikiNode, type WikiPageDetail } from "../../api";
 import { AttachmentViewer } from "../../components/AttachmentViewer";
-import { useContextMenu } from "../../components/ContextMenu";
+import type { MenuInput } from "../../components/ContextMenu";
+import { attachmentMenu } from "../../components/AttachmentViewer";
+import { contributeMenu, useMenus } from "../../components/MenuHost";
 import { ErrorBox, Skeleton, StatusPill, WebLoginHint } from "../../components/common";
 import { RichHtml } from "../../components/RichHtml";
 import { toast } from "../../components/Toast";
-import { copyText } from "../../lib/clipboard";
 import { formatSize, formatTime } from "../../lib/format";
 import { fetchIssues, fillJiraMacros, headingsOf, issueKeysIn, refreshFavorite, toggleFavorite, useFavorites, type TocItem } from "../../lib/wiki";
-import { workspaceChanged } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { Backlinks } from "../workspace/Backlinks";
-import { wikiToPage } from "../workspace/kbImport";
 import { HistoryDialog } from "./HistoryDialog";
 import { WikiComments } from "./WikiComments";
 
@@ -31,14 +29,13 @@ export function PageView(props: {
 }) {
   const { pageId, onLoaded } = props;
   const { baseUrl } = useSettings();
-  const { navigate } = useNav();
   const favorites = useFavorites();
   const [page, setPage] = useState<WikiPageDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [issues, setIssues] = useState<{ keys: string[]; map: Map<string, IssueSummary> } | null>(null);
   const [history, setHistory] = useState(false);
-  const menu = useContextMenu();
+  const menus = useMenus();
 
   // 只采用最近一次请求的结果：快速切换页面时，已离开的页面晚到的结果不能再把选中项改回去
   const requestId = useRef(0);
@@ -151,49 +148,17 @@ export function PageView(props: {
   }
 
   const favorite = favorites.some((f) => f.id === page.id);
-  const copy = (text: string) =>
-    copyText(text).then(
-      () => toast("已复制"),
-      (e) => toast(`复制失败：${errorMessage(e)}`, true),
-    );
-  const moreMenu = (e: React.MouseEvent) =>
-    menu.open(e, [
-      {
-        label: "剪藏到知识库",
-        icon: <BookOpen size={14} />,
-        onSelect: () =>
-          wikiToPage(page.id, baseUrl("confluence")).then(
-            (doc) => navigate({ page: "kb", docId: doc.id }),
-            (err) => toast(errorMessage(err), true),
-          ),
-      },
-      {
-        label: "写笔记",
-        icon: <NotepadText size={14} />,
-        onSelect: async () => {
-          const doc = await api.wsSaveDoc({ kind: "note", title: page.title, content: `[${page.title}](${page.url})\n\n` });
-          workspaceChanged();
-          navigate({ page: "notes", docId: doc.id });
-        },
-      },
-      {
-        label: "添加待办",
-        icon: <CheckSquare size={14} />,
-        onSelect: async () => {
-          await api.wsSaveTodo({ title: page.title, refSystem: "wiki", refKey: page.id, refTitle: page.title });
-          workspaceChanged();
-          toast("已添加待办");
-        },
-      },
-      "separator",
-      { label: "复制链接", icon: <Copy size={14} />, onSelect: () => void copy(page.url) },
-      { label: "复制为 Markdown 链接", onSelect: () => void copy(`[${page.title}](${page.url})`) },
-      { label: "刷新", icon: <RefreshCw size={14} />, onSelect: () => void load() },
-      { label: "在浏览器中打开", icon: <ExternalLink size={14} />, onSelect: () => void openUrl(page.url) },
-    ]);
+  // 更多按钮、页面空白处右键共用
+  const pageActions: MenuInput[] = [
+    page.canEdit && { label: "编辑", icon: <Pencil size={14} />, onSelect: props.onEdit },
+    { label: "历史版本", icon: <History size={14} />, onSelect: () => setHistory(true) },
+    { label: "刷新", icon: <RefreshCw size={14} />, onSelect: () => void load() },
+    "separator",
+    ...menus.wikiPage({ id: page.id, title: page.title, space: page.spaceName }, { current: true, onNewChild: props.onNewChild }),
+  ];
 
   return (
-    <div className={`wiki-layout${toc.length >= TOC_MIN ? " with-toc" : ""}`}>
+    <div className={`wiki-layout${toc.length >= TOC_MIN ? " with-toc" : ""}`} onContextMenu={(e) => contributeMenu(e, { label: "当前页面", items: pageActions })}>
       <div className="detail-body wiki-body">
         <header className="wiki-header">
           <div className="breadcrumbs muted small">
@@ -201,7 +166,7 @@ export function PageView(props: {
             {page.ancestors.map((a) => (
               <span key={a.id}>
                 <ChevronRight size={12} />
-                <button className="link" onClick={() => props.onOpen(a.id)}>
+                <button className="link" onClick={() => props.onOpen(a.id)} onContextMenu={(e) => menus.open(e, menus.wikiPage({ id: a.id, title: a.title }))}>
                   {a.title}
                 </button>
               </span>
@@ -226,7 +191,7 @@ export function PageView(props: {
             <button className="btn subtle icon" title="历史版本" onClick={() => setHistory(true)}>
               <History size={15} />
             </button>
-            <button className="btn subtle icon" title="更多" onClick={moreMenu}>
+            <button className={`btn subtle icon${menus.target === "page-more" ? " active" : ""}`} title="更多" onClick={(e) => menus.open(e, pageActions, "page-more")}>
               <MoreHorizontal size={15} />
             </button>
           </div>
@@ -263,7 +228,6 @@ export function PageView(props: {
       </div>
       {toc.length >= TOC_MIN && <TableOfContents items={toc} />}
       {history && <HistoryDialog page={page} onClose={() => setHistory(false)} />}
-      {menu.menu}
     </div>
   );
 }
@@ -295,6 +259,7 @@ function TableOfContents({ items }: { items: TocItem[] }) {
 
 function ReferencedIssues({ keys, map, jiraReady }: { keys: string[]; map: Map<string, IssueSummary>; jiraReady: boolean }) {
   const { navigate } = useNav();
+  const menus = useMenus();
   return (
     <section className="block">
       <h2>
@@ -305,7 +270,12 @@ function ReferencedIssues({ keys, map, jiraReady }: { keys: string[]; map: Map<s
         {keys.map((key) => {
           const issue = map.get(key);
           return (
-            <li key={key} className={jiraReady ? "clickable" : ""} onClick={() => jiraReady && navigate({ page: "jira", issueKey: key })}>
+            <li
+              key={key}
+              className={`${jiraReady ? "clickable" : ""}${menus.target === key ? " menu-target" : ""}`}
+              onClick={() => jiraReady && navigate({ page: "jira", issueKey: key })}
+              onContextMenu={(e) => jiraReady && menus.open(e, menus.issue(issue ?? key), key)}
+            >
               <span className="issue-key">{key}</span>
               <span className="ellipsis grow">{issue?.summary ?? (jiraReady ? "无法获取（可能没有权限）" : "")}</span>
               {issue && <StatusPill status={issue.status} />}
@@ -318,6 +288,7 @@ function ReferencedIssues({ keys, map, jiraReady }: { keys: string[]; map: Map<s
 }
 
 function ChildPages({ pageId, onOpen }: { pageId: string; onOpen: (id: string) => void }) {
+  const menus = useMenus();
   const [children, setChildren] = useState<WikiNode[] | null>(null);
   useEffect(() => {
     api.wikiChildren(pageId).then(setChildren, () => setChildren([]));
@@ -331,7 +302,7 @@ function ChildPages({ pageId, onOpen }: { pageId: string; onOpen: (id: string) =
       </h2>
       <div className="child-pages">
         {children.map((c) => (
-          <button key={c.id} className="child-page" onClick={() => onOpen(c.id)}>
+          <button key={c.id} className={`child-page${menus.target === c.id ? " menu-target" : ""}`} onClick={() => onOpen(c.id)} onContextMenu={(e) => menus.open(e, menus.wikiPage({ id: c.id, title: c.title }), c.id)}>
             <FileText size={13} />
             {c.title}
           </button>
@@ -342,12 +313,14 @@ function ChildPages({ pageId, onOpen }: { pageId: string; onOpen: (id: string) =
 }
 
 function WikiAttachments({ pageId }: { pageId: string }) {
+  const menus = useMenus();
   const [list, setList] = useState<Attachment[] | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
   useEffect(() => {
     api.wikiAttachments(pageId).then(setList, () => setList([]));
   }, [pageId]);
   const sorted = useMemo(() => [...(list ?? [])].sort((a, b) => b.created.localeCompare(a.created)), [list]);
+  const openExternal = (a: Attachment) => api.jiraOpenAttachment(a.contentUrl, a.filename, "confluence").catch((e) => toast(errorMessage(e), true));
   if (!list || list.length === 0) return null;
   return (
     <section className="block">
@@ -357,7 +330,7 @@ function WikiAttachments({ pageId }: { pageId: string }) {
       </h2>
       <ul className="links">
         {sorted.map((a, i) => (
-          <li key={a.id} className="clickable" onClick={() => setViewing(i)} title="在应用内预览">
+          <li key={a.id} className={`clickable${menus.target === a.id ? " menu-target" : ""}`} onClick={() => setViewing(i)} onContextMenu={(e) => menus.open(e, attachmentMenu(a, () => setViewing(i), openExternal), a.id)} title="在应用内预览">
             <Paperclip size={13} className="muted" />
             <span className="ellipsis grow">{a.filename}</span>
             <span className="muted small nowrap">
@@ -372,7 +345,7 @@ function WikiAttachments({ pageId }: { pageId: string }) {
           attachments={sorted}
           index={viewing}
           onClose={() => setViewing(null)}
-          onOpenExternal={(a) => api.jiraOpenAttachment(a.contentUrl, a.filename, "confluence").catch((e) => toast(errorMessage(e), true))}
+          onOpenExternal={openExternal}
         />
       )}
     </section>

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  ArrowLeft, Check, CheckCircle2, CircleAlert, CircleDot, Copy, ExternalLink, FileDiff as FileDiffIcon, GitBranch, GitCommitHorizontal, GitMerge,
+  ArrowLeft, Check, CheckCircle2, CircleAlert, CircleDot, Copy, ExternalLink, FileDiff as FileDiffIcon, GitCommitHorizontal, GitMerge,
   GitPullRequestClosed, LoaderCircle, MessageSquare, MoreHorizontal, Pencil, RefreshCw, Reply, ThumbsUp, Trash2, Undo2,
 } from "lucide-react";
 import { api, errorMessage, type Approvals, type Branch, type Commit, type Discussion, type FileDiff, type GlProjectRef, type GlUser, type MergeRequest, type MrNote } from "../../api";
 import { Avatar, ErrorBox, Modal, Skeleton, Spinner } from "../../components/common";
 import { CommentBox } from "../../components/CommentBox";
 import { useContextMenu, type MenuInput } from "../../components/ContextMenu";
+import { contributeMenu } from "../../components/MenuHost";
 import { RichHtml } from "../../components/RichHtml";
 import { toast } from "../../components/Toast";
 import { copyText } from "../../lib/clipboard";
@@ -16,6 +17,7 @@ import { gitlabMarkdown, issueKeysIn } from "../../lib/gitlabMarkdown";
 import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { DiffList, lineKeyOf, type DiffAnnotations } from "./DiffView";
+import { mrMenu } from "./gitlabMenu";
 import { CommitDetailView, CommitList } from "./ProjectView";
 
 export interface MrRef {
@@ -241,20 +243,25 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
       toast(yes ? "已批准" : "已取消批准");
     });
 
+  const refresh = () => {
+    setCommits(null);
+    setChanges(null);
+    void load();
+  };
+
+  // 更多按钮、详情空白处右键共用
   const moreEntries: MenuInput[] = [
     mr.state === "opened" && { label: "编辑标题和描述", icon: <Pencil size={14} />, onSelect: () => setEditing(true) },
     mr.state === "opened" && { label: mr.draft ? "标记为就绪" : "标记为草稿", onSelect: toggleDraft },
-    mr.state === "opened" && "separator",
-    { label: "复制链接", icon: <Copy size={14} />, onSelect: copy(mr.webUrl) },
-    { label: "复制引用", onSelect: copy(mr.reference) },
-    { label: "复制源分支名", icon: <GitBranch size={14} />, onSelect: copy(mr.sourceBranch) },
-    { label: "在浏览器中打开", icon: <ExternalLink size={14} />, onSelect: () => openUrl(mr.webUrl) },
+    { label: "刷新", icon: <RefreshCw size={14} />, onSelect: refresh },
+    "separator",
+    ...mrMenu(mr, navigate, { jira: isReady("jira") }),
     mr.state === "opened" && "separator",
     mr.state === "opened" && { label: "关闭合并请求", icon: <GitPullRequestClosed size={14} />, danger: true, onSelect: () => setState("close") },
   ];
 
   return (
-    <div className="detail-body">
+    <div className="detail-body" onContextMenu={(e) => contributeMenu(e, { label: `!${mr.iid}`, items: moreEntries })}>
       <header className="issue-header">
         <div className="issue-header-top">
           {onBack && <BackButton onBack={onBack} />}
@@ -263,15 +270,7 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
           </button>
           <span>!{mr.iid}</span>
           <span className="spacer" />
-          <button
-            className="btn subtle icon"
-            title="刷新"
-            onClick={() => {
-              setCommits(null);
-              setChanges(null);
-              void load();
-            }}
-          >
+          <button className="btn subtle icon" title="刷新" onClick={refresh}>
             <RefreshCw size={14} />
           </button>
           <button className="btn subtle icon" title="在浏览器中打开" onClick={() => openUrl(mr.webUrl)}>
@@ -583,7 +582,33 @@ function Thread({ discussion: d, actions, compact, outdated, onShowDiff }: { dis
       ) : null}
       {!collapsed &&
         notes.map((n) => (
-          <div key={n.id} className="mr-note">
+          <div
+            key={n.id}
+            className="mr-note"
+            onContextMenu={(e) =>
+              editing !== n.id &&
+              contributeMenu(e, {
+                label: "评论",
+                items: [
+                  (!d.individualNote || resolvable) && { label: "回复", icon: <Reply size={14} />, onSelect: () => setReplying(true) },
+                  resolvable && { label: resolved ? "重新打开讨论" : "解决讨论", icon: <Check size={14} />, onSelect: resolve },
+                  actions.me?.id === n.author.id && { label: "编辑", icon: <Pencil size={14} />, onSelect: () => setEditing(n.id) },
+                  "separator",
+                  {
+                    label: "复制评论内容",
+                    icon: <Copy size={14} />,
+                    onSelect: () =>
+                      copyText(n.body).then(
+                        () => toast("已复制"),
+                        (err) => toast(`复制失败：${errorMessage(err)}`, true),
+                      ),
+                  },
+                  actions.me?.id === n.author.id && "separator",
+                  actions.me?.id === n.author.id && { label: "删除", icon: <Trash2 size={14} />, danger: true, onSelect: () => actions.remove(d, n).catch((err) => toast(errorMessage(err), true)) },
+                ],
+              })
+            }
+          >
             <div className="wiki-comment-head">
               <Avatar name={n.author.name} size={22} />
               <strong>{n.author.name}</strong>

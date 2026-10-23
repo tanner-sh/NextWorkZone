@@ -3,8 +3,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, type Branch, type Commit, type CommitDetail, type Comparison, type FileContent, type Project, type TreeEntry } from "../../api";
 import { ArrowLeft, ChevronRight, CornerLeftUp, ExternalLink, FileCode2, Folder, GitBranch, GitCommitHorizontal, GitCompare, GitPullRequest, GitPullRequestCreate, Code2, Package, Search } from "lucide-react";
 import { Avatar, ErrorBox, Skeleton, Spinner } from "../../components/common";
+import { useMenus } from "../../components/MenuHost";
 import { formatSize, formatTime } from "../../lib/format";
 import { CodeView } from "./CodeView";
+import { branchMenu, commitMenu, treeEntryMenu } from "./gitlabMenu";
 import { DiffList } from "./DiffView";
 import { MergeRequestView } from "./MergeRequestView";
 import { MR_STATES, MrListBody, useMrList } from "./MrList";
@@ -118,10 +120,10 @@ export function ProjectView({ projectId, initialMr }: { projectId: number; initi
         </div>
       </header>
 
-      {tab === "code" && <CodeTab projectId={projectId} gitRef={gitRef} location={location} onLocation={setLocation} />}
+      {tab === "code" && <CodeTab projectId={projectId} projectUrl={project.webUrl} gitRef={gitRef} location={location} onLocation={setLocation} />}
       {tab === "mrs" && (openMr ? <MergeRequestView key={openMr} mrRef={{ project: projectId, iid: openMr }} onBack={() => setOpenMr(null)} /> : <ProjectMrsTab projectId={projectId} onOpen={setOpenMr} />)}
       {tab === "commits" && <CommitsTab projectId={projectId} gitRef={gitRef} />}
-      {tab === "branches" && <BranchesTab branches={branches} onOpen={openBranch} onCreateMr={(name) => setCreating(name)} />}
+      {tab === "branches" && <BranchesTab branches={branches} projectUrl={project.webUrl} onOpen={openBranch} onCreateMr={(name) => setCreating(name)} />}
       {tab === "compare" && <CompareTab projectId={projectId} branches={branches} defaultBranch={project.defaultBranch ?? ""} />}
       {creating !== null && (
         <NewMergeRequestDialog
@@ -158,8 +160,9 @@ function Breadcrumb({ path, onPath, root }: { path: string; onPath: (p: string) 
 }
 
 /** 代码浏览：`path` 为目录时列出内容，为文件时显示文件。 */
-function CodeTab({ projectId, gitRef, location, onLocation }: { projectId: number; gitRef: string; location: Location; onLocation: (l: Location) => void }) {
+function CodeTab({ projectId, projectUrl, gitRef, location, onLocation }: { projectId: number; projectUrl: string; gitRef: string; location: Location; onLocation: (l: Location) => void }) {
   const { path, isFile } = location;
+  const menus = useMenus();
   const [entries, setEntries] = useState<TreeEntry[] | null>(null);
   const [file, setFile] = useState<FileContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +197,12 @@ function CodeTab({ projectId, gitRef, location, onLocation }: { projectId: numbe
           )}
           {entries.map((e) => (
             <li key={e.path}>
-              <button className="tree-item" onClick={() => e.kind !== "commit" && go(e.path, e.kind === "blob")} disabled={e.kind === "commit"}>
+              <button
+                className={`tree-item${menus.target === e.path ? " menu-target" : ""}`}
+                onClick={() => e.kind !== "commit" && go(e.path, e.kind === "blob")}
+                onContextMenu={(ev) => menus.open(ev, treeEntryMenu(e, projectUrl, gitRef, () => go(e.path, e.kind === "blob")), e.path)}
+                disabled={e.kind === "commit"}
+              >
                 {e.kind === "tree" ? <Folder size={15} className="dir-icon" fill="currentColor" fillOpacity={0.15} /> : e.kind === "commit" ? <Package size={15} /> : <FileCode2 size={15} />}
                 <span className={e.kind === "tree" ? "dir" : ""}>{e.name}</span>
               </button>
@@ -264,11 +272,12 @@ function CommitsTab({ projectId, gitRef }: { projectId: number; gitRef: string }
 }
 
 export function CommitList({ commits, onOpen }: { commits: Commit[]; onOpen: (sha: string) => void }) {
+  const menus = useMenus();
   return (
     <ul className="commits">
       {commits.map((c) => (
         <li key={c.id}>
-          <button className="commit-item" onClick={() => onOpen(c.id)}>
+          <button className={`commit-item${menus.target === c.id ? " menu-target" : ""}`} onClick={() => onOpen(c.id)} onContextMenu={(e) => menus.open(e, commitMenu(c, () => onOpen(c.id)), c.id)}>
             <Avatar name={c.authorName} size={26} />
             <span className="commit-text">
               <span className="commit-title ellipsis">{c.title}</span>
@@ -358,7 +367,8 @@ function ProjectMrsTab({ projectId, onOpen }: { projectId: number; onOpen: (iid:
   );
 }
 
-function BranchesTab({ branches, onOpen, onCreateMr }: { branches: Branch[]; onOpen: (name: string) => void; onCreateMr: (name: string) => void }) {
+function BranchesTab({ branches, projectUrl, onOpen, onCreateMr }: { branches: Branch[]; projectUrl: string; onOpen: (name: string) => void; onCreateMr: (name: string) => void }) {
+  const menus = useMenus();
   const [filter, setFilter] = useState("");
   const visible = branches.filter((b) => b.name.toLowerCase().includes(filter.trim().toLowerCase()));
   return (
@@ -367,7 +377,11 @@ function BranchesTab({ branches, onOpen, onCreateMr }: { branches: Branch[]; onO
       <ul className="commits">
         {visible.map((b) => (
           <li key={b.name}>
-            <button className="commit-item" onClick={() => onOpen(b.name)}>
+            <button
+              className={`commit-item${menus.target === `branch:${b.name}` ? " menu-target" : ""}`}
+              onClick={() => onOpen(b.name)}
+              onContextMenu={(e) => menus.open(e, branchMenu(b, projectUrl, { onOpen: () => onOpen(b.name), onCreateMr: !b.default && !b.merged ? () => onCreateMr(b.name) : undefined }), `branch:${b.name}`)}
+            >
               <GitBranch size={15} className="muted" />
               <span className="commit-text">
               <span className="commit-title">

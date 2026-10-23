@@ -4,12 +4,13 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, errorMessage, type Attachment, type HistoryEntry, type IssueDetail, type IssueHit, type IssueSummary, type SimilarIssues, type TimeTracking, type Transition, type Watchers, type WikiPageHit } from "../../api";
 import { RichHtml } from "../../components/RichHtml";
 import { useDropTarget } from "../../components/FileDropLayer";
-import { BookOpen, BookText, CheckSquare, ChevronDown, ChevronRight, Eye, EyeOff, ExternalLink, FileText, History, NotepadText, Paperclip, Pencil, Sparkles, Upload, X, Zap } from "lucide-react";
-import { useContextMenu } from "../../components/ContextMenu";
+import { BookOpen, BookText, CheckSquare, ChevronDown, ChevronRight, Eye, EyeOff, ExternalLink, FileText, History, NotepadText, Paperclip, Pencil, Plus, RefreshCw, Sparkles, Upload, X, Zap } from "lucide-react";
+import { useContextMenu, type MenuInput } from "../../components/ContextMenu";
+import { contributeMenu, useMenus } from "../../components/MenuHost";
 import { guarded, toast } from "../../components/Toast";
 import { AssignDialog } from "./issueMenu";
 import { TimerButton } from "../../components/TimerButton";
-import { AttachmentViewer } from "../../components/AttachmentViewer";
+import { AttachmentViewer, attachmentMenu as attachmentItems } from "../../components/AttachmentViewer";
 import { Avatar, ErrorBox, Skeleton, StatusPill, SysImg, WebLoginHint } from "../../components/common";
 import { assetUrl } from "../../lib/asset";
 import { formatSize, formatTime, parseTime } from "../../lib/format";
@@ -47,6 +48,7 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
   const [me, setMe] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
   const priorityMenu = useContextMenu();
+  const menus = useMenus();
   const { navigate } = useNav();
 
   useEffect(() => {
@@ -116,14 +118,23 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
   const inlineFields = fields.filter((f) => !f.html && f.id !== "assignee");
   const htmlFields = fields.filter((f) => f.html);
 
+  // 问题详情空白处右键：编辑、新建子任务、刷新，以及与问题列表相同的问题菜单
+  const issueActions: MenuInput[] = [
+    { label: "编辑…", icon: <Pencil size={14} />, onSelect: () => setEditing(true) },
+    !issue.parent && { label: "新建子任务…", icon: <Plus size={14} />, onSelect: () => setCreatingSubtask(true) },
+    { label: "刷新", icon: <RefreshCw size={14} />, onSelect: reloadIssue },
+    "separator",
+    ...menus.issue(issue, { current: true, onUpdated: applyUpdate }),
+  ];
+
   return (
-    <div className="detail-body">
+    <div className="detail-body" onContextMenu={(e) => contributeMenu(e, { label: issue.key, items: issueActions })}>
       <header className="issue-header">
         <div className="issue-header-top">
           {issue.parent && (
             <>
               <SysImg service="jira" src={issue.parent.issueType?.iconUrl} className="icon16" />
-              <button className="link ellipsis parent-link" onClick={() => navigate({ page: "jira", issueKey: issue.parent!.key })} title={issue.parent.summary}>
+              <button className="link ellipsis parent-link" onClick={() => navigate({ page: "jira", issueKey: issue.parent!.key })} onContextMenu={(e) => menus.open(e, menus.issue(issue.parent!))} title={issue.parent.summary}>
                 {issue.parent.key} {issue.parent.summary}
               </button>
               <ChevronRight size={12} />
@@ -383,6 +394,7 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
 function WikiPages({ issueKey }: { issueKey: string }) {
   const { isReady } = useSettings();
   const { navigate } = useNav();
+  const menus = useMenus();
   const [pages, setPages] = useState<WikiPageHit[] | null>(null);
   const ready = isReady("confluence");
   useEffect(() => {
@@ -406,7 +418,12 @@ function WikiPages({ issueKey }: { issueKey: string }) {
       </h2>
       <ul className="links">
         {pages.map((p) => (
-          <li key={p.id} className="clickable" onClick={() => navigate({ page: "wiki", wikiPage: p.id })}>
+          <li
+            key={p.id}
+            className={`clickable${menus.target === p.id ? " menu-target" : ""}`}
+            onClick={() => navigate({ page: "wiki", wikiPage: p.id })}
+            onContextMenu={(e) => menus.open(e, menus.wikiPage({ id: p.id, title: p.title, space: p.spaceName }), p.id)}
+          >
             <BookText size={13} className="muted" />
             <span className="ellipsis grow">{p.title}</span>
             <span className="muted small nowrap">
@@ -423,12 +440,13 @@ function WikiPages({ issueKey }: { issueKey: string }) {
 /** 指向另一个问题的字段值（例如 Epic 链接）：显示概要，点击在应用内打开。 */
 function IssueKeyValue({ issueKey }: { issueKey: string }) {
   const { navigate } = useNav();
+  const menus = useMenus();
   const [summary, setSummary] = useState<string | null>(null);
   useEffect(() => {
     api.jiraPickIssues(issueKey, null, false).then((list) => setSummary(list.find((i) => i.key === issueKey)?.summary ?? null), () => {});
   }, [issueKey]);
   return (
-    <button className="link ellipsis" onClick={() => navigate({ page: "jira", issueKey })} title={summary ? `${issueKey} ${summary}` : issueKey}>
+    <button className="link ellipsis" onClick={() => navigate({ page: "jira", issueKey })} onContextMenu={(e) => menus.open(e, menus.issue({ key: issueKey, summary: summary ?? undefined }))} title={summary ? `${issueKey} ${summary}` : issueKey}>
       {summary ?? issueKey}
     </button>
   );
@@ -562,13 +580,14 @@ function SimilarList({ issue }: { issue: IssueDetail }) {
 
 /** 一条相似问题：概要、经办人、状态；下面是解决结果、用时和最后的评论。 */
 function SimilarItem({ hit: i, onOpen }: { hit: IssueHit; onOpen: () => void }) {
+  const menus = useMenus();
   const [expanded, setExpanded] = useState(false);
   const days = i.resolved ? Math.max(0, Math.round((parseTime(i.resolved).getTime() - parseTime(i.created).getTime()) / 86400000)) : null;
   const facts = [i.resolution, i.resolved && `${formatTime(i.resolved)} 解决`, days !== null && (days === 0 ? "当天解决" : `用时 ${days} 天`), i.commentCount > 0 && `${i.commentCount} 条评论`].filter(Boolean);
   const comments = expanded ? i.lastComments : i.lastComments.slice(-1);
   return (
     <li className="similar-entry">
-      <button className="similar-item" onClick={onOpen}>
+      <button className={`similar-item${menus.target === i.key ? " menu-target" : ""}`} onClick={onOpen} onContextMenu={(e) => menus.open(e, menus.issue(i), i.key)}>
         <SysImg service="jira" src={i.issueType.iconUrl} className="icon16" />
         <span className="issue-key nowrap">{i.key}</span>
         <span className="ellipsis grow" title={i.summary}>
@@ -702,14 +721,7 @@ function Attachments({ issueKey, attachments, onUploaded }: { issueKey: string; 
             className={`attachment${attachmentMenu.target === a.id ? " menu-target" : ""}`}
             onClick={() => setPreviewing(attachments.indexOf(a))}
             onContextMenu={(e) =>
-              attachmentMenu.open(
-                e,
-                [
-                  { label: "预览", icon: <Eye size={14} />, onSelect: () => setPreviewing(attachments.indexOf(a)) },
-                  { label: "用系统应用打开", icon: <ExternalLink size={14} />, onSelect: () => openAttachment(a) },
-                ],
-                a.id,
-              )
+              attachmentMenu.open(e, attachmentItems(a, () => setPreviewing(attachments.indexOf(a)), openAttachment), a.id)
             }
             title={`${a.filename}\n${a.author} · ${formatTime(a.created)}\n点击预览，右键可用系统应用打开`}
           >

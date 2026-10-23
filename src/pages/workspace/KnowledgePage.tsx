@@ -121,6 +121,7 @@ export function KnowledgePage() {
     const below = descendants(page.id);
     const allOpen = below.length > 0 && [page.id, ...below.filter((id) => (byParent.get(id) ?? []).length > 0)].every((id) => expanded.includes(id));
     return [
+      { label: "打开", onSelect: () => setSelected(page.id) },
       { label: "添加子页面", icon: <Plus size={14} />, onSelect: () => create(page.id) },
       below.length > 0 && {
         label: allOpen ? "收起全部子页面" : "展开全部子页面",

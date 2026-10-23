@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, Clock, GitCommitHorizontal, History, Lock, MessageSquare, Pencil, Plus, Reply, Trash2 } from "lucide-react";
+import { ArrowRight, Clock, Copy, GitCommitHorizontal, History, Link, Lock, MessageSquare, Pencil, Plus, Reply, Trash2 } from "lucide-react";
 import { api, errorMessage, type Comment, type CommentLevel, type CommentVisibility, type HistoryEntry, type IssueDetail, type Worklog } from "../../api";
+import type { MenuInput } from "../../components/ContextMenu";
+import { contributeMenu } from "../../components/MenuHost";
 import { RichHtml } from "../../components/RichHtml";
+import { guarded, toast } from "../../components/Toast";
+import { copyText } from "../../lib/clipboard";
+import { useSettings } from "../../state/settings";
 import { Avatar, ErrorBox, Skeleton } from "../../components/common";
 import { formatTime, localizeDuration } from "../../lib/format";
 import { toJiraDateTime } from "./fieldForm";
@@ -154,11 +159,27 @@ function CommentItem({ issueKey, comment: c, isNew, onQuote, onUpdated, onDelete
     }
   };
 
+  const jiraBase = useSettings().baseUrl("jira");
+  const copy = (text: string) =>
+    guarded(async () => {
+      await copyText(text);
+      toast("已复制");
+    });
+  const commentActions: MenuInput[] = [
+    { label: "引用回复", icon: <Reply size={14} />, onSelect: onQuote },
+    c.mine && { label: "编辑", icon: <Pencil size={14} />, onSelect: () => setEditing(c.body) },
+    "separator",
+    { label: "复制评论内容", icon: <Copy size={14} />, onSelect: copy(c.body) },
+    { label: "复制评论链接", icon: <Link size={14} />, onSelect: copy(`${jiraBase}/browse/${issueKey}?focusedCommentId=${c.id}#comment-${c.id}`) },
+    c.mine && "separator",
+    c.mine && { label: "删除", icon: <Trash2 size={14} />, danger: true, onSelect: () => setConfirming(true) },
+  ];
+
   // 编辑过的评论（修改时间比创建时间晚一分钟以上）
   const edited = new Date(c.updated).getTime() - new Date(c.created).getTime() > 60_000;
 
   return (
-    <li className={`comment${isNew ? " new" : ""}`} id={`comment-${c.id}`}>
+    <li className={`comment${isNew ? " new" : ""}`} id={`comment-${c.id}`} onContextMenu={(e) => editing === null && contributeMenu(e, { label: "评论", items: commentActions })}>
       <Avatar name={c.author} size={28} />
       <div className="comment-card">
         <div className="comment-meta">

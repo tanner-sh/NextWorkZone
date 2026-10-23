@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage, type GlProjectRef, type MrScope, type MrState, type Project } from "../../api";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Copy, ExternalLink, GitBranch, RefreshCw, Search, Star, StarOff } from "lucide-react";
+import { Copy, ExternalLink, FolderGit2, GitBranch, RefreshCw, Search, Star, StarOff } from "lucide-react";
 import { ErrorBox, NotConfigured, Skeleton } from "../../components/common";
 import { useContextMenu, type MenuEntry } from "../../components/ContextMenu";
 import { toast } from "../../components/Toast";
@@ -150,11 +150,13 @@ export function GitlabPage() {
       );
     const isStarred = starred.includes(p.id);
     return [
+      { label: "打开", icon: <FolderGit2 size={14} />, onSelect: () => setSelected(p.id) },
       { label: isStarred ? "取消收藏" : "收藏", icon: isStarred ? <StarOff size={14} /> : <Star size={14} />, onSelect: () => toggleStar(p.id) },
       "separator",
       { label: "复制项目路径", icon: <Copy size={14} />, onSelect: copy(p.pathWithNamespace) },
       { label: "复制克隆地址", icon: <GitBranch size={14} />, onSelect: copy(`${p.webUrl}.git`) },
       { label: "复制网页地址", onSelect: copy(p.webUrl) },
+      "separator",
       { label: "在浏览器中打开", icon: <ExternalLink size={14} />, onSelect: () => openUrl(p.webUrl) },
     ];
   };

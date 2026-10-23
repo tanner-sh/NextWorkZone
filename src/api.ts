@@ -1228,6 +1228,7 @@ export const api = {
     invoke<void>("ws_add_time_entry", { input }),
   captureHide: () => invoke<void>("capture_hide"),
   captureClipboard: () => invoke<string | null>("capture_clipboard"),
+  clipboardReadText: () => invoke<string | null>("clipboard_read_text"),
   toolsHidden: () => invoke<string[]>("tools_hidden"),
   toolsSetHidden: (hidden: string[]) => invoke<string[]>("tools_set_hidden", { hidden }),
   clipList: (query: ClipQuery) => invoke<ClipItem[]>("clip_list", { query }),

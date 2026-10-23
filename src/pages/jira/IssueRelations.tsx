@@ -2,14 +2,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import { GitBranch, Link2, Plus, X } from "lucide-react";
 import { api, errorMessage, type IssueChoice, type IssueDetail, type IssueRef, type LinkType } from "../../api";
 import { ErrorBox, StatusPill, SysImg } from "../../components/common";
+import { useMenus } from "../../components/MenuHost";
 import { useNav } from "../../state/nav";
 import { Picker } from "./fieldForm";
 
 /** 在工作台内打开另一个问题。 */
 function IssueRow({ issue, prefix, actions }: { issue: IssueRef; prefix?: string; actions?: ReactNode }) {
   const { navigate } = useNav();
+  const menus = useMenus();
   return (
-    <li>
+    <li className={menus.target === issue.key ? "menu-target" : undefined} onContextMenu={(e) => menus.open(e, menus.issue(issue), issue.key)}>
       {prefix && <span className="muted nowrap">{prefix}</span>}
       <SysImg service="jira" src={issue.issueType?.iconUrl} className="icon16" alt={issue.issueType?.name} />
       <button className="link nowrap" onClick={() => navigate({ page: "jira", issueKey: issue.key })}>

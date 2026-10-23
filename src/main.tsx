@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { BasicMenuHost } from "./components/MenuHost";
 import { CaptureWindow } from "./pages/workspace/CaptureWindow";
 import { ClipPanel } from "./pages/tools/clipboard/ClipPanel";
 import "./styles.css";
@@ -26,4 +27,18 @@ const clipboard = location.hash === "#clipboard";
 if (capture) document.documentElement.classList.add("capture-window");
 if (clipboard) document.documentElement.classList.add("clip-window");
 
-createRoot(document.getElementById("root")!).render(<StrictMode>{capture ? <CaptureWindow /> : clipboard ? <ClipPanel /> : <App />}</StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    {capture ? (
+      <BasicMenuHost>
+        <CaptureWindow />
+      </BasicMenuHost>
+    ) : clipboard ? (
+      <BasicMenuHost>
+        <ClipPanel />
+      </BasicMenuHost>
+    ) : (
+      <App />
+    )}
+  </StrictMode>,
+);

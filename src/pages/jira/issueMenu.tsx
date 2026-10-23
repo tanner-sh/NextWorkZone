@@ -1,7 +1,7 @@
 // Jira 问题的右键菜单：问题列表、首页“我的问题”等共用。
 import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowRightLeft, BookOpen, CheckSquare, Copy, ExternalLink, Flag, Link, NotepadText, Timer, UserRound, Zap } from "lucide-react";
+import { ArrowRightLeft, BookOpen, CheckSquare, CircleDot, Copy, ExternalLink, Flag, Link, NotepadText, Timer, UserRound, Zap } from "lucide-react";
 import { currentTimer, isTiming, requestStop, startTimer } from "../../lib/timer";
 import { api, errorMessage, type IssueDetail, type IssueSummary, type Transition, type UserRef } from "../../api";
 import { ErrorBox, Modal, SysImg } from "../../components/common";
@@ -17,36 +17,65 @@ import { Picker } from "./fieldForm";
 import { projectKeyOf } from "./jql";
 import { TransitionDialog } from "./TransitionDialog";
 
+/** 菜单针对的问题：完整的列表项，或只知道问题键（和概要）时按需查询其余字段。 */
+export type IssueTarget = IssueSummary | { key: string; summary?: string };
+
+export interface IssueMenuOptions {
+  /** 当前正在查看这个问题（不显示“打开”） */
+  current?: boolean;
+  /** 流转、分配、改优先级成功后调用（覆盖 useIssueMenu 的 onUpdated） */
+  onUpdated?: (issue: IssueDetail) => void;
+}
+
+const isSummary = (issue: IssueTarget): issue is IssueSummary => "assigneeName" in issue && "priority" in issue;
+
+/** 按问题键查询列表项需要的字段。 */
+export async function fetchIssueSummary(key: string): Promise<IssueSummary> {
+  const issue = (await api.jiraSearch(`key = ${key}`, 0, 1)).issues[0];
+  if (!issue) throw new Error(`找不到问题 ${key}（可能没有权限）`);
+  return issue;
+}
+
 /**
  * 问题菜单及其需要的对话框（填写字段的流转、分配给其他人）。
+ * 问题列表、首页、问题详情、Wiki 和笔记中的问题链接等处共用，保证同一个问题在哪里右键都是同一份菜单。
  * `onUpdated` 在流转、分配、改优先级成功后调用，用于刷新列表。
  */
 export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
   const { baseUrl } = useSettings();
   const { navigate } = useNav();
-  const [transition, setTransition] = useState<{ issue: IssueSummary; transition: Transition; template?: JiraTemplate } | null>(null);
+  type Done = ((issue: IssueDetail) => void) | undefined;
+  const [transition, setTransition] = useState<{ issue: IssueSummary; transition: Transition; template?: JiraTemplate; done: Done } | null>(null);
   const templates = useTemplates();
-  const [assigning, setAssigning] = useState<IssueSummary | null>(null);
+  const [assigning, setAssigning] = useState<{ issue: IssueSummary; done: Done } | null>(null);
   const jiraBase = baseUrl("jira");
 
-  const updated = (detail: IssueDetail, message: string) => {
-    onUpdated?.(detail);
+  const updated = (done: Done, detail: IssueDetail, message: string) => {
+    (done ?? onUpdated)?.(detail);
     toast(message);
   };
 
-  const menuFor = (issue: IssueSummary): MenuInput[] => {
-    const url = `${jiraBase}/browse/${issue.key}`;
-    const copy = (text: string) =>
+  const menuFor = (target: IssueTarget | string, options: IssueMenuOptions = {}): MenuInput[] => {
+    const brief = typeof target === "string" ? { key: target } : target;
+    const key = brief.key;
+    const done = options.onUpdated;
+    let pending: Promise<IssueSummary> | null = isSummary(brief) ? Promise.resolve(brief) : null;
+    const full = () => (pending ??= fetchIssueSummary(key));
+    const summary = async () => brief.summary ?? (await full()).summary;
+    const url = `${jiraBase}/browse/${key}`;
+    const copy = (text: () => string | Promise<string>) =>
       guarded(async () => {
-        await copyText(text);
+        await copyText(await text());
         toast("已复制");
       });
     return [
+      !options.current && { label: `打开 ${key}`, icon: <CircleDot size={14} />, onSelect: () => navigate({ page: "jira", issueKey: key }) },
+      "separator",
       {
         label: "流转",
         icon: <ArrowRightLeft size={14} />,
         loadChildren: async () => {
-          const available = await api.jiraTransitions(issue.key);
+          const [available, issue] = await Promise.all([api.jiraTransitions(key), full()]);
           // 流转模板打开预先填好的对话框，确认后提交
           const usable = templates.flatMap((tpl) => {
             const t = tpl.kind === "transition" && available.find((x) => x.name === tpl.transition);
@@ -57,10 +86,10 @@ export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
               // 需要填写字段的流转打开对话框；其余再点一次确认后直接执行，避免误点
               label: t.fields.length > 0 ? `${t.name}…` : t.name,
               confirm: t.fields.length > 0 ? undefined : `再点一次确认「${t.name}」`,
-              onSelect: t.fields.length > 0 ? () => setTransition({ issue, transition: t }) : guarded(async () => updated(await api.jiraTransition(issue.key, t.id, {}, null), `${issue.key} 已流转到「${t.to.name}」`)),
+              onSelect: t.fields.length > 0 ? () => setTransition({ issue, transition: t, done }) : guarded(async () => updated(done, await api.jiraTransition(key, t.id, {}, null), `${key} 已流转到「${t.to.name}」`)),
             })),
             usable.length > 0 && "separator",
-            ...usable.map(({ tpl, t }) => ({ label: `${tpl.name}…`, icon: <Zap size={14} />, onSelect: () => setTransition({ issue, transition: t, template: tpl }) })),
+            ...usable.map(({ tpl, t }) => ({ label: `${tpl.name}…`, icon: <Zap size={14} />, onSelect: () => setTransition({ issue, transition: t, template: tpl, done }) })),
           ];
         },
       },
@@ -68,45 +97,49 @@ export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
         label: "分配",
         icon: <UserRound size={14} />,
         loadChildren: async () => {
-          const me = await api.jiraMe();
+          const [me, issue] = await Promise.all([api.jiraMe(), full()]);
           return [
-            { label: "分配给我", disabled: issue.assigneeName === me, onSelect: guarded(async () => updated(await api.jiraAssign(issue.key, me), `${issue.key} 已分配给你`)) },
-            { label: "分配给…", onSelect: () => setAssigning(issue) },
+            { label: "分配给我", disabled: issue.assigneeName === me, onSelect: guarded(async () => updated(done, await api.jiraAssign(key, me), `${key} 已分配给你`)) },
+            { label: "分配给…", onSelect: () => setAssigning({ issue, done }) },
             "separator",
-            { label: "取消分配", disabled: !issue.assigneeName, onSelect: guarded(async () => updated(await api.jiraAssign(issue.key, null), `${issue.key} 已取消分配`)) },
+            { label: "取消分配", disabled: !issue.assigneeName, onSelect: guarded(async () => updated(done, await api.jiraAssign(key, null), `${key} 已取消分配`)) },
           ];
         },
       },
       {
         label: "优先级",
         icon: <Flag size={14} />,
-        loadChildren: async () =>
-          (await api.jiraPriorities()).map((p) => ({
+        loadChildren: async () => {
+          const [list, issue] = await Promise.all([api.jiraPriorities(), full()]);
+          return list.map((p) => ({
             label: p.name,
             checked: issue.priority?.name === p.name,
             icon: <SysImg service="jira" src={p.iconUrl} className="icon16" />,
-            onSelect: issue.priority?.name === p.name ? undefined : guarded(async () => updated(await api.jiraSetPriority(issue.key, p.id), `${issue.key} 优先级已改为「${p.name}」`)),
-          })),
+            onSelect: issue.priority?.name === p.name ? undefined : guarded(async () => updated(done, await api.jiraSetPriority(key, p.id), `${key} 优先级已改为「${p.name}」`)),
+          }));
+        },
       },
-      isTiming(currentTimer(), { issueKey: issue.key })
+      isTiming(currentTimer(), { issueKey: key })
         ? { label: "停止计时并登记…", icon: <Timer size={14} />, onSelect: () => requestStop() }
-        : { label: "开始计时", icon: <Timer size={14} />, onSelect: () => startTimer({ issueKey: issue.key, title: issue.summary }) },
+        : { label: "开始计时", icon: <Timer size={14} />, onSelect: guarded(async () => startTimer({ issueKey: key, title: await summary() })) },
       "separator",
-      { label: "复制问题键", icon: <Copy size={14} />, onSelect: copy(issue.key) },
-      { label: "复制问题键和概要", onSelect: copy(`${issue.key} ${issue.summary}`) },
-      { label: "复制链接", icon: <Link size={14} />, onSelect: copy(url) },
-      { label: "在浏览器中打开", icon: <ExternalLink size={14} />, onSelect: guarded(() => openUrl(url)) },
+      { label: "复制问题键", icon: <Copy size={14} />, onSelect: copy(() => key) },
+      { label: "复制问题键和概要", onSelect: copy(async () => `${key} ${await summary()}`) },
+      { label: "复制链接", icon: <Link size={14} />, onSelect: copy(() => url) },
+      { label: "复制为 Markdown 链接", onSelect: copy(async () => `[${key} ${await summary()}](${url})`) },
       "separator",
       {
         label: "添加待办",
         icon: <CheckSquare size={14} />,
         onSelect: guarded(async () => {
-          await addIssueTodo(issue);
-          toast(`已为 ${issue.key} 添加待办`);
+          await addIssueTodo({ key, summary: await summary() });
+          toast(`已为 ${key} 添加待办`);
         }),
       },
-      { label: "写笔记", icon: <NotepadText size={14} />, onSelect: guarded(async () => navigate({ page: "notes", docId: (await createIssueNote(issue)).id })) },
-      { label: "沉淀到知识库", icon: <BookOpen size={14} />, onSelect: guarded(async () => navigate({ page: "kb", docId: (await issueToPage(issue.key, jiraBase)).id })) },
+      { label: "写笔记", icon: <NotepadText size={14} />, onSelect: guarded(async () => navigate({ page: "notes", docId: (await createIssueNote({ key, summary: await summary() })).id })) },
+      { label: "沉淀到知识库", icon: <BookOpen size={14} />, onSelect: guarded(async () => navigate({ page: "kb", docId: (await issueToPage(key, jiraBase)).id })) },
+      "separator",
+      { label: "在浏览器中打开", icon: <ExternalLink size={14} />, onSelect: guarded(() => openUrl(url)) },
     ];
   };
 
@@ -122,17 +155,17 @@ export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
           onClose={() => setTransition(null)}
           onDone={(detail) => {
             setTransition(null);
-            updated(detail, `${detail.key} 已流转到「${detail.status.name}」`);
+            updated(transition.done, detail, `${detail.key} 已流转到「${detail.status.name}」`);
           }}
         />
       )}
       {assigning && (
         <AssignDialog
-          issue={assigning}
+          issue={assigning.issue}
           onClose={() => setAssigning(null)}
           onDone={(detail) => {
             setAssigning(null);
-            updated(detail, `${detail.key} 已分配给 ${detail.assignee ?? "未分配"}`);
+            updated(assigning.done, detail, `${detail.key} 已分配给 ${detail.assignee ?? "未分配"}`);
           }}
         />
       )}

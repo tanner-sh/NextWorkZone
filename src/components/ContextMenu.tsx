@@ -22,7 +22,7 @@ export interface MenuAction {
 export type MenuEntry = MenuAction | "separator";
 
 /** 允许用 `cond && {...}` 按条件添加菜单项。 */
-export type MenuInput = MenuEntry | false | null | undefined;
+export type MenuInput = MenuEntry | false | null | undefined | "" | 0;
 
 type Anchor = { x: number; y: number } | { rect: DOMRect };
 
@@ -45,7 +45,7 @@ function clean(items: MenuInput[]): MenuEntry[] {
 export function useContextMenu() {
   const [state, setState] = useState<{ x: number; y: number; items: MenuEntry[]; target: string | null } | null>(null);
   const close = useCallback(() => setState(null), []);
-  const open = useCallback((e: React.MouseEvent, items: MenuInput[], target: string | null = null) => {
+  const open = useCallback((e: React.MouseEvent | MouseEvent, items: MenuInput[], target: string | null = null) => {
     e.preventDefault();
     e.stopPropagation();
     const list = clean(items);

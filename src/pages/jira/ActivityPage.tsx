@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AtSign, BellRing, BookText, CheckCheck, CheckSquare, CircleDot, FilePen, MessageSquare, PencilLine, RefreshCw, Share2, ThumbsUp, UserRoundCheck, ArrowRightLeft, Bell, type LucideIcon } from "lucide-react";
+import { AtSign, BellRing, BookText, Check, CheckCheck, ExternalLink, CheckSquare, CircleDot, FilePen, MessageSquare, PencilLine, RefreshCw, Share2, ThumbsUp, UserRoundCheck, ArrowRightLeft, Bell, type LucideIcon } from "lucide-react";
 import { errorMessage, type ActivityEvent, type ActivityKind } from "../../api";
 import { Avatar, ErrorBox, NotConfigured, Skeleton, SysImg } from "../../components/common";
 import { useContextMenu } from "../../components/ContextMenu";
+import { useMenus } from "../../components/MenuHost";
 import { action, activityTarget, detail, KIND_LABELS, loadNotifyKinds, markRead, pollActivity, storeNotifyKinds, useActivityFeed } from "../../lib/activity";
 import { formatTime, parseTime } from "../../lib/format";
 import { formatDay, today } from "../../lib/workspace";
@@ -47,6 +48,7 @@ export function ActivityPage() {
   const [error, setError] = useState<string | null>(null);
   const [notifyKinds, setNotifyKinds] = useState(loadNotifyKinds);
   const settingsMenu = useContextMenu();
+  const menus = useMenus();
 
   const refresh = async () => {
     setLoading(true);
@@ -151,7 +153,23 @@ export function ActivityPage() {
               const first = group[0];
               return (
                 <li key={first.id}>
-                  <button className={`activity-item${group.some((e) => !e.read) ? " unread" : ""}`} onClick={() => open(group)}>
+                  <button
+                    className={`activity-item${group.some((e) => !e.read) ? " unread" : ""}${menus.target === first.id ? " menu-target" : ""}`}
+                    onClick={() => open(group)}
+                    onContextMenu={(e) =>
+                      menus.open(
+                        e,
+                        [
+                          { label: "打开", icon: <ExternalLink size={14} />, onSelect: () => open(group) },
+                          { label: "标记为已读", icon: <Check size={14} />, disabled: group.every((x) => x.read), onSelect: () => void markRead(group.map((x) => x.id)) },
+                          "separator",
+                          // 下面是问题或页面本身的菜单（“打开”已在上面，打开时会标记为已读）
+                          ...(first.system === "wiki" ? menus.wikiPage({ id: first.issueKey, title: first.issueSummary }, { current: true }) : menus.issue({ key: first.issueKey, summary: first.issueSummary }, { current: true })),
+                        ],
+                        first.id,
+                      )
+                    }
+                  >
                     <Avatar name={first.actor} size={28} />
                     <div className="activity-main">
                       <div className="activity-line">

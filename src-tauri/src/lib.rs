@@ -201,6 +201,7 @@ pub fn run() {
             worklog::ws_add_time_entry,
             capture::capture_hide,
             capture::capture_clipboard,
+            capture::clipboard_read_text,
             tools::tools_hidden,
             tools::tools_set_hidden,
             clipboard::clip_paste,

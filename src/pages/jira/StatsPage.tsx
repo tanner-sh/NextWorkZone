@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { api, errorMessage, type IssueSummary } from "../../api";
 import { ErrorBox, NotConfigured, Skeleton, SysImg } from "../../components/common";
+import { useMenus } from "../../components/MenuHost";
 import { parseTime } from "../../lib/format";
 import { addDays, dayString, today } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
@@ -167,6 +168,7 @@ function formatHours(seconds: number): string {
 
 function StatsBody({ stats, range, queries: q, loading }: { stats: Stats; range: { from: string; to: string }; queries: ReturnType<typeof queries>; loading: boolean }) {
   const { navigate } = useNav();
+  const menus = useMenus();
   const resolved = stats.resolved.issues;
   const durations = resolved.map((i) => i.extra?.resolutiondate && (parseTime(i.extra.resolutiondate).getTime() - parseTime(i.created).getTime()) / DAY_MS).filter((d): d is number => typeof d === "number" && d >= 0);
   const medianDays = median(durations);
@@ -219,7 +221,7 @@ function StatsBody({ stats, range, queries: q, loading }: { stats: Stats; range:
               const at = i.extra?.resolutiondate;
               const days = at ? (parseTime(at).getTime() - parseTime(i.created).getTime()) / DAY_MS : null;
               return (
-                <tr key={i.key} onClick={() => navigate({ page: "jira", issueKey: i.key })}>
+                <tr key={i.key} className={menus.target === i.key ? "menu-target" : undefined} onClick={() => navigate({ page: "jira", issueKey: i.key })} onContextMenu={(e) => menus.open(e, menus.issue(i), i.key)}>
                   <td>
                     <span className="stats-issue">
                       <SysImg service="jira" src={i.issueType.iconUrl} className="icon16" />

@@ -2,6 +2,7 @@ import { useEffect, useState, type ComponentType } from "react";
 import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, Inbox, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { MenuHost } from "./components/MenuHost";
 import { listen } from "@tauri-apps/api/event";
 import { api, TRAY_EVENT } from "./api";
 import { countMyIssues } from "./lib/notify";
@@ -67,7 +68,9 @@ export function App() {
   return (
     <SettingsProvider>
       <NavProvider>
-        <Shell />
+        <MenuHost>
+          <Shell />
+        </MenuHost>
       </NavProvider>
     </SettingsProvider>
   );

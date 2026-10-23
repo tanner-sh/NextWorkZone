@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { CircleAlert, MessageSquare } from "lucide-react";
 import { api, errorMessage, type GlProjectRef, type MergeRequest, type MrScope, type MrState } from "../../api";
 import { Avatar, ErrorBox, Skeleton } from "../../components/common";
+import { useMenus } from "../../components/MenuHost";
 import { formatTime } from "../../lib/format";
+import { useNav } from "../../state/nav";
+import { useSettings } from "../../state/settings";
+import { mrMenu } from "./gitlabMenu";
 import { MrStatePill, mrProjectPath } from "./MergeRequestView";
 
 export const MR_STATES: [MrState, string][] = [
@@ -58,8 +62,19 @@ export function useMrList(source: { scope: MrScope } | { project: GlProjectRef }
 
 export function MrListItem({ mr, selected, showProject, onOpen }: { mr: MergeRequest; selected: boolean; showProject: boolean; onOpen: () => void }) {
   const project = mrProjectPath(mr).split("/").pop();
+  const menus = useMenus();
+  const { navigate } = useNav();
+  const { isReady } = useSettings();
+  const menuTarget = `mr:${mr.id}`;
   return (
-    <div className={`issue-item${selected ? " selected" : ""}`} onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onOpen()}>
+    <div
+      className={`issue-item${selected ? " selected" : ""}${menus.target === menuTarget ? " menu-target" : ""}`}
+      onClick={onOpen}
+      onContextMenu={(e) => menus.open(e, mrMenu(mr, navigate, { onOpen, jira: isReady("jira") }), menuTarget)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+    >
       <div className="issue-item-top">
         <span className="issue-key">
           {showProject ? `${project} ` : ""}!{mr.iid}
