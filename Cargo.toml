@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+nextworkzone-core = { path = "crates/core" }
+nextworkzone-jira = { path = "crates/jira" }
+nextworkzone-confluence = { path = "crates/confluence" }
+nextworkzone-gitlab = { path = "crates/gitlab" }
+nextworkzone-workspace = { path = "crates/workspace" }
+nextworkzone-preview = { path = "crates/preview" }
+
+base64 = "0.23"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+keyring = "4.2"
+quick-xml = "0.42"
+reqwest = { version = "0.13", features = ["json", "multipart", "query", "socks"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+url = "2"

@@ -1,0 +1,30 @@
+[package]
+name = "nextworkzone"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "nextworkzone_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+nextworkzone-core.workspace = true
+nextworkzone-jira.workspace = true
+nextworkzone-confluence.workspace = true
+nextworkzone-gitlab.workspace = true
+nextworkzone-workspace.workspace = true
+nextworkzone-preview.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-dialog.workspace = true
+tauri-plugin-notification.workspace = true
+tauri-plugin-opener.workspace = true
+percent-encoding = "2"
+base64.workspace = true
+tokio.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "nextworkzone-gitlab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nextworkzone-core.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+base64.workspace = true
+serde_json.workspace = true
