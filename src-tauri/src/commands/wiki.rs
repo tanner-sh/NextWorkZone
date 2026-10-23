@@ -58,8 +58,8 @@ async fn page_id(state: &AppState, page: &str) -> Result<String> {
 
 /// 上次获取的空间列表（先显示，再刷新）。
 #[tauri::command]
-pub fn wiki_cached_spaces(state: State<'_, AppState>) -> Option<Vec<SpaceOut>> {
-    state.cache.get(SPACES_CACHE)
+pub async fn wiki_cached_spaces(state: State<'_, AppState>) -> Result<Option<Vec<SpaceOut>>> {
+    Ok(state.cache.get(SPACES_CACHE))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

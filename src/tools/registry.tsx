@@ -1,9 +1,11 @@
 // 小工具的注册表。新增工具时在 TOOLS 中加一项：侧边栏的“工具”分组、⌘K 搜索、设置页的“工具”卡片都据此生成。
-import { useEffect, useState, type ComponentType } from "react";
+import { lazy, useEffect, useState, type ComponentType } from "react";
 import { ClipboardList, type LucideIcon } from "lucide-react";
 import { api } from "../api";
-import { ClipboardPage } from "../pages/tools/clipboard/ClipboardPage";
 import { ClipboardSummary } from "../pages/tools/clipboard/ClipboardSettings";
+
+// 工具页面在打开时才加载
+const ClipboardPage = lazy(() => import("../pages/tools/clipboard/ClipboardPage").then((m) => ({ default: m.ClipboardPage })));
 
 export interface ToolDef {
   id: string;

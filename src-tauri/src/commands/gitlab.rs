@@ -11,8 +11,8 @@ const PROJECTS_CACHE_KEY: &str = "gitlab:projects";
 
 /// 上一次的项目列表，用于界面秒开。
 #[tauri::command]
-pub fn gl_cached_projects(state: State<'_, AppState>) -> Option<Vec<Project>> {
-    state.cache.get(PROJECTS_CACHE_KEY)
+pub async fn gl_cached_projects(state: State<'_, AppState>) -> Result<Option<Vec<Project>>> {
+    Ok(state.cache.get(PROJECTS_CACHE_KEY))
 }
 
 #[tauri::command]

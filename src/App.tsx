@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
 import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, Inbox, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -9,27 +9,30 @@ import { countMyIssues } from "./lib/notify";
 import { ACTIVITY_INTERVAL_MS, pollActivity, useActivityFeed } from "./lib/activity";
 import { checkReminders, useReminders } from "./lib/reminders";
 import { refreshInbox, useInbox } from "./lib/inbox";
-import { InboxPage } from "./pages/workspace/InboxPage";
-import { ActivityPage } from "./pages/jira/ActivityPage";
-import { StatsPage } from "./pages/jira/StatsPage";
 import { workspaceChanged } from "./lib/workspace";
 import { HomePage } from "./pages/HomePage";
-import { KnowledgePage } from "./pages/workspace/KnowledgePage";
-import { NotesPage } from "./pages/workspace/NotesPage";
 import { QuickTodo } from "./pages/workspace/QuickTodo";
 import { Toasts } from "./components/Toast";
 import { FileDropLayer } from "./components/FileDropLayer";
 import { TimerWidget } from "./components/TimerWidget";
-import { TodoPage } from "./pages/workspace/TodoPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { GitlabPage } from "./pages/gitlab/GitlabPage";
-import { JiraPage } from "./pages/jira/JiraPage";
-import { WeeklyPage } from "./pages/weekly/WeeklyPage";
-import { WikiPage } from "./pages/wiki/WikiPage";
 import { NavProvider, PAGE_IDS, useNav, type PageId } from "./state/nav";
 import { openLink } from "./lib/links";
 import { TOOLS, toolById, useHiddenTools } from "./tools/registry";
 import { SettingsProvider, useSettings } from "./state/settings";
+
+// 首页之外的页面在第一次打开时才加载，编辑器、代码高亮等大依赖随页面一起按需加载
+const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));
+const InboxPage = page(() => import("./pages/workspace/InboxPage"), "InboxPage");
+const ActivityPage = page(() => import("./pages/jira/ActivityPage"), "ActivityPage");
+const StatsPage = page(() => import("./pages/jira/StatsPage"), "StatsPage");
+const KnowledgePage = page(() => import("./pages/workspace/KnowledgePage"), "KnowledgePage");
+const NotesPage = page(() => import("./pages/workspace/NotesPage"), "NotesPage");
+const TodoPage = page(() => import("./pages/workspace/TodoPage"), "TodoPage");
+const SettingsPage = page(() => import("./pages/SettingsPage"), "SettingsPage");
+const GitlabPage = page(() => import("./pages/gitlab/GitlabPage"), "GitlabPage");
+const JiraPage = page(() => import("./pages/jira/JiraPage"), "JiraPage");
+const WeeklyPage = page(() => import("./pages/weekly/WeeklyPage"), "WeeklyPage");
+const WikiPage = page(() => import("./pages/wiki/WikiPage"), "WikiPage");
 
 type NavEntry = { id: PageId; label: string; icon: ComponentType<LucideProps> };
 
@@ -213,19 +216,21 @@ function Shell() {
         </header>
         <main className="content">
           <ErrorBoundary resetKey={current.page}>
-            {current.page === "home" && <HomePage />}
-            {current.page === "inbox" && <InboxPage />}
-            {current.page === "todos" && <TodoPage />}
-            {current.page === "notes" && <NotesPage />}
-            {current.page === "kb" && <KnowledgePage />}
-            {current.page === "jira" && <JiraPage />}
-            {current.page === "activity" && <ActivityPage />}
-            {current.page === "weekly" && <WeeklyPage />}
-            {current.page === "wiki" && <WikiPage />}
-            {current.page === "gitlab" && <GitlabPage />}
-            {current.page === "stats" && <StatsPage />}
-            {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
-            {current.page === "settings" && <SettingsPage />}
+            <Suspense fallback={null}>
+              {current.page === "home" && <HomePage />}
+              {current.page === "inbox" && <InboxPage />}
+              {current.page === "todos" && <TodoPage />}
+              {current.page === "notes" && <NotesPage />}
+              {current.page === "kb" && <KnowledgePage />}
+              {current.page === "jira" && <JiraPage />}
+              {current.page === "activity" && <ActivityPage />}
+              {current.page === "weekly" && <WeeklyPage />}
+              {current.page === "wiki" && <WikiPage />}
+              {current.page === "gitlab" && <GitlabPage />}
+              {current.page === "stats" && <StatsPage />}
+              {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
+              {current.page === "settings" && <SettingsPage />}
+            </Suspense>
           </ErrorBoundary>
         </main>
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import DOMPurify from "dompurify";
 import { api, errorMessage, type Attachment, type Service } from "../api";
-import { assetUrl, systemPath } from "../lib/asset";
+import { assetUrl, ATTACHMENT_PATH, systemPath } from "../lib/asset";
 import { openLink } from "../lib/links";
 import { useNav } from "../state/nav";
 import { useSettings } from "../state/settings";
@@ -10,9 +10,6 @@ import { ImageViewer } from "./ImageViewer";
 import { toast } from "./Toast";
 
 const IMAGE_FILE = /\.(png|jpe?g|gif|bmp|webp|svg)(\?|#|$)/i;
-
-/** 附件下载地址（Jira、Wiki）：在应用内预览。 */
-export const ATTACHMENT_PATH = /\/(secure\/attachment|download\/attachments|download\/thumbnails)\//;
 
 /** 按扩展名推测文件类型，用于预览只有地址的附件链接。 */
 function guessMime(filename: string): string {

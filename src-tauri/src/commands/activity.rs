@@ -81,8 +81,8 @@ pub(crate) fn event_ms(e: &ActivityEvent) -> i64 {
 }
 
 #[tauri::command]
-pub fn jira_activity(state: State<'_, AppState>) -> ActivityFeed {
-    Store::load(&state).feed()
+pub async fn jira_activity(state: State<'_, AppState>) -> Result<ActivityFeed> {
+    Ok(Store::load(&state).feed())
 }
 
 #[tauri::command]

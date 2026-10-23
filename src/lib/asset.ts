@@ -1,5 +1,8 @@
 import type { Service } from "../api";
 
+/** 附件下载地址（Jira、Wiki）：在应用内预览。 */
+export const ATTACHMENT_PATH = /\/(secure\/attachment|download\/attachments|download\/thumbnails)\//;
+
 // 自定义协议在 Windows 上以 http://<scheme>.localhost 的形式访问，其他平台为 <scheme>://localhost。
 const PREFIX = navigator.userAgent.includes("Windows") ? "http://nextworkzone.localhost/" : "nextworkzone://localhost/";
 

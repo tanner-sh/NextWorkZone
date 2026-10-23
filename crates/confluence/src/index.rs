@@ -200,7 +200,7 @@ impl WikiIndex {
             std::fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(path).db()?;
-        conn.execute_batch("PRAGMA journal_mode = WAL;").db()?;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;").db()?;
         conn.execute_batch(SCHEMA).db()?;
         if Self::meta(&conn, "format")?.as_deref() != Some(FORMAT_VERSION) {
             conn.execute_batch("DELETE FROM pages; DELETE FROM tasks; DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune');").db()?;

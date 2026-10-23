@@ -231,7 +231,7 @@ impl Store {
             fs::create_dir_all(dir.join(sub))?;
         }
         let conn = Connection::open(dir.join("clipboard.db")).db()?;
-        conn.execute_batch("PRAGMA journal_mode = WAL;").db()?;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;").db()?;
         conn.execute_batch(SCHEMA).db()?;
         Ok(Self { conn: Mutex::new(conn), dir: dir.to_path_buf() })
     }

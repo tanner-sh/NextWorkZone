@@ -131,9 +131,10 @@ fn watch(app: AppHandle) {
     let mut last_prune: Option<Instant> = None;
     loop {
         std::thread::sleep(POLL);
-        let config = app.state::<AppState>().config().tools.clipboard;
+        // 配置在需要时才读取：空闲时每次轮询只比较变化序号，不复制整份配置
         if last_prune.is_none_or(|t| t.elapsed() > PRUNE_EVERY) {
             last_prune = Some(Instant::now());
+            let config = app.state::<AppState>().config().tools.clipboard;
             if let Ok(removed) = clip.store.prune(config.keep_days, config.max_items)
                 && removed > 0
             {
@@ -163,6 +164,7 @@ fn watch(app: AppHandle) {
                 }
             }
         }
+        let config = app.state::<AppState>().config().tools.clipboard;
         if !config.enabled || clip.paused().is_some() || system::is_concealed() {
             continue;
         }
@@ -345,6 +347,12 @@ fn write(clip: &Clip, ids: &[String], plain: bool, edited: Option<String>) -> Re
 
 // ---------- 命令 ----------
 
+/// 数据库操作放到阻塞线程中执行：同步命令运行在主线程上，历史多时查询会卡住界面。
+async fn run<T: Send + 'static>(clip: &Clip, f: impl FnOnce(&Store) -> Result<T> + Send + 'static) -> Result<T> {
+    let store = clip.store.clone();
+    tauri::async_runtime::spawn_blocking(move || f(&store)).await.map_err(|e| Error::Other(e.to_string()))?
+}
+
 /// 粘贴到打开面板前使用的应用：写入剪贴板、收起面板、交还焦点，有权限时模拟按下粘贴快捷键。
 /// 返回 `pasted`（已粘贴）或 `copied`（只复制了，需要用户自己粘贴）。
 #[tauri::command]
@@ -384,8 +392,8 @@ pub fn clip_open_main(app: AppHandle, target: String) {
 }
 
 #[tauri::command]
-pub fn clip_list(clip: State<'_, Clip>, query: ListQuery) -> Result<Vec<ClipItem>> {
-    clip.store.list(&query)
+pub async fn clip_list(clip: State<'_, Clip>, query: ListQuery) -> Result<Vec<ClipItem>> {
+    run(&clip, move |store| store.list(&query)).await
 }
 
 #[derive(Serialize)]
@@ -397,81 +405,82 @@ pub struct ClipText {
 
 /// 文字条目的完整内容（列表中只有开头一部分）。
 #[tauri::command]
-pub fn clip_text(clip: State<'_, Clip>, id: String) -> Result<ClipText> {
-    let content = clip.store.content(&id)?.ok_or_else(|| Error::Other("条目已被删除".into()))?;
+pub async fn clip_text(clip: State<'_, Clip>, id: String) -> Result<ClipText> {
+    let content = run(&clip, move |store| store.content(&id)).await?.ok_or_else(|| Error::Other("条目已被删除".into()))?;
     Ok(ClipText { text: content.text, html: content.html })
 }
 
 #[tauri::command]
-pub fn clip_delete(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
-    clip.store.delete(&ids)?;
+pub async fn clip_delete(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
+    run(&clip, move |store| store.delete(&ids)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn clip_clear(app: AppHandle, clip: State<'_, Clip>) -> Result<usize> {
-    let removed = clip.store.clear_history()?;
+pub async fn clip_clear(app: AppHandle, clip: State<'_, Clip>) -> Result<usize> {
+    let removed = run(&clip, |store| store.clear_history()).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(removed)
 }
 
 #[tauri::command]
-pub fn clip_set_pinboard(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>, pinboard: Option<String>) -> Result<()> {
-    clip.store.set_pinboard(&ids, pinboard.as_deref())?;
+pub async fn clip_set_pinboard(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>, pinboard: Option<String>) -> Result<()> {
+    run(&clip, move |store| store.set_pinboard(&ids, pinboard.as_deref())).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn clip_rename(app: AppHandle, clip: State<'_, Clip>, id: String, title: String) -> Result<Option<ClipItem>> {
-    let item = clip.store.rename(&id, &title)?;
+pub async fn clip_rename(app: AppHandle, clip: State<'_, Clip>, id: String, title: String) -> Result<Option<ClipItem>> {
+    let item = run(&clip, move |store| store.rename(&id, &title)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(item)
 }
 
 #[tauri::command]
-pub fn clip_update_text(app: AppHandle, clip: State<'_, Clip>, id: String, text: String) -> Result<Option<ClipItem>> {
-    let item = clip.store.update_text(&id, &text)?;
+pub async fn clip_update_text(app: AppHandle, clip: State<'_, Clip>, id: String, text: String) -> Result<Option<ClipItem>> {
+    let item = run(&clip, move |store| store.update_text(&id, &text)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(item)
 }
 
 #[tauri::command]
-pub fn clip_pinboards(clip: State<'_, Clip>) -> Result<Vec<Pinboard>> {
-    clip.store.pinboards()
+pub async fn clip_pinboards(clip: State<'_, Clip>) -> Result<Vec<Pinboard>> {
+    run(&clip, |store| store.pinboards()).await
 }
 
 #[tauri::command]
-pub fn clip_save_pinboard(app: AppHandle, clip: State<'_, Clip>, id: Option<String>, name: String, color: String) -> Result<Pinboard> {
-    let board = clip.store.save_pinboard(id.as_deref(), &name, &color)?;
+pub async fn clip_save_pinboard(app: AppHandle, clip: State<'_, Clip>, id: Option<String>, name: String, color: String) -> Result<Pinboard> {
+    let board = run(&clip, move |store| store.save_pinboard(id.as_deref(), &name, &color)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(board)
 }
 
 #[tauri::command]
-pub fn clip_delete_pinboard(app: AppHandle, clip: State<'_, Clip>, id: String) -> Result<()> {
-    clip.store.delete_pinboard(&id)?;
+pub async fn clip_delete_pinboard(app: AppHandle, clip: State<'_, Clip>, id: String) -> Result<()> {
+    run(&clip, move |store| store.delete_pinboard(&id)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn clip_order_pinboards(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
-    clip.store.order_pinboards(&ids)?;
+pub async fn clip_order_pinboards(app: AppHandle, clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
+    run(&clip, move |store| store.order_pinboards(&ids)).await?;
     let _ = app.emit(SETTINGS_EVENT, ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn clip_apps(clip: State<'_, Clip>) -> Result<Vec<nextworkzone_clipboard::AppCount>> {
-    clip.store.apps()
+pub async fn clip_apps(clip: State<'_, Clip>) -> Result<Vec<nextworkzone_clipboard::AppCount>> {
+    run(&clip, |store| store.apps()).await
 }
 
 /// 本机问题库中的问题（剪贴板中出现的问题 key 显示概要和状态）。
 #[tauri::command]
-pub fn clip_issues(state: State<'_, AppState>, keys: Vec<String>) -> Result<Vec<nextworkzone_jira::index::IssueHit>> {
-    state.issue_index.by_keys(&keys)
+pub async fn clip_issues(state: State<'_, AppState>, keys: Vec<String>) -> Result<Vec<nextworkzone_jira::index::IssueHit>> {
+    let index = state.issue_index.clone();
+    tauri::async_runtime::spawn_blocking(move || index.by_keys(&keys)).await.map_err(|e| Error::Other(e.to_string()))?
 }
 
 #[derive(Serialize)]
@@ -570,11 +579,10 @@ pub fn clip_request_permission() {
 
 /// 最近记录过的来源应用中尚未忽略的（设置页中选择要忽略的应用）。
 #[tauri::command]
-pub fn clip_ignore_candidates(state: State<'_, AppState>, clip: State<'_, Clip>) -> Result<Vec<IgnoredApp>> {
+pub async fn clip_ignore_candidates(state: State<'_, AppState>, clip: State<'_, Clip>) -> Result<Vec<IgnoredApp>> {
     let config = state.config().tools.clipboard;
-    Ok(clip
-        .store
-        .apps()?
+    Ok(run(&clip, |store| store.apps())
+        .await?
         .into_iter()
         .filter(|a| !ignored(&config, &a.id))
         .map(|a| IgnoredApp { id: a.id, name: a.name })
@@ -585,8 +593,8 @@ pub fn clip_ignore_candidates(state: State<'_, AppState>, clip: State<'_, Clip>)
 
 /// 标记为刚刚使用（拖到其他应用后），下次打开面板时排在最前面。
 #[tauri::command]
-pub fn clip_touch(clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
-    clip.store.touch(&ids)
+pub async fn clip_touch(clip: State<'_, Clip>, ids: Vec<String>) -> Result<()> {
+    run(&clip, move |store| store.touch(&ids)).await
 }
 
 /// 拖动预览图的边长（逻辑像素）。

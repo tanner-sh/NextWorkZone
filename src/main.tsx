@@ -1,9 +1,5 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
-import { BasicMenuHost } from "./components/MenuHost";
-import { CaptureWindow } from "./pages/workspace/CaptureWindow";
-import { ClipPanel } from "./pages/tools/clipboard/ClipPanel";
 import "./styles.css";
 
 // macOS 上窗口透明，侧边栏显示系统材质（见 tauri.conf.json 的 windowEffects）
@@ -27,18 +23,19 @@ const clipboard = location.hash === "#clipboard";
 if (capture) document.documentElement.classList.add("capture-window");
 if (clipboard) document.documentElement.classList.add("clip-window");
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    {capture ? (
+// 每个窗口只加载自己的代码：快速记录和剪贴板面板常驻后台，不必解析整个主界面
+const load: Promise<ReactNode> = capture
+  ? Promise.all([import("./components/menuTargets"), import("./pages/workspace/CaptureWindow")]).then(([{ BasicMenuHost }, { CaptureWindow }]) => (
       <BasicMenuHost>
         <CaptureWindow />
       </BasicMenuHost>
-    ) : clipboard ? (
-      <BasicMenuHost>
-        <ClipPanel />
-      </BasicMenuHost>
-    ) : (
-      <App />
-    )}
-  </StrictMode>,
-);
+    ))
+  : clipboard
+    ? Promise.all([import("./components/menuTargets"), import("./pages/tools/clipboard/ClipPanel")]).then(([{ BasicMenuHost }, { ClipPanel }]) => (
+        <BasicMenuHost>
+          <ClipPanel />
+        </BasicMenuHost>
+      ))
+    : import("./App").then(({ App }) => <App />);
+
+void load.then((ui) => createRoot(document.getElementById("root")!).render(<StrictMode>{ui}</StrictMode>));

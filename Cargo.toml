@@ -31,3 +31,10 @@ tauri-plugin-opener = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 url = "2"
+
+# 发布版本：整体优化并去掉符号，二进制更小、启动更快（编译会慢一些）。
+# 不用 panic = "abort"：命令中的 panic 应当只让这次调用失败，而不是退出整个应用。
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

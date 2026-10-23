@@ -174,7 +174,7 @@ impl Workspace {
             std::fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(path).db()?;
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF;").db()?;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF;").db()?;
         conn.execute_batch(SCHEMA).db()?;
         migrate(&conn)?;
         conn.execute(

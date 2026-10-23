@@ -17,9 +17,10 @@ fn search_cache_key(jql: &str, fields: &[String]) -> String {
 }
 
 /// 上一次同一 JQL 的搜索结果，用于界面秒开。
+/// 异步命令运行在后台线程，读缓存文件不占用主线程（同步命令在主线程上执行）。
 #[tauri::command]
-pub fn jira_cached_search(state: State<'_, AppState>, jql: String, fields: Option<Vec<String>>) -> Option<SearchResult> {
-    state.cache.get(&search_cache_key(&jql, &fields.unwrap_or_default()))
+pub async fn jira_cached_search(state: State<'_, AppState>, jql: String, fields: Option<Vec<String>>) -> Result<Option<SearchResult>> {
+    Ok(state.cache.get(&search_cache_key(&jql, &fields.unwrap_or_default())))
 }
 
 /// `fields` 为列表中额外显示的字段。
@@ -270,8 +271,8 @@ const CREATE_PROJECTS_CACHE: &str = "jira:createProjects";
 
 /// 上一次获取的可创建问题的项目，用于创建对话框秒开。
 #[tauri::command]
-pub fn jira_cached_create_projects(state: State<'_, AppState>) -> Option<Vec<CreateProject>> {
-    state.cache.get(CREATE_PROJECTS_CACHE)
+pub async fn jira_cached_create_projects(state: State<'_, AppState>) -> Result<Option<Vec<CreateProject>>> {
+    Ok(state.cache.get(CREATE_PROJECTS_CACHE))
 }
 
 #[tauri::command]
@@ -436,10 +437,14 @@ pub async fn jira_render_wiki(
 /// 图片在保存问题、发送评论时才作为附件上传，取消编辑不会在 Jira 留下多余附件。
 /// 拖进编辑器的本地图片的预览（data URL）；不是图片或文件太大时返回 `None`，编辑器中只显示文件名。
 #[tauri::command]
-pub fn local_image_preview(path: String) -> Option<String> {
+pub async fn local_image_preview(path: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || image_data_url(&path)).await.ok().flatten()
+}
+
+fn image_data_url(path: &str) -> Option<String> {
     use base64::Engine;
     const MAX: u64 = 10 * 1024 * 1024;
-    let ext = Path::new(&path).extension()?.to_str()?.to_ascii_lowercase();
+    let ext = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
     let mime = match ext.as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
@@ -448,18 +453,19 @@ pub fn local_image_preview(path: String) -> Option<String> {
         "bmp" => "image/bmp",
         _ => return None,
     };
-    if std::fs::metadata(&path).ok()?.len() > MAX {
+    if std::fs::metadata(path).ok()?.len() > MAX {
         return None;
     }
-    let bytes = std::fs::read(&path).ok()?;
+    let bytes = std::fs::read(path).ok()?;
     Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
 #[tauri::command]
-pub fn jira_save_pasted_image(app: AppHandle, data: String, filename: String) -> Result<String> {
+pub async fn jira_save_pasted_image(app: AppHandle, data: String, filename: String) -> Result<String> {
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(data.as_bytes())
+    let bytes = tauri::async_runtime::spawn_blocking(move || base64::engine::general_purpose::STANDARD.decode(data.as_bytes()))
+        .await
+        .map_err(|e| nextworkzone_core::Error::Other(e.to_string()))?
         .map_err(|_| nextworkzone_core::Error::Other("图片数据格式不正确".into()))?;
     let name: String = filename
         .chars()
