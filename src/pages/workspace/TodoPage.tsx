@@ -173,7 +173,18 @@ export function TodoPage() {
               }
             />
           ))}
-          {todos && visible.length === 0 && <li className="muted list-empty">{EMPTY[view]}</li>}
+          {todos && visible.length === 0 && (
+            <li className="muted list-empty">
+              {EMPTY[view]}
+              {view === "today" && counts.unscheduled > 0 && (
+                <div>
+                  <button className="link small" onClick={() => setView("unscheduled")}>
+                    从 {counts.unscheduled} 个未安排的待办中挑几个
+                  </button>
+                </div>
+              )}
+            </li>
+          )}
         </ul>
       </aside>
       <section className="detail-pane">

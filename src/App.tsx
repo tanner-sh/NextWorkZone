@@ -45,10 +45,16 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
     label: "集成",
     items: [
       { id: "jira", label: "我的问题", icon: CircleDot },
-      { id: "activity", label: "动态", icon: Bell },
-      { id: "weekly", label: "周报", icon: NotebookPen },
       { id: "wiki", label: "Wiki", icon: BookText },
       { id: "gitlab", label: "代码", icon: FolderGit2 },
+    ],
+  },
+  {
+    // 回看发生了什么：动态、周报、统计（需要处理的事在收件箱）
+    label: "回顾",
+    items: [
+      { id: "activity", label: "动态", icon: Bell },
+      { id: "weekly", label: "周报", icon: NotebookPen },
       { id: "stats", label: "统计", icon: BarChart3 },
     ],
   },

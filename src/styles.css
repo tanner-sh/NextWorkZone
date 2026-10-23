@@ -589,7 +589,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ============ 概览 ============ */
 
-.home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.inbox-mini { flex-shrink: 0; }
+.inbox-mini.source-due { color: var(--error); }
+.inbox-mini.source-mr { color: var(--warn); }
+.inbox-mini.source-activity { color: var(--info); }
+.inbox-mini.source-capture { color: var(--accent); }
+@media (max-width: 900px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
 .wide-card { grid-column: 1 / -1; }
 .home-list { list-style: none; margin: -4px -8px; padding: 0; }
 .home-row {
@@ -870,10 +876,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ============ 知识库 ============ */
 
-.tree { list-style: none; margin: 0; padding: 0; }
-.tree.root { padding: 4px 6px 16px; overflow-y: auto; flex: 1; }
-.tree-item { display: flex; align-items: center; gap: 4px; height: 30px; padding-right: 6px; border-radius: var(--radius); cursor: pointer; font-size: 13.5px; }
-.tree-item:hover { background: var(--hover); }
+.list-pane .tree { list-style: none; margin: 0; padding: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
+.list-pane .tree.root { padding: 4px 6px 16px; overflow-y: auto; flex: 1; }
+.list-pane .tree-item { display: flex; align-items: center; gap: 4px; height: 30px; padding-right: 6px; border-radius: var(--radius); cursor: pointer; font-size: 13.5px; }
+.list-pane .tree-item:hover { background: var(--hover); }
 .tree-item.selected { background: var(--accent-soft); font-weight: 550; }
 .tree-toggle, .tree-add { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 4px; background: none; color: var(--muted); }
 .tree-toggle:hover, .tree-add:hover { background: var(--active); color: var(--text); }
@@ -965,6 +971,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .activity-change { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .activity-change .activity-kind { flex-shrink: 0; }
 .activity-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.activity-line > strong { flex-shrink: 0; white-space: nowrap; }
 .activity-kind { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .activity-kind.kind-mention, .activity-kind.kind-assigned { color: var(--accent); }
 .activity-issue { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
@@ -1298,10 +1305,11 @@ html.capture-window #root { padding: 14px; box-sizing: border-box; height: 100%;
 
 /* ============ 工作记录 ============ */
 
-.worklog { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.worklog { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; align-self: stretch; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .worklog-head { display: flex; align-items: center; gap: 6px; }
 .worklog-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .worklog-list li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 0; font-size: 13px; }
+.worklog-list li > .grow { min-width: 0; flex: 1; }
 .worklog-time { width: 38px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .worklog-icon { flex-shrink: 0; }
 .worklog-icon.system-jira { color: var(--info); }

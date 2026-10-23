@@ -11,7 +11,7 @@ import { docInput } from "./docMenu";
 const SECTION = "## 工作记录";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const clock = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`;
+export const clock = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`;
 
 /** 时长，例如 1h 25m。 */
 function duration(ms: number): string {
@@ -148,7 +148,7 @@ export function withWorkSection(content: string, log: WorkLog): string {
 /** 连续几分钟内对同一个对象做的事合成时间线中的一行（例如一次流转同时改了几个字段）。 */
 const MERGE_MS = 5 * 60_000;
 
-function timeline(events: WorkEvent[]): { at: number; first: WorkEvent; text: string }[] {
+export function timeline(events: WorkEvent[]): { at: number; first: WorkEvent; text: string }[] {
   const rows: WorkEvent[][] = [];
   for (const e of events) {
     const last = rows[rows.length - 1];
@@ -165,7 +165,7 @@ function timeline(events: WorkEvent[]): { at: number; first: WorkEvent; text: st
   });
 }
 
-function eventTarget(e: WorkEvent): NavTarget | null {
+export function eventTarget(e: WorkEvent): NavTarget | null {
   if (e.system === "jira" && e.key) return { page: "jira", issueKey: e.key };
   if ((e.system === "todo" || e.system === "timer") && e.key) return { page: "jira", issueKey: e.key };
   if (e.system === "wiki" && e.key) return { page: "wiki", wikiPage: e.key };
@@ -176,7 +176,7 @@ function eventTarget(e: WorkEvent): NavTarget | null {
   return null;
 }
 
-const ICONS = { jira: CircleDot, gitlab: GitBranch, wiki: BookText, todo: CheckSquare, timer: Timer } as const;
+export const WORK_ICONS = { jira: CircleDot, gitlab: GitBranch, wiki: BookText, todo: CheckSquare, timer: Timer } as const;
 
 /** 日记下方的工作记录：当天在各处做过的事，可写入日记、生成日报。 */
 export function WorkLogPanel({ doc }: { doc: Doc }) {
@@ -250,7 +250,7 @@ export function WorkLogPanel({ doc }: { doc: Doc }) {
           <ul className="worklog-list">
             {log &&
               timeline(log.events).map(({ at, first, text }, i) => {
-                const Icon = ICONS[first.system];
+                const Icon = WORK_ICONS[first.system];
                 const target = eventTarget(first);
                 return (
                   <li key={`${at}-${i}`}>
@@ -276,7 +276,7 @@ export function WorkLogPanel({ doc }: { doc: Doc }) {
   );
 }
 
-function ReportDialog({ day, text, onClose }: { day: string; text: string; onClose: () => void }) {
+export function ReportDialog({ day, text, onClose }: { day: string; text: string; onClose: () => void }) {
   const [value, setValue] = useState(text);
   return (
     <Modal

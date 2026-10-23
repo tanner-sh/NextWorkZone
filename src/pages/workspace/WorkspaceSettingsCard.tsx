@@ -95,7 +95,7 @@ export function WorkspaceSettingsCard() {
         </div>
       )}
       <div className="field">
-        <span>快速记录快捷键</span>
+        <span>快速记录</span>
         <div className="grow">
           <ShortcutField
             value={settings.captureShortcut}

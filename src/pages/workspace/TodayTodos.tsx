@@ -36,7 +36,7 @@ export function TodayTodos() {
   const sorted = [...(todos ?? [])].sort((a, b) => (a.due ?? "").localeCompare(b.due ?? "") || b.priority - a.priority);
 
   return (
-    <div className="card home-card wide-card">
+    <div className="card home-card">
       <div className="card-title">
         <h2>
           <CheckSquare size={16} className="muted" />
@@ -45,7 +45,7 @@ export function TodayTodos() {
         <span className="row-actions">
           <button className="btn subtle" onClick={() => navigate({ page: "notes", docId: `daily-${day}` })}>
             <CalendarDays size={14} />
-            日记 · 日报
+            写日记
           </button>
           <button className="btn subtle" onClick={() => navigate({ page: "todos" })}>
             全部 <ArrowRight size={14} />

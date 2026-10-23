@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type IssueSummary, type Project, type WeeklyView, type WikiRecent } from "../api";
-import { ArrowRight, BookText, CheckCircle2, CircleDot, Clock3, FolderGit2, NotebookPen } from "lucide-react";
+import { ArrowRight, BookText, CheckCircle2, CircleDot, ClipboardList, Clock3, FolderGit2, GitPullRequest, Inbox, NotebookPen } from "lucide-react";
 import { Skeleton, StatusPill, SysImg } from "../components/common";
 import { formatTime } from "../lib/format";
 import { reminderLabel, useReminders } from "../lib/reminders";
@@ -10,6 +10,9 @@ import { useContextMenu } from "../components/ContextMenu";
 import { useIssueMenu } from "./jira/issueMenu";
 import { MY_UNRESOLVED_JQL } from "./jira/jql";
 import { TodayTodos } from "./workspace/TodayTodos";
+import { itemDetail, itemTarget, useInbox } from "../lib/inbox";
+import { today } from "../lib/workspace";
+import { clock, eventTarget, reportText, ReportDialog, timeline, WORK_ICONS } from "./workspace/WorkLog";
 
 type Loadable<T> = { status: "loading" } | { status: "ok"; data: T } | { status: "error"; message: string } | { status: "off" };
 
@@ -66,6 +69,7 @@ export function HomePage() {
 
       <div className="home-grid">
         <TodayTodos />
+        <InboxCard />
         <div className="card home-card wide-card">
           <div className="card-title">
             <h2>
@@ -109,6 +113,8 @@ export function HomePage() {
             }
           </CardBody>
         </div>
+
+        <WorkLogCard />
 
         <div className="card home-card">
           <div className="card-title">
@@ -188,6 +194,100 @@ export function HomePage() {
       {contextMenu.menu}
       {issueMenu.dialogs}
     </section>
+  );
+}
+
+/** 收件箱：需要处理的事（最多 5 条）。 */
+function InboxCard() {
+  const { navigate } = useNav();
+  const inbox = useInbox();
+  const items = inbox?.items ?? [];
+  return (
+    <div className="card home-card">
+      <div className="card-title">
+        <h2>
+          <Inbox size={16} className="muted" />
+          收件箱 {items.length > 0 && <span className="count">{items.length}</span>}
+        </h2>
+        <button className="btn subtle" onClick={() => navigate({ page: "inbox" })}>
+          去处理 <ArrowRight size={14} />
+        </button>
+      </div>
+      {!inbox ? (
+        <Skeleton lines={3} />
+      ) : items.length === 0 ? (
+        <p className="muted small">没有需要处理的事。随时按快速记录快捷键把想到的事先记下来。</p>
+      ) : (
+        <ul className="home-list">
+          {items.slice(0, 5).map((item) => {
+            const Icon = item.source === "capture" ? Inbox : item.source === "due" ? Clock3 : item.source === "mr" ? GitPullRequest : item.system === "wiki" ? BookText : CircleDot;
+            const target = itemTarget(item);
+            return (
+              <li key={item.id}>
+                <button className="home-row" onClick={() => navigate(target ?? { page: "inbox" })}>
+                  <Icon size={14} className={`muted inbox-mini source-${item.source}`} />
+                  <span className="ellipsis grow">
+                    {item.title || "无标题"} <span className="muted small">{itemDetail(item)}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** 今天的工作记录：最近几件事，可直接生成日报。 */
+function WorkLogCard() {
+  const { navigate } = useNav();
+  const day = today();
+  const log = useLoad(true, () => api.wsWorklog(day));
+  const [report, setReport] = useState<string | null>(null);
+  return (
+    <div className="card home-card">
+      <div className="card-title">
+        <h2>
+          <ClipboardList size={16} className="muted" />
+          今天的工作记录 {log.status === "ok" && log.data.events.length > 0 && <span className="count">{log.data.events.length}</span>}
+        </h2>
+        <span className="row-actions">
+          <button className="btn subtle" disabled={log.status !== "ok"} onClick={() => log.status === "ok" && setReport(reportText(log.data))}>
+            生成日报
+          </button>
+          <button className="btn subtle" onClick={() => navigate({ page: "notes", docId: `daily-${day}` })}>
+            日记 <ArrowRight size={14} />
+          </button>
+        </span>
+      </div>
+      {log.status === "loading" && <Skeleton lines={3} />}
+      {log.status === "error" && <p className="notice error">{log.message}</p>}
+      {log.status === "ok" &&
+        (log.data.events.length === 0 ? (
+          <p className="muted small">今天还没有记录。Jira 上的流转和评论、代码推送、Wiki 编辑、完成的待办和计时会自动出现在这里。</p>
+        ) : (
+          <ul className="home-list">
+            {timeline(log.data.events)
+              .slice(-6)
+              .reverse()
+              .map(({ at, first, text }, i) => {
+                const Icon = WORK_ICONS[first.system];
+                const target = eventTarget(first);
+                return (
+                  <li key={`${at}-${i}`}>
+                    <button className="home-row" onClick={() => target && navigate(target)} disabled={!target}>
+                      <span className="muted small nowrap">{clock(at)}</span>
+                      <Icon size={13} className={`muted worklog-icon system-${first.system}`} />
+                      <span className="ellipsis grow">{text}</span>
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        ))}
+      {report !== null && <ReportDialog day={day} text={report} onClose={() => setReport(null)} />}
+    </div>
   );
 }
 
