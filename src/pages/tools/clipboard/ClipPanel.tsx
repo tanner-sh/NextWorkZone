@@ -453,7 +453,7 @@ function Panel() {
         ) : settings?.config.autoPaste && settings.pasteSupport === "needsPermission" ? (
           <span className="clip-permission">
             <ShieldAlert size={13} />
-            授予“辅助功能”权限后，选中即可直接粘贴到 {target ?? "之前的应用"}；现在只会复制。
+            在系统设置中允许 NextWorkZone 控制电脑（辅助功能）后，选中即可直接粘贴到 {target ?? "之前的应用"}；现在只会复制。
             <button className="link-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => void api.clipRequestPermission()}>
               去授权
             </button>

@@ -148,7 +148,8 @@ export function ClipboardSettings() {
               <div className="notice warn small">
                 <ShieldAlert size={14} />
                 <span className="grow">
-                  需要在“系统设置 → 隐私与安全性 → 辅助功能”中允许 NextWorkZone，才能替你按下 ⌘V。授权前选中条目只会复制到剪贴板。
+                  需要在“系统设置 → 隐私与安全性 → 辅助功能”（较新的系统中叫“设备控制和数据访问”）中允许 NextWorkZone，才能替你按下 ⌘V。授权前选中条目只会复制到剪贴板。
+                  已经打开了开关仍然提示时，在列表中选中 NextWorkZone 点“−”删除，再点“去授权”重新添加。
                 </span>
                 <button className="btn small-btn" onClick={() => void api.clipRequestPermission()}>
                   去授权
