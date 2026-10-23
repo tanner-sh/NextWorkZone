@@ -81,6 +81,7 @@ pub fn run() {
             jira::jira_create_fields,
             jira::jira_create_issue,
             jira::jira_find_users,
+            jira::jira_suggested_assignees,
             jira::jira_suggest_labels,
             jira::jira_search_epics,
             jira::jira_pick_issues,

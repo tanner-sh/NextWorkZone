@@ -679,10 +679,29 @@ pub fn parse_comment_levels(html: &str) -> Vec<CommentLevel> {
     OPTION
         .captures_iter(&select[1])
         .map(|c| {
-            let name = c[2].trim().replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'");
+            let name = html_unescape(c[2].trim());
             CommentLevel { visibility: CommentVisibility { kind: c[1].to_string(), value: name.clone() }, label: name }
         })
         .collect()
+}
+
+/// 从网页“分配”表单中解析经办人的“建议”列表（最近分配过的人、报告人、当前用户等，与网页下拉框一致）。
+/// 不含“未分配”“自动”这两个特殊选项。
+pub fn parse_suggested_assignees(html: &str) -> Vec<UserRef> {
+    static GROUP: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)<optgroup[^>]*id="assignee-group-suggested"[^>]*>(.*?)</optgroup>"#).unwrap());
+    static OPTION: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r#"(?s)<option[^>]*?\svalue="([^"]*)"[^>]*>(.*?)</option>"#).unwrap());
+    let Some(group) = GROUP.captures(html) else { return Vec::new() };
+    OPTION
+        .captures_iter(&group[1])
+        .filter(|c| !c[1].is_empty() && &c[1] != "-1")
+        .map(|c| UserRef { name: html_unescape(&c[1]), display_name: html_unescape(c[2].trim()) })
+        .collect()
+}
+
+fn html_unescape(text: &str) -> String {
+    text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
 }
 
 fn worklog_body(input: &WorklogInput) -> Value {
@@ -808,6 +827,18 @@ mod tests {
         let got: Vec<(&str, &str)> = levels.iter().map(|l| (l.visibility.kind.as_str(), l.visibility.value.as_str())).collect();
         assert_eq!(got, vec![("role", "Developers"), ("role", "开发"), ("group", "jira-users")]);
         assert!(parse_comment_levels("<html>登录</html>").is_empty());
+    }
+
+    #[test]
+    fn parses_suggested_assignees_from_form() {
+        let html = r#"<select id="assignee" name="assignee"><optgroup id="assignee-group-suggested" label="建议" data-weight="0">
+            <option class="current-user" value="alice" data-field-text="Alice" data-icon="/a?x=1&amp;y=2" >Alice</option>
+            <option value="" data-field-text="未分配" >未分配</option><option value="-1" data-field-text="自动" >自动</option>
+            <option value="bob.w" data-field-text="Bob &amp; Co" >Bob &amp; Co</option>
+        </optgroup><optgroup id="assignee-group-all-users" label="所有用户"><option value="carol">Carol</option></optgroup></select>"#;
+        let users: Vec<(String, String)> = parse_suggested_assignees(html).into_iter().map(|u| (u.name, u.display_name)).collect();
+        assert_eq!(users, vec![("alice".into(), "Alice".into()), ("bob.w".into(), "Bob & Co".into())]);
+        assert!(parse_suggested_assignees("<html>登录</html>").is_empty());
     }
 
     #[test]

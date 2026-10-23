@@ -1,5 +1,5 @@
 // Jira 问题的右键菜单：问题列表、首页“我的问题”等共用。
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowRightLeft, BookOpen, CheckSquare, Copy, ExternalLink, Flag, Link, NotepadText, Timer, UserRound, Zap } from "lucide-react";
 import { currentTimer, isTiming, requestStop, startTimer } from "../../lib/timer";
@@ -142,17 +142,27 @@ export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
   return { menuFor, dialogs };
 }
 
+// 分配对话框中的两个特殊选项；“自动”交给 Jira 按项目的默认经办人分配
+const UNASSIGNED: UserRef = { name: "", displayName: "未分配" };
+const AUTOMATIC: UserRef = { name: "-1", displayName: "自动" };
+
 /** 把问题分配给某个可分配的用户。 */
 export function AssignDialog({ issue, onClose, onDone }: { issue: { key: string; assignee: string | null }; onClose: () => void; onDone: (issue: IssueDetail) => void }) {
   const [user, setUser] = useState<UserRef | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 与网页一致：未输入时列出“建议”（最近分配过的人等），再加上“未分配”“自动”
+  const suggested = useMemo(() => api.jiraSuggestedAssignees(issue.key).catch(() => [] as UserRef[]), [issue.key]);
+  const search = async (q: string): Promise<UserRef[]> => {
+    if (q.trim()) return api.jiraFindUsers(q.trim(), "assignee", issue.key, null);
+    return [...(await suggested), UNASSIGNED, AUTOMATIC];
+  };
   const assign = async () => {
     if (!user) return;
     setBusy(true);
     setError(null);
     try {
-      onDone(await api.jiraAssign(issue.key, user.name));
+      onDone(await api.jiraAssign(issue.key, user === UNASSIGNED ? null : user.name));
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
@@ -179,11 +189,13 @@ export function AssignDialog({ issue, onClose, onDone }: { issue: { key: string;
         <Picker<UserRef>
           selected={user ? [user] : []}
           onChange={(list) => setUser(list[0] ?? null)}
-          search={(q) => (q.trim() ? api.jiraFindUsers(q.trim(), "assignee", issue.key, null) : [])}
+          search={search}
           label={(u) => u.displayName}
-          detail={(u) => u.name}
+          detail={(u) => (u === UNASSIGNED || u === AUTOMATIC ? "" : u.name)}
           id={(u) => u.name}
           placeholder="输入姓名或用户名搜索"
+          searchOnFocus
+          idleHeading="建议"
         />
       </div>
       {error && <ErrorBox message={error} />}

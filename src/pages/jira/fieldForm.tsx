@@ -1,5 +1,6 @@
 // 编辑、创建、流转界面共用的字段表单：按字段类型生成控件，并把表单取值转换为 Jira REST API 的格式。
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import {
   api,
@@ -306,6 +307,8 @@ interface PickerProps<T> {
   placeholder?: string;
   /** 获得焦点时即显示候选项（不输入也搜索）。 */
   searchOnFocus?: boolean;
+  /** 未输入时候选列表上方的标题（如“建议”）。 */
+  idleHeading?: string;
 }
 
 /** 带搜索的单选 / 多选控件：已选项显示为标签，输入时在下方列出候选项。 */
@@ -317,6 +320,8 @@ export function Picker<T>(props: PickerProps<T>) {
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
   const requestId = useRef(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const searchRef = useRef(search);
   searchRef.current = search;
 
@@ -352,6 +357,31 @@ export function Picker<T>(props: PickerProps<T>) {
   const showCreate = created !== null && !candidates.some((c) => id(c) === id(created)) && !selectedIds.has(id(created));
   const items: { item: T; isNew: boolean }[] = [...candidates.map((item) => ({ item, isNew: false })), ...(showCreate ? [{ item: created!, isNew: true }] : [])];
 
+  // 候选列表挂到 body 上并按输入框位置固定定位，避免被对话框等可滚动容器裁掉；下方空间不够时向上展开
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = boxRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const below = window.innerHeight - rect.bottom - 12;
+      const above = rect.top - 12;
+      const up = below < 160 && above > below;
+      setMenuStyle({
+        left: rect.left,
+        width: rect.width,
+        maxHeight: Math.min(240, up ? above : below),
+        ...(up ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, selected.length]);
+
   const pick = (item: T) => {
     onChange(multiple ? [...selected, item] : [item]);
     setQuery("");
@@ -361,7 +391,7 @@ export function Picker<T>(props: PickerProps<T>) {
 
   return (
     <div className={`picker${open ? " open" : ""}`}>
-      <div className="picker-box">
+      <div className="picker-box" ref={boxRef}>
         {multiple &&
           selected.map((item) => (
             <span className="chip" key={id(item)}>
@@ -406,8 +436,9 @@ export function Picker<T>(props: PickerProps<T>) {
           </button>
         )}
       </div>
-      {open && (items.length > 0 || loading || query.trim()) && (
-        <ul className="picker-menu">
+      {open && (items.length > 0 || loading || query.trim()) && createPortal(
+        <ul className="picker-menu" style={menuStyle} onMouseDown={(e) => e.preventDefault()}>
+          {props.idleHeading && !query.trim() && items.length > 0 && <li className="picker-heading">{props.idleHeading}</li>}
           {items.map(({ item, isNew }, i) => (
             <li key={`${isNew ? "new:" : ""}${id(item)}`}>
               <button type="button" className={i === active ? "active" : ""} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(item)} onMouseEnter={() => setActive(i)}>
@@ -418,7 +449,8 @@ export function Picker<T>(props: PickerProps<T>) {
           ))}
           {loading && items.length === 0 && <li className="picker-empty muted small">搜索中…</li>}
           {!loading && items.length === 0 && <li className="picker-empty muted small">没有匹配项</li>}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   );

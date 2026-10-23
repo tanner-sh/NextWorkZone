@@ -977,6 +977,7 @@ export const api = {
     invoke<{ key: string; attachmentError: string | null }>("jira_create_issue", { fields, attachments }),
   jiraFindUsers: (query: string, field: string, issueKey: string | null, projectKey: string | null) =>
     invoke<UserRef[]>("jira_find_users", { query, field, issueKey, projectKey }),
+  jiraSuggestedAssignees: (key: string) => invoke<UserRef[]>("jira_suggested_assignees", { key }),
   jiraSuggestLabels: (query: string) => invoke<string[]>("jira_suggest_labels", { query }),
   jiraSearchEpics: (query: string, projectKey: string) => invoke<IssueRef[]>("jira_search_epics", { query, projectKey }),
   jiraPickIssues: (query: string, projectKey: string | null, standardOnly: boolean) =>

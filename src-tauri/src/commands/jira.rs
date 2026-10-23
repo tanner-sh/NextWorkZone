@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use nextworkzone_core::{Result, Service};
 use nextworkzone_jira::{
-    Attachment, Comment, CommentLevel, CommentVisibility, parse_comment_levels, CreateProject, FieldInfo, FieldMeta, Filter, HistoryEntry, IssueDetail, IssueRef, IssueSummary,
+    Attachment, Comment, CommentLevel, CommentVisibility, parse_comment_levels, parse_suggested_assignees, CreateProject, FieldInfo, FieldMeta, Filter, HistoryEntry, IssueDetail, IssueRef, IssueSummary,
     JiraClient, LinkType, Priority, SearchResult, Transition, UserRef, Watchers, Worklog, WorklogInput,
 };
 use serde::Serialize;
@@ -169,6 +169,19 @@ pub async fn jira_comment_levels(state: State<'_, AppState>, key: String) -> Res
         state.cache.put(&cache_key, &levels);
     }
     Ok(levels)
+}
+
+/// 分配问题时建议的经办人（来自网页“分配”表单，与网页下拉框的“建议”一致，需要网页登录）。
+/// 没有网页会话时返回空列表。
+#[tauri::command]
+pub async fn jira_suggested_assignees(state: State<'_, AppState>, key: String) -> Result<Vec<UserRef>> {
+    let issue_id = state.jira()?.get_path(&format!("/rest/api/2/issue/{key}?fields=summary")).await?["id"].as_str().unwrap_or_default().to_string();
+    let url = state.resolve_url(Service::Jira, &format!("/secure/AssignIssue!default.jspa?id={issue_id}"))?;
+    match state.fetch_web(Service::Jira, &url).await {
+        Ok((bytes, _)) => Ok(parse_suggested_assignees(&String::from_utf8_lossy(&bytes))),
+        Err(nextworkzone_core::Error::SessionRequired(_)) => Ok(Vec::new()),
+        Err(e) => Err(e),
+    }
 }
 
 #[tauri::command]
