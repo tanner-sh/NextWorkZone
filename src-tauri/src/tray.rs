@@ -24,7 +24,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .item(&pause)
         .separator()
         .text("page:home", "今天")
-        .text("page:inbox", "收件箱")
         .text("page:todos", "待办")
         .text("page:notes", "笔记")
         .text("page:jira", "Jira")

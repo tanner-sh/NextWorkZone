@@ -2,7 +2,7 @@
 // 主窗口的 MenuHost 在此基础上加入问题、Wiki 页面等对象的菜单；其他窗口只用 BasicMenuHost，不加载那些代码。
 import { useEffect, useRef, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CheckSquare, ClipboardPaste, Code2, Copy, ExternalLink, Image, Inbox, Link, Maximize2, Redo2, Scissors, Search, TextSelect, Undo2 } from "lucide-react";
+import { CheckSquare, ClipboardPaste, Code2, Copy, ExternalLink, Image, Link, Maximize2, Redo2, Scissors, Search, TextSelect, Undo2 } from "lucide-react";
 import { api } from "../api";
 import { ATTACHMENT_PATH } from "../lib/asset";
 import { copyText } from "../lib/clipboard";
@@ -102,7 +102,7 @@ function selectedTextAt(target: Element): string {
   return text && selection.getRangeAt(0).intersectsNode(target) ? text : "";
 }
 
-/** 选中的文字：复制，搜索，记为待办或存入收件箱；是问题键时附上问题菜单。 */
+/** 选中的文字：复制，搜索，记为待办（第一行作标题，其余作备注）；是问题键时附上问题菜单。 */
 function selectionItems(text: string, services: TargetServices | null): MenuInput[] {
   if (!services) return [copyItem("复制", text)];
   const single = text.split("\n")[0].trim();
@@ -119,21 +119,9 @@ function selectionItems(text: string, services: TargetServices | null): MenuInpu
       label: "添加为待办",
       icon: <CheckSquare size={14} />,
       onSelect: guarded(async () => {
-        await api.wsSaveTodo({ title: single.slice(0, 200) });
+        await api.wsSaveTodo({ title: single.slice(0, 200), notes: text.split("\n").slice(1).join("\n").trim() });
         workspaceChanged();
         toast("已添加待办");
-      }),
-    },
-    {
-      label: "存入收件箱",
-      icon: <Inbox size={14} />,
-      onSelect: guarded(async () => {
-        const [title, ...rest] = text.split("\n");
-        await api.wsCapture(title.trim().slice(0, 200), rest.join("\n").trim(), text.match(/https?:\/\/\S+/)?.[0] ?? null);
-        workspaceChanged();
-        // 收件箱的数据和界面只在主窗口加载
-        void import("../lib/inbox").then((m) => m.refreshInbox()).catch(() => {});
-        toast("已存入收件箱");
       }),
     },
   ];

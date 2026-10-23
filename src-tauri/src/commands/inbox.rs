@@ -1,5 +1,5 @@
-//! 收件箱：把需要我处理的事汇总到一处——随手记下的内容、动态（提到我、分配给我、评论等）、
-//! 逾期或今天到期的问题、请我审核或指派给我的合并请求。
+//! 需要处理的事（今天页的“需要处理”，内部仍沿用“收件箱”的名字）：动态（提到我、分配给我、评论等）、
+//! 逾期或今天到期的问题、请我审核或指派给我的合并请求。随手记下的内容直接成为待办，不在这里。
 //!
 //! 外部条目每次实时汇总，工作空间中只记录“已处理”“稍后提醒”的状态（随工作空间同步）：
 //! 动态在处理之后有新的动态、合并请求在处理之后有更新、到期问题到了第二天仍未解决时，条目重新出现。
@@ -45,7 +45,7 @@ pub struct MrRef {
 #[serde(rename_all = "camelCase")]
 pub struct InboxItem {
     id: String,
-    /// `capture` 记下的内容 / `activity` 动态 / `due` 到期问题 / `mr` 合并请求
+    /// `activity` 动态 / `due` 到期问题 / `mr` 合并请求
     source: &'static str,
     title: String,
     detail: String,
@@ -105,17 +105,15 @@ fn now_ms() -> i64 {
 }
 
 #[tauri::command]
-pub async fn ws_inbox(state: State<'_, AppState>) -> Result<InboxView> {
+pub async fn ws_inbox(app: AppHandle, state: State<'_, AppState>) -> Result<InboxView> {
+    // 旧版本（或其他设备同步来的）记下的内容转为待办
+    let ws = state.workspace.clone();
+    if run(&ws, |ws| ws.captures_to_todos()).await? > 0 {
+        let _ = app.emit(crate::commands::workspace::SYNCED_EVENT, ());
+    }
     let entries: BTreeMap<String, InboxEntry> = state.workspace.inbox()?.into_iter().map(|e| (e.id.clone(), e)).collect();
     let mut items: Vec<InboxItem> = Vec::new();
     let mut notes = Vec::new();
-
-    for e in entries.values().filter(|e| e.kind == "capture" && e.handled_at.is_none()) {
-        let mut item = InboxItem::new(e.id.clone(), "capture", e.title.clone(), e.created_at);
-        item.detail = e.body.clone();
-        item.url = e.url.clone();
-        items.push(item);
-    }
 
     // 动态按问题（页面）合并为一条
     let handled = |id: &str| entries.get(id).and_then(|e| e.handled_at).unwrap_or(0);
@@ -236,41 +234,24 @@ async fn mr_items(state: &State<'_, AppState>, entries: &BTreeMap<String, InboxE
         .collect())
 }
 
-/// 记下一条待处理的内容（全局快速记录、收件箱页面中添加）。
-#[tauri::command]
-pub async fn ws_capture(app: AppHandle, state: State<'_, AppState>, title: String, body: String, url: Option<String>) -> Result<InboxEntry> {
-    let ws = state.workspace.clone();
-    let entry = run(&ws, move |ws| ws.capture(&title, &body, url.as_deref())).await?;
-    let _ = app.emit(INBOX_EVENT, ());
-    Ok(entry)
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HandleInput {
     id: String,
-    source: String,
     title: String,
     /// 动态条目：一并标为已读的动态。
     #[serde(default)]
     event_ids: Vec<String>,
 }
 
-/// 处理完一条（完成、忽略或已转为待办）：记下的内容直接删除，外部条目记下处理时间。
+/// 处理完一条（完成、忽略或已转为待办）：记下处理时间，之后有新变化时重新出现。
 #[tauri::command]
 pub async fn ws_inbox_handle(state: State<'_, AppState>, input: HandleInput) -> Result<()> {
     if !input.event_ids.is_empty() {
         activity::jira_activity_read(state.clone(), Some(input.event_ids.clone())).await?;
     }
     let ws = state.workspace.clone();
-    run(&ws, move |ws| {
-        if input.source == "capture" {
-            ws.delete_inbox(&input.id)
-        } else {
-            ws.set_inbox_state(&input.id, &input.title, Some(now_ms()), None).map(|_| ())
-        }
-    })
-    .await
+    run(&ws, move |ws| ws.set_inbox_state(&input.id, &input.title, Some(now_ms()), None).map(|_| ())).await
 }
 
 /// 稍后提醒；`until` 为空时取消稍后提醒。

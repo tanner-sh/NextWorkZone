@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
-import { CalendarDays, CheckSquare, ClipboardPaste, Inbox } from "lucide-react";
+import { CalendarDays, CheckSquare, ClipboardPaste } from "lucide-react";
 import { api, errorMessage, WORKSPACE_SYNCED_EVENT } from "../../api";
 import { addDays, today, workspaceChanged } from "../../lib/workspace";
 import { docInput } from "./docMenu";
 
-type Mode = "todo" | "daily" | "inbox";
+type Mode = "todo" | "daily";
 
 const MODES: { id: Mode; label: string; icon: typeof CheckSquare; placeholder: string }[] = [
   { id: "todo", label: "待办", icon: CheckSquare, placeholder: "要做什么？" },
   { id: "daily", label: "日记", icon: CalendarDays, placeholder: "记一笔，追加到今天的日记" },
-  { id: "inbox", label: "收件箱", icon: Inbox, placeholder: "先记下来，稍后在收件箱里处理" },
 ];
 
 const DUE_OPTIONS = [
@@ -24,7 +23,7 @@ const MODE_KEY = "nextworkzone.capture.mode";
 function savedMode(): Mode {
   try {
     const mode = localStorage.getItem(MODE_KEY);
-    return mode === "daily" || mode === "inbox" ? mode : "todo";
+    return mode === "daily" ? mode : "todo";
   } catch {
     return "todo";
   }
@@ -75,20 +74,17 @@ export function CaptureWindow() {
     setError(null);
     try {
       if (mode === "todo") {
-        await api.wsSaveTodo({ title: value, due: DUE_OPTIONS[dueIndex].due() });
+        // 第一行作标题，其余作备注
+        const [title, ...rest] = value.split("\n");
+        await api.wsSaveTodo({ title: title.trim(), notes: rest.join("\n").trim(), due: DUE_OPTIONS[dueIndex].due() });
         setSaved("已加入待办");
-      } else if (mode === "daily") {
+      } else {
         const doc = await api.wsDaily(today());
         const now = new Date();
         const line = `- ${pad(now.getHours())}:${pad(now.getMinutes())} ${value.replace(/\n+/g, " ")}`;
         const content = doc.content.trim() ? `${doc.content.replace(/\s+$/, "")}\n${line}\n` : `${line}\n`;
         await api.wsSaveDoc(docInput(doc, { content, kind: "daily", title: doc.title || today() }));
         setSaved("已写入今天的日记");
-      } else {
-        const [title, ...rest] = value.split("\n");
-        const url = value.match(/https?:\/\/\S+/)?.[0] ?? null;
-        await api.wsCapture(title.trim(), rest.join("\n").trim(), url);
-        setSaved("已存入收件箱");
       }
       workspaceChanged();
       // 通知主窗口刷新列表

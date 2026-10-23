@@ -1,7 +1,7 @@
 // 条目的“智能操作”：按内容识别出的问题、链接、JSON、时间戳、颜色等，提供打开、转换后粘贴、存入工作空间等操作。
 import { emit } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { AppWindow, Braces, CalendarClock, CheckSquare, CircleDot, ExternalLink, FolderOpen, Inbox, NotebookPen, Palette, Rows3, type LucideIcon } from "lucide-react";
+import { AppWindow, Braces, CalendarClock, CheckSquare, CircleDot, ExternalLink, FolderOpen, NotebookPen, Palette, Rows3, type LucideIcon } from "lucide-react";
 import { api, WORKSPACE_SYNCED_EVENT, type ClipItem, type IssueHit, type Service } from "../../../api";
 import { today, workspaceChanged } from "../../../lib/workspace";
 import { docInput } from "../../workspace/docMenu";
@@ -104,27 +104,17 @@ export function smartActions(item: ClipItem, text: string, issues: IssueHit[], e
   if (item.kind === "text" || item.kind === "link" || item.kind === "code") {
     const [first, ...rest] = trimmed.split("\n");
     const title = (item.title || first).trim().slice(0, 200);
-    const url = trimmed.match(/https?:\/\/\S+/)?.[0] ?? null;
+    // 起了名字的条目以名字作标题，原文全部放进备注（链接不会丢）
+    const notes = (item.title ? trimmed : rest.join("\n")).trim();
     actions.push({
       id: "todo",
       label: "加入待办",
       icon: CheckSquare,
       group: "save",
       run: async () => {
-        await api.wsSaveTodo({ title, notes: rest.join("\n").trim(), due: null });
+        await api.wsSaveTodo({ title, notes, due: null });
         savedToWorkspace();
         env.done("已加入待办");
-      },
-    });
-    actions.push({
-      id: "inbox",
-      label: "存入收件箱",
-      icon: Inbox,
-      group: "save",
-      run: async () => {
-        await api.wsCapture(title, rest.join("\n").trim(), url);
-        savedToWorkspace();
-        env.done("已存入收件箱");
       },
     });
     actions.push({

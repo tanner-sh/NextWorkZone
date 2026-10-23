@@ -1,8 +1,7 @@
 // Jira 问题的右键菜单：问题列表、首页“我的问题”等共用。
 import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowRightLeft, BookOpen, CheckSquare, CircleDot, Copy, ExternalLink, Flag, Link, NotepadText, Timer, UserRound, Zap } from "lucide-react";
-import { currentTimer, isTiming, requestStop, startTimer } from "../../lib/timer";
+import { ArrowRightLeft, BookOpen, CheckSquare, CircleDot, Copy, ExternalLink, Flag, Link, NotepadText, UserRound, Zap } from "lucide-react";
 import { api, errorMessage, type IssueDetail, type IssueSummary, type Transition, type UserRef } from "../../api";
 import { ErrorBox, Modal, SysImg } from "../../components/common";
 import type { MenuInput } from "../../components/ContextMenu";
@@ -119,9 +118,6 @@ export function useIssueMenu(onUpdated?: (issue: IssueDetail) => void) {
           }));
         },
       },
-      isTiming(currentTimer(), { issueKey: key })
-        ? { label: "停止计时并登记…", icon: <Timer size={14} />, onSelect: () => requestStop() }
-        : { label: "开始计时", icon: <Timer size={14} />, onSelect: guarded(async () => startTimer({ issueKey: key, title: await summary() })) },
       "separator",
       { label: "复制问题键", icon: <Copy size={14} />, onSelect: copy(() => key) },
       { label: "复制问题键和概要", onSelect: copy(async () => `${key} ${await summary()}`) },

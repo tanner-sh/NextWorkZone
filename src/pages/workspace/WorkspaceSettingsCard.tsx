@@ -109,7 +109,7 @@ export function WorkspaceSettingsCard() {
               }
             }}
           />
-          <p className="muted small">在任何应用中按下即可弹出快速记录，记一条待办、写一笔日记或存入收件箱。</p>
+          <p className="muted small">在任何应用中按下即可弹出快速记录，记一条待办或写一笔日记。</p>
           {settings.captureError && <p className="notice error small">{settings.captureError}</p>}
         </div>
       </div>

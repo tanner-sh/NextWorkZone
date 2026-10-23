@@ -1,4 +1,4 @@
-//! 快速记录：在任何应用中按全局快捷键弹出一个小窗口，记一条待办、一段日记或存入收件箱。
+//! 快速记录：在任何应用中按全局快捷键弹出一个小窗口，记一条待办或一段日记。
 //! 窗口启动时就创建好并隐藏，按下快捷键时立即显示；失去焦点或记完后隐藏。
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -60,7 +60,7 @@ pub fn capture_hide(app: AppHandle) {
     hide(&app);
 }
 
-/// 剪贴板中的文字（快速记录可以一键存入收件箱）。
+/// 剪贴板中的文字（快速记录可以一键使用）。
 #[tauri::command]
 pub fn capture_clipboard(app: AppHandle) -> Option<String> {
     app.clipboard().read_text().ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())

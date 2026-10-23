@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type IssueSummary, type Project, type WeeklyView, type WikiRecent } from "../api";
-import { ArrowRight, BookText, CheckCircle2, CircleDot, ClipboardList, Clock3, FolderGit2, GitPullRequest, Inbox, NotebookPen } from "lucide-react";
+import { ArrowRight, BookText, CheckCircle2, CircleDot, ClipboardList, Clock3, FolderGit2, NotebookPen } from "lucide-react";
 import { Skeleton, StatusPill, SysImg } from "../components/common";
 import { formatTime } from "../lib/format";
 import { reminderLabel, useReminders } from "../lib/reminders";
@@ -9,8 +9,8 @@ import { useSettings } from "../state/settings";
 import { useContextMenu } from "../components/ContextMenu";
 import { useIssueMenu } from "./jira/issueMenu";
 import { MY_UNRESOLVED_JQL } from "./jira/jql";
+import { AttentionCard } from "./workspace/AttentionCard";
 import { TodayTodos } from "./workspace/TodayTodos";
-import { itemDetail, itemTarget, useInbox } from "../lib/inbox";
 import { today } from "../lib/workspace";
 import { clock, eventTarget, reportText, ReportDialog, timeline, WORK_ICONS } from "./workspace/WorkLog";
 
@@ -68,8 +68,23 @@ export function HomePage() {
       </header>
 
       <div className="home-grid">
+        <AttentionCard />
         <TodayTodos />
-        <InboxCard />
+        <div className="card home-card">
+          <div className="card-title">
+            <h2>
+              <NotebookPen size={16} className="muted" />
+              本周周报
+            </h2>
+            <button className="btn subtle" onClick={() => navigate({ page: "weekly" })}>
+              去填写 <ArrowRight size={14} />
+            </button>
+          </div>
+          <CardBody state={weekly} offLabel="Wiki 或周报页面" onSettings={() => navigate({ page: "settings" })}>
+            {(data: WeeklyView) => <WeeklyStatus view={data} />}
+          </CardBody>
+        </div>
+
         <div className="card home-card wide-card">
           <div className="card-title">
             <h2>
@@ -115,21 +130,6 @@ export function HomePage() {
         </div>
 
         <WorkLogCard />
-
-        <div className="card home-card">
-          <div className="card-title">
-            <h2>
-              <NotebookPen size={16} className="muted" />
-              本周周报
-            </h2>
-            <button className="btn subtle" onClick={() => navigate({ page: "weekly" })}>
-              去填写 <ArrowRight size={14} />
-            </button>
-          </div>
-          <CardBody state={weekly} offLabel="Wiki 或周报页面" onSettings={() => navigate({ page: "settings" })}>
-            {(data: WeeklyView) => <WeeklyStatus view={data} />}
-          </CardBody>
-        </div>
 
         <div className="card home-card">
           <div className="card-title">
@@ -197,48 +197,6 @@ export function HomePage() {
   );
 }
 
-/** 收件箱：需要处理的事（最多 5 条）。 */
-function InboxCard() {
-  const { navigate } = useNav();
-  const inbox = useInbox();
-  const items = inbox?.items ?? [];
-  return (
-    <div className="card home-card">
-      <div className="card-title">
-        <h2>
-          <Inbox size={16} className="muted" />
-          收件箱 {items.length > 0 && <span className="count">{items.length}</span>}
-        </h2>
-        <button className="btn subtle" onClick={() => navigate({ page: "inbox" })}>
-          去处理 <ArrowRight size={14} />
-        </button>
-      </div>
-      {!inbox ? (
-        <Skeleton lines={3} />
-      ) : items.length === 0 ? (
-        <p className="muted small">没有需要处理的事。随时按快速记录快捷键把想到的事先记下来。</p>
-      ) : (
-        <ul className="home-list">
-          {items.slice(0, 5).map((item) => {
-            const Icon = item.source === "capture" ? Inbox : item.source === "due" ? Clock3 : item.source === "mr" ? GitPullRequest : item.system === "wiki" ? BookText : CircleDot;
-            const target = itemTarget(item);
-            return (
-              <li key={item.id}>
-                <button className="home-row" onClick={() => navigate(target ?? { page: "inbox" })}>
-                  <Icon size={14} className={`muted inbox-mini source-${item.source}`} />
-                  <span className="ellipsis grow">
-                    {item.title || "无标题"} <span className="muted small">{itemDetail(item)}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 /** 今天的工作记录：最近几件事，可直接生成日报。 */
 function WorkLogCard() {
   const { navigate } = useNav();
@@ -265,7 +223,7 @@ function WorkLogCard() {
       {log.status === "error" && <p className="notice error">{log.message}</p>}
       {log.status === "ok" &&
         (log.data.events.length === 0 ? (
-          <p className="muted small">今天还没有记录。Jira 上的流转和评论、代码推送、Wiki 编辑、完成的待办和计时会自动出现在这里。</p>
+          <p className="muted small">今天还没有记录。Jira 上的流转和评论、代码推送、Wiki 编辑、完成的待办会自动出现在这里。</p>
         ) : (
           <ul className="home-list">
             {timeline(log.data.events)

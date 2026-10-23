@@ -1,6 +1,5 @@
 // 待办的右键菜单：待办页和首页“今天的待办”共用。
-import { CalendarDays, Check, CircleDot, Copy, ExternalLink, Flag, RotateCcw, Timer, Trash2 } from "lucide-react";
-import { currentTimer, isTiming, requestStop, startTimer } from "../../lib/timer";
+import { CalendarDays, Check, CircleDot, Copy, ExternalLink, Flag, RotateCcw, Trash2 } from "lucide-react";
 import { api, type Todo, type TodoInput } from "../../api";
 import type { MenuEntry } from "../../components/ContextMenu";
 import { guarded, toast } from "../../components/Toast";
@@ -30,12 +29,6 @@ export function todoInput(todo: Todo, patch: Partial<Todo> = {}): TodoInput {
     repeat: next.repeat,
     checklist: next.checklist,
   };
-}
-
-/** 待办的计时目标：关联了 Jira 问题时登记到该问题。 */
-export function todoTimerTarget(todo: Todo) {
-  const jira = todo.refSystem === "jira";
-  return { todoId: todo.id, issueKey: jira ? todo.refKey : null, issueSummary: jira ? todo.refTitle : null, title: todo.title || "无标题待办" };
 }
 
 interface Options {
@@ -89,10 +82,6 @@ export function todoMenu(todo: Todo, { onSaved, onDeleted, navigate, onPromote }
           else toast("来源文档已被删除", true);
         }),
       },
-    !todo.done &&
-      (isTiming(currentTimer(), { todoId: todo.id })
-        ? { label: "停止计时并登记…", icon: <Timer size={14} />, onSelect: () => requestStop() }
-        : { label: "开始计时", icon: <Timer size={14} />, onSelect: () => startTimer(todoTimerTarget(todo)) }),
     !todo.refKey && onPromote && { label: "创建为 Jira 问题", icon: <CircleDot size={14} />, onSelect: () => onPromote(todo) },
     {
       label: "复制标题",

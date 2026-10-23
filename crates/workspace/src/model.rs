@@ -72,7 +72,7 @@ pub struct TodoInput {
 }
 
 /// 收件箱中的一条记录。整行即同步单位。
-/// - `capture`：随手记下、待处理的内容（全局快速记录存入收件箱时创建）；
+/// - `capture`：旧版本随手记下的内容，现在会转为待办（见 `Workspace::captures_to_todos`）；
 /// - `state`：外部条目（动态、到期问题、合并请求等）的处理状态，id 为条目 id，
 ///   条目本身每次从各系统实时汇总，这里只记录“已处理”“稍后提醒”。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -94,20 +94,6 @@ pub struct InboxEntry {
     pub updated_by: String,
     #[serde(default)]
     pub deleted: bool,
-}
-
-/// 计时结束后记下的一段工作时间（只保存在本机）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TimeEntry {
-    pub id: String,
-    pub title: String,
-    pub issue_key: Option<String>,
-    pub todo_id: Option<String>,
-    pub started_at: i64,
-    pub ended_at: i64,
-    /// 实际计时时长（不含暂停）。
-    pub duration_ms: i64,
 }
 
 /// 到时间需要发出的提醒。

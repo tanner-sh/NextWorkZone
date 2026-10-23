@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookText, CheckSquare, ChevronDown, ChevronRight, CircleDot, ClipboardList, Copy, FileText, GitBranch, RefreshCw, Timer } from "lucide-react";
+import { BookText, CheckSquare, ChevronDown, ChevronRight, CircleDot, ClipboardList, Copy, FileText, GitBranch, RefreshCw } from "lucide-react";
 import { api, errorMessage, type Doc, type WorkEvent, type WorkLog } from "../../api";
 import { Modal, Skeleton } from "../../components/common";
 import { toast } from "../../components/Toast";
@@ -12,14 +12,6 @@ const SECTION = "## 工作记录";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const clock = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`;
-
-/** 时长，例如 1h 25m。 */
-function duration(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return [h && `${h}h`, m && `${m}m`].filter(Boolean).join(" ");
-}
 
 const KIND_TEXT: Record<string, string> = {
   create: "创建",
@@ -34,14 +26,13 @@ const KIND_TEXT: Record<string, string> = {
   mr_close: "关闭合并请求",
   edit: "修改页面",
   done: "完成待办",
-  timer: "计时",
 };
 
 /** 一件事的一行说明（时间线中显示）。 */
 function eventText(e: WorkEvent): string {
   const action = e.system === "wiki" && e.kind === "create" ? "新建页面" : e.system === "wiki" && e.kind === "comment" ? "评论页面" : KIND_TEXT[e.kind] ?? e.kind;
   const subject = e.system === "jira" ? `${e.key} ${e.title}` : e.system === "gitlab" && e.key ? `${e.title} ${e.key}` : e.title;
-  const detail = e.durationMs ? duration(e.durationMs) : e.detail;
+  const detail = e.detail;
   return `${action} · ${subject}${detail ? `：${detail}` : ""}`;
 }
 
@@ -85,7 +76,7 @@ function describeWiki(list: WorkEvent[]): string {
 }
 
 /**
- * 按对象整理成日报：Jira 问题按问题、代码按项目、Wiki 按页面合并，待办、计时各列一组。
+ * 按对象整理成日报：Jira 问题按问题、代码按项目、Wiki 按页面合并，完成的待办列一组。
  * 返回分组标题和条目，写入日记和生成日报共用。
  */
 export function summarize(log: WorkLog): { title: string; items: string[] }[] {
@@ -106,16 +97,6 @@ export function summarize(log: WorkLog): { title: string; items: string[] }[] {
 
   const todos = [...new Set(events.filter((e) => e.system === "todo").map((e) => e.title))].filter(Boolean);
   if (todos.length) groups.push({ title: "完成的待办", items: todos });
-
-  const timers = byKey(
-    events.filter((e) => e.system === "timer"),
-    (e) => e.title,
-    (list) => ({ title: list[0].title, ms: list.reduce((sum, e) => sum + (e.durationMs ?? 0), 0) }),
-  );
-  if (timers.length) {
-    const total = timers.reduce((sum, t) => sum + t.ms, 0);
-    groups.push({ title: `计时（合计 ${duration(total)}）`, items: timers.map((t) => `${t.title}：${duration(t.ms)}`) });
-  }
   return groups;
 }
 
@@ -167,7 +148,7 @@ export function timeline(events: WorkEvent[]): { at: number; first: WorkEvent; t
 
 export function eventTarget(e: WorkEvent): NavTarget | null {
   if (e.system === "jira" && e.key) return { page: "jira", issueKey: e.key };
-  if ((e.system === "todo" || e.system === "timer") && e.key) return { page: "jira", issueKey: e.key };
+  if (e.system === "todo" && e.key) return { page: "jira", issueKey: e.key };
   if (e.system === "wiki" && e.key) return { page: "wiki", wikiPage: e.key };
   if (e.system === "gitlab" && e.projectId) {
     const iid = e.key?.startsWith("!") ? Number(e.key.slice(1)) : NaN;
@@ -176,7 +157,7 @@ export function eventTarget(e: WorkEvent): NavTarget | null {
   return null;
 }
 
-export const WORK_ICONS = { jira: CircleDot, gitlab: GitBranch, wiki: BookText, todo: CheckSquare, timer: Timer } as const;
+export const WORK_ICONS = { jira: CircleDot, gitlab: GitBranch, wiki: BookText, todo: CheckSquare } as const;
 
 /** 日记下方的工作记录：当天在各处做过的事，可写入日记、生成日报。 */
 export function WorkLogPanel({ doc }: { doc: Doc }) {
@@ -246,7 +227,7 @@ export function WorkLogPanel({ doc }: { doc: Doc }) {
             </p>
           ))}
           {!log && !error && <Skeleton lines={3} />}
-          {log && log.events.length === 0 && <p className="muted small">这一天还没有记录：Jira 上的流转和评论、GitLab 推送和合并请求、Wiki 编辑、完成的待办和计时都会出现在这里。</p>}
+          {log && log.events.length === 0 && <p className="muted small">这一天还没有记录：Jira 上的流转和评论、GitLab 推送和合并请求、Wiki 编辑、完成的待办都会出现在这里。</p>}
           <ul className="worklog-list">
             {log &&
               timeline(log.events).map(({ at, first, text }, i) => {

@@ -8,8 +8,7 @@ import { useNav } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { CreateIssueDialog } from "../jira/CreateIssueDialog";
 import { Picker } from "../jira/fieldForm";
-import { fromJiraSync, PRIORITIES, todoInput, todoMenu, todoTimerTarget } from "./todoMenu";
-import { TimerButton } from "../../components/TimerButton";
+import { fromJiraSync, PRIORITIES, todoInput, todoMenu } from "./todoMenu";
 
 type View = "today" | "unscheduled" | "upcoming" | "all" | "done";
 
@@ -115,7 +114,7 @@ export function TodoPage() {
     }
   };
 
-  // 安排日期（“未安排”中的今天、明天）：收件箱转来的待办在这里排进日程
+  // 安排日期（“未安排”中的今天、明天）：记下的、自动同步的 Jira 待办在这里排进日程
   const plan = async (todo: Todo, due: string) => {
     try {
       replace(await api.wsSaveTodo(todoInput(todo, { due })));
@@ -560,7 +559,6 @@ function TodoDetail({ todo, onSaved, onDeleted }: { todo: Todo; onSaved: (todo: 
       {error && <ErrorBox message={error} />}
 
       <div className="todo-actions">
-        <TimerButton target={todoTimerTarget(draft)} match={{ todoId: todo.id }} />
         {!linked && isReady("jira") && (
           <button className="btn" onClick={() => setPromoting(true)}>
             <CircleDot size={14} />

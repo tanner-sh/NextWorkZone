@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
-export type PageId = "home" | "inbox" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings";
+export type PageId = "home" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings";
 
-export const PAGE_IDS: PageId[] = ["home", "inbox", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "tools", "settings"];
+export const PAGE_IDS: PageId[] = ["home", "todos", "notes", "kb", "jira", "activity", "weekly", "wiki", "gitlab", "stats", "tools", "settings"];
 
 /** 跳转时附带的目标，例如打开某个 Jira 问题或 GitLab 项目。 */
 export interface NavTarget {

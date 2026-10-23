@@ -87,16 +87,6 @@ CREATE TABLE IF NOT EXISTS assets (
     dirty INTEGER NOT NULL DEFAULT 1
 );
 -- 以下只保存在本机，不参与同步
-CREATE TABLE IF NOT EXISTS time_entries (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    issue_key TEXT,
-    todo_id TEXT,
-    started_at INTEGER NOT NULL,
-    ended_at INTEGER NOT NULL,
-    duration_ms INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS time_entries_start ON time_entries(started_at);
 -- 已经发出的提醒：条目 id → 提醒时间，提醒时间改了会再次提醒
 CREATE TABLE IF NOT EXISTS fired_alerts (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 -- 以下由内容派生，不参与同步
@@ -483,16 +473,16 @@ impl Workspace {
         Ok(report)
     }
 
-    // ---------- 收件箱 ----------
+    // ---------- 收件箱（需要处理的事的状态） ----------
 
-    /// 收件箱的全部记录（记下的内容和外部条目的处理状态）。
+    /// 收件箱的全部记录（外部条目的处理状态，以及旧版本记下的内容）。
     pub fn inbox(&self) -> Result<Vec<InboxEntry>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&format!("SELECT {INBOX_COLUMNS} FROM inbox WHERE deleted = 0 ORDER BY created_at DESC")).db()?;
         stmt.query_map([], inbox_from_row).db()?.collect::<rusqlite::Result<Vec<_>>>().db()
     }
 
-    /// 记下一条待处理的内容。
+    /// 记下一条待处理的内容。新版本不再创建，记下的内容直接成为待办；保留用于测试旧数据。
     pub fn capture(&self, title: &str, body: &str, url: Option<&str>) -> Result<InboxEntry> {
         let conn = self.conn.lock().unwrap();
         let now = now_ms();
@@ -511,6 +501,22 @@ impl Workspace {
         };
         write_inbox(&conn, &entry, true)?;
         Ok(entry)
+    }
+
+    /// 把还没处理的记下的内容转为未安排日期的待办（收件箱页面取消后，旧数据和其他设备同步来的都在这里转换）。
+    /// 返回转换的条数。
+    pub fn captures_to_todos(&self) -> Result<usize> {
+        let pending: Vec<InboxEntry> = self.inbox()?.into_iter().filter(|e| e.kind == "capture" && e.handled_at.is_none()).collect();
+        for e in &pending {
+            // 链接已经写在正文里时不重复
+            let notes = match &e.url {
+                Some(url) if !e.body.contains(url.as_str()) => [e.body.as_str(), url.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join("\n"),
+                _ => e.body.clone(),
+            };
+            self.save_todo(TodoInput { title: e.title.clone(), notes, ..Default::default() })?;
+            self.delete_inbox(&e.id)?;
+        }
+        Ok(pending.len())
     }
 
     /// 设置条目的处理状态；外部条目第一次处理时创建状态记录。`title` 只用于状态记录的说明。
@@ -545,32 +551,6 @@ impl Workspace {
             write_inbox(&conn, &entry, true)?;
         }
         Ok(())
-    }
-
-    // ---------- 计时记录 ----------
-
-    pub fn add_time_entry(&self, entry: &TimeEntry) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT OR REPLACE INTO time_entries (id, title, issue_key, todo_id, started_at, ended_at, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![entry.id, entry.title, entry.issue_key, entry.todo_id, entry.started_at, entry.ended_at, entry.duration_ms],
-        )
-        .db()?;
-        Ok(())
-    }
-
-    /// 与时间段 `[from, to)`（毫秒）有交集的计时记录。
-    pub fn time_entries(&self, from: i64, to: i64) -> Result<Vec<TimeEntry>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare("SELECT id, title, issue_key, todo_id, started_at, ended_at, duration_ms FROM time_entries WHERE started_at < ?2 AND ended_at > ?1 ORDER BY started_at")
-            .db()?;
-        stmt.query_map(params![from, to], |r| {
-            Ok(TimeEntry { id: r.get(0)?, title: r.get(1)?, issue_key: r.get(2)?, todo_id: r.get(3)?, started_at: r.get(4)?, ended_at: r.get(5)?, duration_ms: r.get(6)? })
-        })
-        .db()?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .db()
     }
 
     // ---------- 提醒 ----------

@@ -33,4 +33,3 @@ percent-encoding = "2"
 drag = "2.1"
 base64.workspace = true
 tokio.workspace = true
-uuid = { version = "1.28", features = ["v4"] }

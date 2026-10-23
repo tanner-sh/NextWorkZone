@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
-import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, Inbox, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType } from "react";
+import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MenuHost } from "./components/MenuHost";
@@ -9,12 +9,11 @@ import { countMyIssues } from "./lib/notify";
 import { ACTIVITY_INTERVAL_MS, pollActivity, useActivityFeed } from "./lib/activity";
 import { checkReminders, useReminders } from "./lib/reminders";
 import { refreshInbox, useInbox } from "./lib/inbox";
-import { workspaceChanged } from "./lib/workspace";
+import { useWorkspaceRefresh, workspaceChanged } from "./lib/workspace";
 import { HomePage } from "./pages/HomePage";
 import { QuickTodo } from "./pages/workspace/QuickTodo";
 import { Toasts } from "./components/Toast";
 import { FileDropLayer } from "./components/FileDropLayer";
-import { TimerWidget } from "./components/TimerWidget";
 import { NavProvider, PAGE_IDS, useNav, type PageId } from "./state/nav";
 import { openLink } from "./lib/links";
 import { TOOLS, toolById, useHiddenTools } from "./tools/registry";
@@ -22,7 +21,6 @@ import { SettingsProvider, useSettings } from "./state/settings";
 
 // 首页之外的页面在第一次打开时才加载，编辑器、代码高亮等大依赖随页面一起按需加载
 const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) => lazy(() => load().then((m) => ({ default: m[name] })));
-const InboxPage = page(() => import("./pages/workspace/InboxPage"), "InboxPage");
 const ActivityPage = page(() => import("./pages/jira/ActivityPage"), "ActivityPage");
 const StatsPage = page(() => import("./pages/jira/StatsPage"), "StatsPage");
 const KnowledgePage = page(() => import("./pages/workspace/KnowledgePage"), "KnowledgePage");
@@ -41,7 +39,6 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
     label: "工作空间",
     items: [
       { id: "home", label: "今天", icon: LayoutDashboard },
-      { id: "inbox", label: "收件箱", icon: Inbox },
       { id: "todos", label: "待办", icon: CheckSquare },
       { id: "notes", label: "笔记", icon: NotepadText },
       { id: "kb", label: "知识库", icon: BookOpen },
@@ -56,7 +53,7 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
     ],
   },
   {
-    // 回看发生了什么：动态、周报、统计（需要处理的事在收件箱）
+    // 回看发生了什么：动态、周报、统计（需要处理的事在今天页）
     label: "回顾",
     items: [
       { id: "activity", label: "动态", icon: Bell },
@@ -146,13 +143,21 @@ function Shell() {
   const wikiReady = isReady("confluence");
   const activity = useActivityFeed();
   const inbox = useInbox();
+  // 未安排日期的待办（新分配的 Jira 问题也在这里），显示在侧边栏提醒去安排
+  const [unscheduled, setUnscheduled] = useState<number | null>(null);
+  const loadUnscheduled = useCallback(() => {
+    api.wsTodos().then((list) => setUnscheduled(list.filter((t) => !t.done && t.due === null).length), () => {});
+  }, []);
+  useEffect(loadUnscheduled, [loadUnscheduled]);
+  useWorkspaceRefresh(loadUnscheduled);
+  const counts: Partial<Record<PageId, number | null | undefined>> = { home: inbox?.items.length, todos: unscheduled, jira: issueCount, activity: activity?.unread };
   const reminders = useReminders();
   const overdue = reminders?.items.filter((r) => r.kind === "overdue" || r.kind === "today").length ?? 0;
   useEffect(() => {
     if (!jiraReady && !wikiReady) return;
     let rounds = 0;
     const run = () => {
-      // 新的动态也会进入收件箱
+      // 新的动态也会进入今天页的“需要处理”
       void pollActivity()
         .catch(() => {})
         .finally(() => void refreshInbox().catch(() => {}));
@@ -192,7 +197,7 @@ function Shell() {
                 {...item}
                 shortcut={NAV_ORDER.indexOf(item.id) < 10 ? String((NAV_ORDER.indexOf(item.id) + 1) % 10) : undefined}
                 active={current.page === item.id}
-                count={item.id === "jira" ? issueCount : item.id === "activity" ? activity?.unread || null : item.id === "inbox" ? inbox?.items.length || null : null}
+                count={counts[item.id] || null}
                 alert={item.id === "jira" && overdue > 0 ? `${overdue} 个问题已逾期或今天到期` : undefined}
                 onClick={() => navigate({ page: item.id })}
               />
@@ -208,7 +213,6 @@ function Shell() {
           </div>
         )}
         <div className="sidebar-spacer" />
-        <TimerWidget />
         <NavButton id="settings" label="设置" icon={Settings2} shortcut="," active={current.page === "settings"} onClick={() => navigate({ page: "settings" })} />
       </nav>
       <div className="main">
@@ -218,7 +222,6 @@ function Shell() {
           <ErrorBoundary resetKey={current.page}>
             <Suspense fallback={null}>
               {current.page === "home" && <HomePage />}
-              {current.page === "inbox" && <InboxPage />}
               {current.page === "todos" && <TodoPage />}
               {current.page === "notes" && <NotesPage />}
               {current.page === "kb" && <KnowledgePage />}

@@ -680,10 +680,10 @@ export interface TodoInput {
   checklist?: ChecklistItem[];
 }
 
-/** 收件箱中的一条：记下的内容，或从各系统汇总的需要处理的事。 */
+/** 需要处理的一件事（今天页“需要处理”）：从各系统汇总的动态、到期问题、合并请求。 */
 export interface InboxItem {
   id: string;
-  source: "capture" | "activity" | "due" | "mr";
+  source: "activity" | "due" | "mr";
   title: string;
   detail: string;
   at: number;
@@ -706,13 +706,12 @@ export interface InboxView {
 /** 工作记录中的一件事。 */
 export interface WorkEvent {
   at: number;
-  system: "jira" | "gitlab" | "wiki" | "todo" | "timer";
+  system: "jira" | "gitlab" | "wiki" | "todo";
   kind: string;
   title: string;
   key: string | null;
   detail: string;
   projectId: number | null;
-  durationMs: number | null;
 }
 
 export interface WorkLog {
@@ -820,7 +819,7 @@ export interface JiraTodoSync {
 export const WORKSPACE_SYNCED_EVENT = "workspace-synced";
 /** 托盘菜单中的操作（载荷为 `quick-todo`、`search`、`page:<页面>`、`tool:<工具>[:<标签>]` 或 `url:<地址>`），由后端发出。 */
 export const TRAY_EVENT = "tray-action";
-/** 收件箱有变化（提醒到时、快速记录存入）时由后端发出。 */
+/** 需要处理的事有变化（稍后提醒到时）时由后端发出。 */
 export const INBOX_EVENT = "inbox-changed";
 
 // ---------- 剪贴板 ----------
@@ -1220,12 +1219,9 @@ export const api = {
   wsSync: () => invoke<SyncReport | null>("ws_sync"),
   wsSaveCaptureShortcut: (shortcut: string) => invoke<WorkspaceSettings>("ws_save_capture_shortcut", { shortcut }),
   wsInbox: () => invoke<InboxView>("ws_inbox"),
-  wsCapture: (title: string, body = "", url: string | null = null) => invoke<unknown>("ws_capture", { title, body, url }),
-  wsInboxHandle: (input: { id: string; source: string; title: string; eventIds?: string[] }) => invoke<void>("ws_inbox_handle", { input }),
+  wsInboxHandle: (input: { id: string; title: string; eventIds?: string[] }) => invoke<void>("ws_inbox_handle", { input }),
   wsInboxSnooze: (id: string, title: string, until: number | null) => invoke<void>("ws_inbox_snooze", { id, title, until }),
   wsWorklog: (day: string) => invoke<WorkLog>("ws_worklog", { day }),
-  wsAddTimeEntry: (input: { title: string; issueKey: string | null; todoId: string | null; startedAt: number; durationMs: number }) =>
-    invoke<void>("ws_add_time_entry", { input }),
   captureHide: () => invoke<void>("capture_hide"),
   captureClipboard: () => invoke<string | null>("capture_clipboard"),
   clipboardReadText: () => invoke<string | null>("clipboard_read_text"),

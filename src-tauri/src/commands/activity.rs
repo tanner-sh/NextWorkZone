@@ -70,7 +70,7 @@ fn time_of(e: &ActivityEvent) -> Option<DateTime<FixedOffset>> {
     parse_time(&e.at).or_else(|| DateTime::parse_from_rfc3339(&e.at).ok())
 }
 
-/// 已保存的动态（收件箱据此汇总需要处理的条目）。
+/// 已保存的动态（今天页的“需要处理”据此汇总条目）。
 pub(crate) fn stored_events(state: &AppState) -> Vec<ActivityEvent> {
     Store::load(state).events
 }

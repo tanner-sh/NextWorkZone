@@ -319,6 +319,23 @@ fn inbox_state_and_sync() {
 }
 
 #[test]
+fn captures_become_todos() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = open(dir.path(), "a.db");
+    ws.capture("看一下这个链接", "", Some("https://example.com/x")).unwrap();
+    ws.capture("回复邮件", "周五之前\nhttps://example.com/y", Some("https://example.com/y")).unwrap();
+    ws.set_inbox_state("mr:1:2", "评审 !2", Some(100), None).unwrap();
+    assert_eq!(ws.captures_to_todos().unwrap(), 2);
+    let todos = ws.todos().unwrap();
+    assert_eq!(todos.len(), 2);
+    assert!(todos.iter().any(|t| t.title == "看一下这个链接" && t.notes == "https://example.com/x" && t.due.is_none()));
+    assert!(todos.iter().any(|t| t.title == "回复邮件" && t.notes == "周五之前\nhttps://example.com/y"));
+    // 外部条目的处理状态保留，再次转换不会重复
+    assert_eq!(ws.inbox().unwrap().len(), 1);
+    assert_eq!(ws.captures_to_todos().unwrap(), 0);
+}
+
+#[test]
 fn due_alerts_fire_once() {
     let dir = tempfile::tempdir().unwrap();
     let ws = open(dir.path(), "a.db");
@@ -338,14 +355,3 @@ fn due_alerts_fire_once() {
     assert_eq!(ws.take_due_alerts(now).unwrap().len(), 1);
 }
 
-#[test]
-fn time_entries_by_range() {
-    let dir = tempfile::tempdir().unwrap();
-    let ws = open(dir.path(), "a.db");
-    let entry = |id: &str, start: i64, end: i64| TimeEntry { id: id.into(), title: id.into(), issue_key: None, todo_id: None, started_at: start, ended_at: end, duration_ms: end - start };
-    ws.add_time_entry(&entry("a", 100, 200)).unwrap();
-    ws.add_time_entry(&entry("b", 300, 400)).unwrap();
-    let got: Vec<String> = ws.time_entries(150, 350).unwrap().into_iter().map(|e| e.id).collect();
-    assert_eq!(got, ["a", "b"]);
-    assert!(ws.time_entries(200, 300).unwrap().is_empty());
-}

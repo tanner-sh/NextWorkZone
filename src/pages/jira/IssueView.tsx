@@ -9,7 +9,6 @@ import { useContextMenu, type MenuInput } from "../../components/ContextMenu";
 import { contributeMenu, useMenus } from "../../components/MenuHost";
 import { guarded, toast } from "../../components/Toast";
 import { AssignDialog } from "./issueMenu";
-import { TimerButton } from "../../components/TimerButton";
 import { AttachmentViewer, attachmentMenu as attachmentItems } from "../../components/AttachmentViewer";
 import { Avatar, ErrorBox, Skeleton, StatusPill, SysImg, WebLoginHint } from "../../components/common";
 import { assetUrl } from "../../lib/asset";
@@ -181,7 +180,6 @@ export function IssueView({ issueKey, onChanged }: { issueKey: string; onChanged
             编辑
           </button>
           <WatchButton issueKey={issue.key} />
-          <TimerButton target={{ issueKey: issue.key, title: issue.summary }} match={{ issueKey: issue.key }} compact />
         </div>
       </header>
 

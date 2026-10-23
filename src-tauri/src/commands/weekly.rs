@@ -224,21 +224,6 @@ fn workspace_draft(state: &AppState, from: NaiveDate, to: NaiveDate) -> Result<V
     if !lines.is_empty() {
         groups.push(DraftGroup { title: "日记".into(), source: "daily", items: lines });
     }
-    // 计时记录：按事项合计
-    if let (Some(start), Some(end)) = (start, end) {
-        let mut totals: Vec<(String, i64)> = Vec::new();
-        for entry in ws.time_entries(start, end)? {
-            match totals.iter_mut().find(|(title, _)| *title == entry.title) {
-                Some((_, ms)) => *ms += entry.duration_ms,
-                None => totals.push((entry.title, entry.duration_ms)),
-            }
-        }
-        if !totals.is_empty() {
-            let total: i64 = totals.iter().map(|(_, ms)| ms).sum();
-            let items = totals.into_iter().map(|(title, ms)| format!("{title}（{}）", format_duration((ms / 1000) as u64))).collect();
-            groups.push(DraftGroup { title: format!("计时 · 合计 {}", format_duration((total / 1000) as u64)), source: "timer", items });
-        }
-    }
     Ok(groups)
 }
 
