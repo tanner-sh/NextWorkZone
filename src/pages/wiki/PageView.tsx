@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BookOpen, CheckSquare, ChevronRight, CircleDot, Copy, ExternalLink, FilePlus2, FileText, History, MoreHorizontal, NotepadText, Paperclip, Pencil, RefreshCw, Star } from "lucide-react";
 import { api, errorMessage, type Attachment, type IssueSummary, type WikiNode, type WikiPageDetail } from "../../api";
@@ -40,20 +40,27 @@ export function PageView(props: {
   const [history, setHistory] = useState(false);
   const menu = useContextMenu();
 
+  // 只采用最近一次请求的结果：快速切换页面时，已离开的页面晚到的结果不能再把选中项改回去
+  const requestId = useRef(0);
   const load = useCallback(async () => {
+    const current = ++requestId.current;
     setError(null);
     try {
       const detail = await api.wikiPage(pageId);
+      if (current !== requestId.current) return;
       setPage(detail);
       onLoaded(detail);
       refreshFavorite({ id: detail.id, title: detail.title, space: detail.spaceName });
     } catch (e) {
-      setError(errorMessage(e));
+      if (current === requestId.current) setError(errorMessage(e));
     }
   }, [pageId, onLoaded]);
 
   useEffect(() => {
     void load();
+    return () => {
+      requestId.current++;
+    };
   }, [load]);
 
   const jiraBase = baseUrl("jira");
