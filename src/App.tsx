@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BarChart3, Bell, BookOpen, BookText, CheckSquare, CircleDot, FolderGit2, LayoutDashboard, NotebookPen, NotepadText, Search, Settings2, type LucideProps } from "lucide-react";
 import { CommandPalette } from "./components/CommandPalette";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -14,7 +14,7 @@ import { HomePage } from "./pages/HomePage";
 import { QuickTodo } from "./pages/workspace/QuickTodo";
 import { Toasts } from "./components/Toast";
 import { FileDropLayer } from "./components/FileDropLayer";
-import { NavProvider, PAGE_IDS, useNav, type PageId } from "./state/nav";
+import { NavProvider, PAGE_IDS, PageActiveContext, useNav, type PageId } from "./state/nav";
 import { openLink } from "./lib/links";
 import { TOOLS, toolById, useHiddenTools } from "./tools/registry";
 import { SettingsProvider, useSettings } from "./state/settings";
@@ -32,6 +32,9 @@ const JiraPage = page(() => import("./pages/jira/JiraPage"), "JiraPage");
 const WeeklyPage = page(() => import("./pages/weekly/WeeklyPage"), "WeeklyPage");
 const WikiPage = page(() => import("./pages/wiki/WikiPage"), "WikiPage");
 const SearchPage = page(() => import("./pages/SearchPage"), "SearchPage");
+
+/** 切走后只隐藏、不卸载的页面：回来时列表的滚动位置、选中项、搜索条件和展开状态都还在。其余页面每次打开时重新加载。 */
+const KEEP_ALIVE: Partial<Record<PageId, ComponentType>> = { todos: TodoPage, notes: NotesPage, kb: KnowledgePage, jira: JiraPage, wiki: WikiPage, gitlab: GitlabPage };
 
 type NavEntry = { id: PageId; label: string; icon: ComponentType<LucideProps> };
 
@@ -84,6 +87,9 @@ function Shell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quickTodo, setQuickTodo] = useState(false);
   const [issueCount, setIssueCount] = useState<number | null>(null);
+  // 打开过的保留页面，按第一次打开的顺序
+  const [kept, setKept] = useState<PageId[]>([]);
+  if (KEEP_ALIVE[current.page] && !kept.includes(current.page)) setKept([...kept, current.page]);
 
   // ⌘K 打开全局搜索，⌘1–⌘9、⌘0 切换页面
   useEffect(() => {
@@ -220,29 +226,77 @@ function Shell() {
         {/* 没有顶部栏：内容区顶端留一条可以拖动窗口的区域 */}
         <div className="main-drag" data-tauri-drag-region />
         <main className="content">
-          <ErrorBoundary resetKey={current.page}>
-            <Suspense fallback={null}>
-              {current.page === "home" && <HomePage />}
-              {current.page === "todos" && <TodoPage />}
-              {current.page === "notes" && <NotesPage />}
-              {current.page === "kb" && <KnowledgePage />}
-              {current.page === "jira" && <JiraPage />}
-              {current.page === "activity" && <ActivityPage />}
-              {current.page === "weekly" && <WeeklyPage />}
-              {current.page === "wiki" && <WikiPage />}
-              {current.page === "gitlab" && <GitlabPage />}
-              {current.page === "stats" && <StatsPage />}
-              {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
-              {current.page === "settings" && <SettingsPage />}
-              {current.page === "search" && <SearchPage />}
-            </Suspense>
-          </ErrorBoundary>
+          {kept.map((id) => {
+            const Page = KEEP_ALIVE[id]!;
+            return (
+              <PageSlot key={id} active={current.page === id}>
+                <Page />
+              </PageSlot>
+            );
+          })}
+          {!KEEP_ALIVE[current.page] && (
+            <ErrorBoundary resetKey={current.page}>
+              <Suspense fallback={null}>
+                {current.page === "home" && <HomePage />}
+                {current.page === "activity" && <ActivityPage />}
+                {current.page === "weekly" && <WeeklyPage />}
+                {current.page === "stats" && <StatsPage />}
+                {current.page === "tools" && <ToolHost tool={current.tool} tab={current.toolTab} />}
+                {current.page === "settings" && <SettingsPage />}
+                {current.page === "search" && <SearchPage />}
+              </Suspense>
+            </ErrorBoundary>
+          )}
         </main>
       </div>
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} onQuickTodo={() => setQuickTodo(true)} />}
       {quickTodo && <QuickTodo onClose={() => setQuickTodo(false)} />}
       <FileDropLayer />
       <Toasts />
+    </div>
+  );
+}
+
+/**
+ * 保留的页面。隐藏时页面中的滚动区域不一定保留位置，所以随时记下各区域的位置，再次显示时恢复。
+ * 隐藏时移走焦点，避免按键输入到看不见的输入框。
+ */
+function PageSlot({ active, children }: { active: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(active);
+  const scrolls = useRef(new Map<Element, number>());
+
+  useEffect(() => {
+    const slot = ref.current!;
+    // 滚动事件不冒泡，在捕获阶段统一记录；隐藏后浏览器把位置归零时触发的事件不记
+    const onScroll = (e: Event) => {
+      if (activeRef.current && e.target instanceof Element) scrolls.current.set(e.target, e.target.scrollTop);
+    };
+    slot.addEventListener("scroll", onScroll, true);
+    return () => slot.removeEventListener("scroll", onScroll, true);
+  }, []);
+
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    const slot = ref.current!;
+    if (!active) {
+      if (document.activeElement instanceof HTMLElement && slot.contains(document.activeElement)) document.activeElement.blur();
+      return;
+    }
+    for (const [el, top] of scrolls.current) {
+      if (!el.isConnected) scrolls.current.delete(el);
+      else if (el.scrollTop !== top) el.scrollTop = top;
+    }
+  }, [active]);
+
+  return (
+    <div ref={ref} className="page-slot" hidden={!active}>
+      <PageActiveContext.Provider value={active}>
+        {/* 切回这个页面时清除错误 */}
+        <ErrorBoundary resetKey={String(active)}>
+          <Suspense fallback={null}>{children}</Suspense>
+        </ErrorBoundary>
+      </PageActiveContext.Provider>
     </div>
   );
 }

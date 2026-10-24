@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use nextworkzone_core::{Error, Result};
@@ -53,6 +54,29 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE TABLE IF NOT EXISTS viewed (id TEXT PRIMARY KEY, title TEXT NOT NULL, space_key TEXT NOT NULL, at INTEGER NOT NULL);
 "#;
+
+/// 标题和正文的 trigram 索引，用于 3 个字及以上关键词的搜索（较短的关键词仍逐页查找）。
+/// 按 `pages` 的 rowid 对应，由触发器保持一致；`pages` 没有整数主键，VACUUM 可能改变 rowid，
+/// 所以不要对这个库执行 VACUUM（需要时执行 `INSERT INTO pages_fts(pages_fts) VALUES ('rebuild')`）。
+const FTS_SCHEMA: &str = r#"
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(title_lc, text_lc, content = 'pages', content_rowid = 'rowid', tokenize = 'trigram', detail = 'none');
+-- INSERT OR REPLACE 替换旧行时不触发删除触发器，所以插入前先删除同一页面（旧版本的写入也经过这里）
+CREATE TRIGGER IF NOT EXISTS pages_fts_replace BEFORE INSERT ON pages BEGIN
+    DELETE FROM pages WHERE id = new.id;
+END;
+CREATE TRIGGER IF NOT EXISTS pages_fts_insert AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts (rowid, title_lc, text_lc) VALUES (new.rowid, new.title_lc, new.text_lc);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_fts_delete AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title_lc, text_lc) VALUES ('delete', old.rowid, old.title_lc, old.text_lc);
+END;
+CREATE TRIGGER IF NOT EXISTS pages_fts_update AFTER UPDATE ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title_lc, text_lc) VALUES ('delete', old.rowid, old.title_lc, old.text_lc);
+    INSERT INTO pages_fts (rowid, title_lc, text_lc) VALUES (new.rowid, new.title_lc, new.text_lc);
+END;
+"#;
+/// trigram 索引能用于查找的最短关键词（字数）。
+const FTS_MIN_CHARS: usize = 3;
 
 /// 保存格式的版本；文本处理方式改变后递增，旧数据会被清空重新同步。
 const FORMAT_VERSION: &str = "1";
@@ -159,6 +183,8 @@ pub struct IndexedPage {
 
 pub struct WikiIndex {
     conn: Mutex<Connection>,
+    /// trigram 索引已包含全部页面。旧版本建的库要等下次同步时补建，在此之前逐页查找。
+    fts_ready: AtomicBool,
 }
 
 trait Db<T> {
@@ -202,11 +228,39 @@ impl WikiIndex {
         let conn = Connection::open(path).db()?;
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;").db()?;
         conn.execute_batch(SCHEMA).db()?;
+        conn.execute_batch(FTS_SCHEMA).db()?;
         if Self::meta(&conn, "format")?.as_deref() != Some(FORMAT_VERSION) {
-            conn.execute_batch("DELETE FROM pages; DELETE FROM tasks; DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune');").db()?;
+            Self::delete_pages(&conn)?;
+            conn.execute_batch("DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune');").db()?;
             Self::set_meta(&conn, "format", FORMAT_VERSION)?;
         }
-        Ok(Self { conn: Mutex::new(conn) })
+        // 新建的库从一开始就由触发器维护索引
+        let empty = conn.query_row("SELECT NOT EXISTS (SELECT 1 FROM pages)", [], |r| r.get::<_, bool>(0)).db()?;
+        if empty {
+            Self::set_meta(&conn, "fts", "1")?;
+        }
+        let fts_ready = Self::meta(&conn, "fts")?.as_deref() == Some("1");
+        Ok(Self { conn: Mutex::new(conn), fts_ready: AtomicBool::new(fts_ready) })
+    }
+
+    /// 补建 trigram 索引（旧版本建的库，只需一次；约 7000 个页面需要几秒）。
+    fn ensure_fts(&self) -> Result<()> {
+        if self.fts_ready.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO pages_fts (pages_fts) VALUES ('rebuild')", []).db()?;
+        Self::set_meta(&conn, "fts", "1")?;
+        self.fts_ready.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// 删除全部页面和任务。先整体清空搜索索引，并暂时去掉删除触发器，否则要逐页按原文更新索引（几千个页面需要好几秒）。
+    fn delete_pages(conn: &Connection) -> Result<()> {
+        let tx = conn.unchecked_transaction().db()?;
+        tx.execute_batch("INSERT INTO pages_fts (pages_fts) VALUES ('delete-all'); DROP TRIGGER pages_fts_delete; DELETE FROM pages; DELETE FROM tasks;").db()?;
+        tx.execute_batch(FTS_SCHEMA).db()?;
+        tx.commit().db()
     }
 
     fn meta(conn: &Connection, key: &str) -> Result<Option<String>> {
@@ -233,7 +287,8 @@ impl WikiIndex {
         let old = Self::meta(&conn, "scope")?;
         if old.as_deref() != Some(scope.as_str()) {
             let same_site = old.as_deref().and_then(|o| o.split('|').next()) == Some(base_url);
-            conn.execute_batch("DELETE FROM pages; DELETE FROM tasks; DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune');").db()?;
+            Self::delete_pages(&conn)?;
+            conn.execute_batch("DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune');").db()?;
             if !same_site {
                 conn.execute_batch("DELETE FROM viewed;").db()?;
             }
@@ -245,19 +300,27 @@ impl WikiIndex {
     /// 清空页面数据，下次同步时重新获取。查看记录保留。
     pub fn clear(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute_batch("DELETE FROM pages; DELETE FROM tasks; DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune', 'scope');").db()?;
+        Self::delete_pages(&conn)?;
+        conn.execute_batch("DELETE FROM meta WHERE key IN ('cursor', 'last_sync', 'last_prune', 'scope');").db()?;
         Ok(())
     }
 
     pub fn upsert(&self, pages: &[IndexedPage]) -> Result<()> {
+        // 解析页面内容不需要占用数据库，先做完，避免同步时让搜索等待
+        let parsed: Vec<(&IndexedPage, String, Vec<String>, Vec<InlineTask>)> = pages
+            .iter()
+            .map(|p| {
+                let mut text = readable_lines(&p.storage).join("\n");
+                if let Some((cut, _)) = text.char_indices().nth(MAX_TEXT_CHARS) {
+                    text.truncate(cut);
+                }
+                let keys = jira_keys(&p.storage, &text);
+                (p, text, keys, inline_tasks(&p.storage))
+            })
+            .collect();
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().db()?;
-        for p in pages {
-            let mut text = readable_lines(&p.storage).join("\n");
-            if let Some((cut, _)) = text.char_indices().nth(MAX_TEXT_CHARS) {
-                text.truncate(cut);
-            }
-            let keys = jira_keys(&p.storage, &text);
+        for (p, text, keys, tasks) in parsed {
             tx.execute(
                 "INSERT OR REPLACE INTO pages (id, kind, space_key, space_name, title, title_lc, ancestors, author, author_name, modified, modified_ms, version, text, text_lc, jira_keys)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
@@ -281,7 +344,7 @@ impl WikiIndex {
             )
             .db()?;
             tx.execute("DELETE FROM tasks WHERE page_id = ?1", params![p.id]).db()?;
-            for t in inline_tasks(&p.storage) {
+            for t in tasks {
                 tx.execute(
                     "INSERT OR REPLACE INTO tasks (page_id, task_id, done, text, assignees, due) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![p.id, t.task_id, t.done, t.text, format!(" {} ", t.assignees.join(" ")), t.due],
@@ -339,8 +402,16 @@ impl WikiIndex {
         };
         let mut conditions: Vec<String> = Vec::new();
         let mut score: Vec<String> = Vec::new();
+        let mut term_params: Vec<String> = Vec::new();
+        let fts = self.fts_ready.load(Ordering::Relaxed);
         for term in &terms {
             let p = arg(SqlValue::Text(term.clone()));
+            term_params.push(p.clone());
+            // 索引给出候选页面（可能多出一些），再逐页确认；LIKE 带 ESCAPE 时用不上索引，含 % 和 _ 的关键词直接逐页查找
+            if fts && term.chars().count() >= FTS_MIN_CHARS && !term.contains(['%', '_']) {
+                let like = arg(SqlValue::Text(format!("%{term}%")));
+                conditions.push(format!("rowid IN (SELECT rowid FROM pages_fts WHERE title_lc LIKE {like} OR text_lc LIKE {like})"));
+            }
             conditions.push(format!("(instr(title_lc, {p}) OR instr(text_lc, {p}))"));
             score.push(format!("(instr(title_lc, {p}) > 0) * 10"));
         }
@@ -359,32 +430,16 @@ impl WikiIndex {
         }
         let limit = if query.limit == 0 { 50 } else { query.limit.min(300) };
         let sql = format!(
-            "SELECT id, kind, title, space_key, space_name, ancestors, author_name, modified, text FROM pages {} ORDER BY {} modified_ms DESC LIMIT {limit}",
+            // 先排序取出前几个，再只为它们取出各列和摘要（常见词可能匹配几千个页面）
+            "WITH top AS (SELECT rowid AS r, {} AS score, modified_ms FROM pages {} ORDER BY score DESC, modified_ms DESC LIMIT {limit})
+             SELECT {HIT_COLUMNS}, {} FROM top JOIN pages ON pages.rowid = top.r ORDER BY top.score DESC, top.modified_ms DESC",
+            if score.is_empty() { "0".to_string() } else { format!("({})", score.join(" + ")) },
             if conditions.is_empty() { String::new() } else { format!("WHERE {}", conditions.join(" AND ")) },
-            if score.is_empty() { String::new() } else { format!("({}) DESC,", score.join(" + ")) },
+            snippet_columns(&term_params),
         );
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&sql).db()?;
-        let rows = stmt
-            .query_map(params_from_iter(args), |r| {
-                let text: String = r.get(8)?;
-                let ancestors: String = r.get(5)?;
-                Ok(WikiHit {
-                    id: r.get(0)?,
-                    kind: r.get(1)?,
-                    title: r.get(2)?,
-                    space_key: r.get(3)?,
-                    space_name: r.get(4)?,
-                    ancestors: serde_json::from_str(&ancestors).unwrap_or_default(),
-                    author_name: r.get(6)?,
-                    modified: r.get(7)?,
-                    snippet: snippet(&text, &terms),
-                })
-            })
-            .db()?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .db()?;
-        Ok(rows)
+        stmt.query_map(params_from_iter(args), hit_row).db()?.collect::<rusqlite::Result<Vec<_>>>().db()
     }
 
     /// 引用了某个 Jira 问题的页面（Jira 宏或正文中出现问题键）。
@@ -392,29 +447,11 @@ impl WikiIndex {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT id, kind, title, space_key, space_name, ancestors, author_name, modified, text FROM pages
-                 WHERE instr(jira_keys, ?1) > 0 ORDER BY modified_ms DESC LIMIT {limit}"
+                "SELECT {HIT_COLUMNS}, {} FROM pages WHERE instr(jira_keys, ?1) > 0 ORDER BY modified_ms DESC LIMIT {limit}",
+                snippet_columns(&["?2".to_string()])
             ))
             .db()?;
-        let terms = vec![fold(key)];
-        stmt.query_map(params![format!(" {key} ")], |r| {
-            let text: String = r.get(8)?;
-            let ancestors: String = r.get(5)?;
-            Ok(WikiHit {
-                id: r.get(0)?,
-                kind: r.get(1)?,
-                title: r.get(2)?,
-                space_key: r.get(3)?,
-                space_name: r.get(4)?,
-                ancestors: serde_json::from_str(&ancestors).unwrap_or_default(),
-                author_name: r.get(6)?,
-                modified: r.get(7)?,
-                snippet: snippet(&text, &terms),
-            })
-        })
-        .db()?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .db()
+        stmt.query_map(params![format!(" {key} "), fold(key)], hit_row).db()?.collect::<rusqlite::Result<Vec<_>>>().db()
     }
 
     /// 页面标题（本机有记录时），用于显示 Jira 远程链接等只有页面 id 的地方。
@@ -489,21 +526,38 @@ impl WikiIndex {
     }
 }
 
-/// 第一个关键词在正文中出现处附近的文字；没有关键词或只在标题中出现时取正文开头。
-fn snippet(text: &str, terms: &[String]) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let lower: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
-    let start = terms.iter().find_map(|t| {
-        let needle: Vec<char> = t.chars().collect();
-        if needle.is_empty() || needle.len() > lower.len() {
-            return None;
-        }
-        (0..=lower.len() - needle.len()).find(|&i| lower[i..i + needle.len()] == needle[..])
-    });
-    let from = start.map_or(0, |s| s.saturating_sub(30));
-    let piece: String = chars.iter().skip(from).take(SNIPPET_CHARS).collect();
+/// 搜索结果的列，后面接 `snippet_columns`，由 `hit_row` 读取。
+const HIT_COLUMNS: &str = "id, kind, title, space_key, space_name, ancestors, author_name, modified";
+
+/// 摘要的两列：起点（从 0 开始的字数）和文字。从第一个在正文中出现的关键词（SQL 参数 `params`）前 30 字起，
+/// 没有关键词或只在标题中出现时取正文开头。在数据库中截取，不必把整段正文（可能有几十万字）读出来。
+/// `fold` 逐字转换、字数不变，所以在 text_lc 中找到的位置也是 text 中的位置。
+fn snippet_columns(params: &[String]) -> String {
+    let from = if params.is_empty() {
+        "0".to_string()
+    } else {
+        let found: Vec<String> = params.iter().map(|p| format!("NULLIF(instr(text_lc, {p}), 0)")).collect();
+        format!("max(COALESCE({}, 0) - 31, 0)", found.join(", "))
+    };
+    format!("{from}, substr(text, {from} + 1, {SNIPPET_CHARS})")
+}
+
+fn hit_row(r: &rusqlite::Row) -> rusqlite::Result<WikiHit> {
+    let ancestors: String = r.get(5)?;
+    let from: i64 = r.get(8)?;
+    let piece: String = r.get(9)?;
     let piece = piece.split_whitespace().collect::<Vec<_>>().join(" ");
-    if from > 0 { format!("…{piece}") } else { piece }
+    Ok(WikiHit {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        title: r.get(2)?,
+        space_key: r.get(3)?,
+        space_name: r.get(4)?,
+        ancestors: serde_json::from_str(&ancestors).unwrap_or_default(),
+        author_name: r.get(6)?,
+        modified: r.get(7)?,
+        snippet: if from > 0 { format!("…{piece}") } else { piece },
+    })
 }
 
 /// 同步的范围：`spaces` 为空时同步全部可见的空间。
@@ -526,6 +580,7 @@ impl WikiScope {
 /// 增量同步：获取上次同步之后修改过的页面；每天清理一次已删除的页面。返回更新的页面数。
 pub async fn sync(client: &ConfluenceClient, index: &WikiIndex, scope: &WikiScope, mut progress: impl FnMut(WikiSyncProgress)) -> Result<usize> {
     index.ensure_scope(client.base_url(), &scope.spaces)?;
+    index.ensure_fts()?;
     let base = scope.cql();
     // 用相对时间表示增量起点，与 Confluence 用户的时区设置无关；多回看几分钟，重复的直接覆盖
     let since = match index.get("cursor")?.as_deref().and_then(parse_time) {
@@ -688,6 +743,105 @@ mod tests {
         assert!(index.assigned_tasks("me").unwrap().is_empty());
         index.prune(&HashSet::from(["10".to_string()])).unwrap();
         assert_eq!(index.stats().unwrap().count, 1);
+    }
+
+    /// trigram 索引与页面内容一致。
+    fn check_fts(index: &WikiIndex) {
+        index.conn.lock().unwrap().execute("INSERT INTO pages_fts (pages_fts, rank) VALUES ('integrity-check', 1)", []).unwrap();
+    }
+
+    fn ids(hits: Vec<WikiHit>) -> Vec<String> {
+        let mut ids: Vec<String> = hits.into_iter().map(|h| h.id).collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn trigram_index_follows_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = WikiIndex::open(&dir.path().join("w.db")).unwrap();
+        index.upsert(&[page("1", "Redis 部署", "<p>主从切换</p>"), page("2", "接口文档", "<p>redis 缓存说明</p>")]).unwrap();
+        let q = |text: &str| WikiQuery { text: text.into(), ..Default::default() };
+        assert_eq!(ids(index.search(&q("redis"), "").unwrap()), ["1", "2"]);
+        assert_eq!(ids(index.search(&q("主从切换"), "").unwrap()), ["1"]);
+        // 页面更新后旧内容不再匹配
+        index.upsert(&[page("1", "Redis 部署", "<p>哨兵模式</p>")]).unwrap();
+        assert!(index.search(&q("主从切换"), "").unwrap().is_empty());
+        assert_eq!(ids(index.search(&q("哨兵模式"), "").unwrap()), ["1"]);
+        check_fts(&index);
+        index.prune(&HashSet::from(["1".to_string()])).unwrap();
+        check_fts(&index);
+        assert_eq!(ids(index.search(&q("redis"), "").unwrap()), ["1"]);
+        // 旧版本直接 INSERT OR REPLACE 写入时索引也保持一致
+        index
+            .conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT OR REPLACE INTO pages (id, kind, space_key, space_name, title, title_lc, ancestors, author, author_name, modified, modified_ms, version, text, text_lc, jira_keys)
+                 VALUES ('1', 'page', 'S', '空间', 'Redis 部署', 'redis 部署', '[]', 'me', '我', '', 0, 4, '读写分离', '读写分离', ' ')",
+                [],
+            )
+            .unwrap();
+        check_fts(&index);
+        assert!(index.search(&q("哨兵模式"), "").unwrap().is_empty());
+        assert_eq!(ids(index.search(&q("读写分离"), "").unwrap()), ["1"]);
+        // 带 % 的关键词不用索引，按原样匹配
+        index.upsert(&[page("3", "进度", "<p>完成 100%</p>")]).unwrap();
+        assert_eq!(ids(index.search(&q("100%"), "").unwrap()), ["3"]);
+        index.clear().unwrap();
+        check_fts(&index);
+        assert!(index.search(&q("redis"), "").unwrap().is_empty());
+        // 清空后重新建立的触发器照常工作
+        index.upsert(&[page("4", "Redis 部署", "<p>主从切换</p>")]).unwrap();
+        index.upsert(&[page("4", "Redis 部署", "<p>哨兵模式</p>")]).unwrap();
+        index.prune(&HashSet::new()).unwrap();
+        check_fts(&index);
+        assert!(index.search(&q("redis"), "").unwrap().is_empty());
+    }
+
+    #[test]
+    fn builds_trigram_index_for_old_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("w.db");
+        {
+            let index = WikiIndex::open(&path).unwrap();
+            index.upsert(&[page("1", "Redis 部署", "<p>主从切换</p>")]).unwrap();
+        }
+        // 模拟旧版本建的库：没有 trigram 索引
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("DROP TRIGGER pages_fts_insert; DROP TRIGGER pages_fts_delete; DROP TRIGGER pages_fts_update; DROP TABLE pages_fts; DELETE FROM meta WHERE key = 'fts';").unwrap();
+        }
+        let index = WikiIndex::open(&path).unwrap();
+        let q = WikiQuery { text: "主从切换".into(), ..Default::default() };
+        assert!(!index.fts_ready.load(Ordering::Relaxed));
+        assert_eq!(ids(index.search(&q, "").unwrap()), ["1"], "补建之前逐页查找");
+        index.ensure_fts().unwrap();
+        check_fts(&index);
+        assert_eq!(ids(index.search(&q, "").unwrap()), ["1"]);
+        drop(index);
+        assert!(WikiIndex::open(&path).unwrap().fts_ready.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn snippets() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = WikiIndex::open(&dir.path().join("w.db")).unwrap();
+        let long = format!("<p>{}关键 Redis   集群</p>", "前".repeat(100));
+        index.upsert(&[page("1", "标题", &long), page("2", "Redis", "<p>开头的文字</p>")]).unwrap();
+        let hit = |text: &str, space: &str| {
+            index.search(&WikiQuery { text: text.into(), space: space.into(), ..Default::default() }, "").unwrap().into_iter().find(|h| h.id == "1").unwrap().snippet
+        };
+        // 从匹配处前 30 字开始，大小写不同也能定位
+        assert_eq!(hit("redis", ""), format!("…{}关键 Redis 集群", "前".repeat(27)));
+        // 第一个关键词不在正文中时用下一个
+        assert_eq!(hit("标题 集群", ""), format!("…{}关键 Redis 集群", "前".repeat(21)));
+        // 没有关键词时取正文开头
+        assert_eq!(hit("", "S"), "前".repeat(100) + "关键 Redis 集群");
+        let other = index.search(&WikiQuery { text: "redis".into(), ..Default::default() }, "").unwrap();
+        assert_eq!(other[0].id, "2", "标题匹配排在前面");
+        assert_eq!(other[0].snippet, "开头的文字");
     }
 
     #[test]

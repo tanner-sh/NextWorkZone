@@ -6,6 +6,7 @@ import { ErrorBox, Modal, Skeleton } from "../../components/common";
 import { toast } from "../../components/Toast";
 import { assetUrl } from "../../lib/asset";
 import { fetchIssues } from "../../lib/wiki";
+import { usePageActive } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { WikiDiff } from "./HistoryDialog";
 import type { NewPageRequest } from "./NewPageDialog";
@@ -231,8 +232,10 @@ export function PageEditor({ target, onClose, onSaved }: { target: Target; onClo
     }
   };
 
-  // ⌘S 保存
+  // ⌘S 保存（切到其他页面时不响应）
+  const active = usePageActive();
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();

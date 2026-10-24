@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePageActive } from "../state/nav";
 import { Maximize2, Minimize2, X } from "lucide-react";
 
 /** 全屏查看图片：默认适应窗口，点击图片切换原始大小（可滚动查看），Esc 或点击空白处关闭。 */
@@ -6,7 +7,10 @@ export function ImageViewer({ src, alt, onClose }: { src: string; alt?: string; 
   const [actual, setActual] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  // 所在页面隐藏时不响应按键
+  const active = usePageActive();
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -15,7 +19,7 @@ export function ImageViewer({ src, alt, onClose }: { src: string; alt?: string; 
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [onClose, active]);
 
   return (
     <div className="image-viewer" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api, errorMessage, type UserRef } from "../../../api";
 import { assetUrl, systemPath } from "../../../lib/asset";
+import { usePageActive } from "../../../state/nav";
 import { useSettings } from "../../../state/settings";
 import { FILE_DROP_EVENT } from "../../../components/FileDropLayer";
 import { htmlToWiki } from "./htmlToWiki";
@@ -593,6 +594,7 @@ const MentionPopup = forwardRef<MentionHandle, { query: string; x: number; y: nu
 ) {
   const [users, setUsers] = useState<UserRef[]>([]);
   const [active, setActive] = useState(0);
+  const pageActive = usePageActive();
   useEffect(() => {
     if (!query) {
       setUsers([]);
@@ -638,7 +640,8 @@ const MentionPopup = forwardRef<MentionHandle, { query: string; x: number; y: nu
     },
   }));
 
-  // 放到 body 下，不受对话框的裁剪和定位影响
+  // 放到 body 下，不受对话框的裁剪和定位影响；所以所在页面隐藏时要自己隐藏
+  if (!pageActive) return null;
   return createPortal(
     <div className="mention-popup" style={{ left: Math.min(x, window.innerWidth - 260), top: y + 4 }} onMouseDown={(e) => e.preventDefault()}>
       {!query && <div className="muted small mention-hint">输入姓名或用户名</div>}

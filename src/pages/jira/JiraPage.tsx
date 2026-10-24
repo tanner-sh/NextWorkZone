@@ -8,7 +8,7 @@ import { formatTime } from "../../lib/format";
 import { reminderLabel, useReminders } from "../../lib/reminders";
 import { markViewed, useUnseen } from "../../lib/viewed";
 import { Highlight, useIndexStatus } from "./IndexStatus";
-import { useNav } from "../../state/nav";
+import { useNav, usePageReturn } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { CreateIssueDialog } from "./CreateIssueDialog";
 import { useIssueMenu } from "./issueMenu";
@@ -169,6 +169,11 @@ export function JiraPage() {
       void load(jql, fieldIds);
     }
   }, [jql, fieldIds, load, isReady, localSearch]);
+
+  // 回到 Jira 页面时在原地刷新列表（本机搜索的结果不需要）；加载过更多时不刷新，免得列表变短
+  usePageReturn(() => {
+    if (isReady("jira") && !localSearch && (issues?.length ?? 0) <= PAGE_SIZE) void load(jql, fieldIds);
+  });
 
   // 本机搜索：输入时即时搜索
   useEffect(() => {

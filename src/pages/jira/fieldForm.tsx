@@ -11,6 +11,7 @@ import {
   type TimeTrackingValue,
   type UserRef,
 } from "../../api";
+import { usePageActive } from "../../state/nav";
 import { WikiEditor, type PendingImage } from "./wiki/WikiEditor";
 
 export type Values = Record<string, FieldValue>;
@@ -319,6 +320,8 @@ export function Picker<T>(props: PickerProps<T>) {
   const [results, setResults] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
+  // 候选列表放在 body 下，所在页面隐藏时要自己隐藏
+  const pageActive = usePageActive();
   const requestId = useRef(0);
   const boxRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
@@ -436,7 +439,7 @@ export function Picker<T>(props: PickerProps<T>) {
           </button>
         )}
       </div>
-      {open && (items.length > 0 || loading || query.trim()) && createPortal(
+      {open && pageActive && (items.length > 0 || loading || query.trim()) && createPortal(
         <ul className="picker-menu" style={menuStyle} onMouseDown={(e) => e.preventDefault()}>
           {props.idleHeading && !query.trim() && items.length > 0 && <li className="picker-heading">{props.idleHeading}</li>}
           {items.map(({ item, isNew }, i) => (

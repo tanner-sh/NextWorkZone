@@ -184,6 +184,9 @@ html.mac .sidebar { background: transparent; }
 kbd { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); color: var(--muted); line-height: 1.4; }
 
 .content { flex: 1; overflow-y: auto; min-height: 0; }
+/* 保留的页面（见 App 的 PageSlot）不占布局，隐藏时不显示 */
+.page-slot { display: contents; }
+.page-slot[hidden] { display: none; }
 /* 所有普通页面同一宽度，切换页面时标题位置不变 */
 .page { max-width: 1160px; margin: 0 auto; padding: 28px 32px 56px; display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }

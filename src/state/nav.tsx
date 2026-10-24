@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type PageId = "home" | "todos" | "notes" | "kb" | "jira" | "activity" | "weekly" | "wiki" | "gitlab" | "stats" | "tools" | "settings" | "search";
 
@@ -81,6 +81,26 @@ export function NavProvider({ children }: { children: ReactNode }) {
   );
 
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
+}
+
+/** 页面是否正在显示。切走后保留的页面（见 App 的 KEEP_ALIVE）隐藏时为 false，其他地方总是 true。 */
+export const PageActiveContext = createContext(true);
+
+/** 隐藏的页面不应响应全局快捷键、接收拖入的文件或显示浮层。 */
+export function usePageActive(): boolean {
+  return useContext(PageActiveContext);
+}
+
+/** 保留的页面再次显示时调用 `onReturn`，例如在原地刷新列表。 */
+export function usePageReturn(onReturn: () => void) {
+  const active = usePageActive();
+  const wasActive = useRef(active);
+  const latest = useRef(onReturn);
+  latest.current = onReturn;
+  useEffect(() => {
+    if (active && !wasActive.current) latest.current();
+    wasActive.current = active;
+  }, [active]);
 }
 
 export function useNav(): NavContextValue {

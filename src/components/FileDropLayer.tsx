@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Upload } from "lucide-react";
+import { usePageActive } from "../state/nav";
 
 /** 文件放到编辑区时，在该元素上派发的事件，`detail` 为文件路径。 */
 export const FILE_DROP_EVENT = "nextworkzone-file-drop";
@@ -12,17 +13,18 @@ type DropTarget = { label: string; onDrop: (paths: string[]) => void };
 /** 当前页面登记的默认目标；后登记的优先。 */
 const targets: DropTarget[] = [];
 
-/** 登记页面的默认放置目标（例如“上传到 ABC-1 的附件”）。 */
+/** 登记页面的默认放置目标（例如“上传到 ABC-1 的附件”）。页面隐藏时不登记，避免文件被交给看不见的页面。 */
 export function useDropTarget(label: string, onDrop: (paths: string[]) => void, enabled = true) {
+  const active = usePageActive();
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !active) return;
     const target = { label, onDrop };
     targets.push(target);
     return () => {
       const index = targets.indexOf(target);
       if (index >= 0) targets.splice(index, 1);
     };
-  }, [label, onDrop, enabled]);
+  }, [label, onDrop, enabled, active]);
 }
 
 type Hover = { count: number; zone: HTMLElement | null; label: string | null; blocked: boolean };
@@ -31,7 +33,8 @@ type Hover = { count: number; zone: HTMLElement | null; label: string | null; bl
 function locate(position: { x: number; y: number }): Omit<Hover, "count"> {
   const scale = window.devicePixelRatio || 1;
   const el = document.elementFromPoint(position.x / scale, position.y / scale);
-  const modal = document.querySelector(".modal");
+  // 隐藏的页面里也可能有打开的对话框，只看显示着的
+  const modal = [...document.querySelectorAll(".modal")].find((m) => m.getClientRects().length > 0);
   let zone = el?.closest<HTMLElement>("[data-file-drop]") ?? null;
   if (zone && modal && !modal.contains(zone)) zone = null;
   if (zone) return { zone, label: zone.dataset.fileDrop ?? "插入到这里", blocked: false };

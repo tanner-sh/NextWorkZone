@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Copy, ExternalLink, Eye, Maximize2, Minimize
 import { api, errorMessage, type Attachment, type AttachmentPreview, type Service } from "../api";
 import { assetUrl } from "../lib/asset";
 import { formatSize, formatTime } from "../lib/format";
+import { usePageActive } from "../state/nav";
 import { useSettings } from "../state/settings";
 import { copyText } from "../lib/clipboard";
 import { Spinner } from "./common";
@@ -57,7 +58,10 @@ export function AttachmentViewer({ attachments, index: initial, onClose, onOpenE
   const count = attachments.length;
   const go = (step: number) => setIndex((i) => (i + step + count) % count);
 
+  // 所在页面隐藏时不响应按键
+  const active = usePageActive();
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       // 在输入框（例如筛选行）里按方向键不切换附件
       const typing = (e.target as HTMLElement).closest("input, textarea");
@@ -71,7 +75,7 @@ export function AttachmentViewer({ attachments, index: initial, onClose, onOpenE
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose, count]);
+  }, [onClose, count, active]);
 
   return (
     <div className="image-viewer attachment-viewer" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

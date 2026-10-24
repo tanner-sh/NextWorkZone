@@ -4,7 +4,7 @@ import { api, errorMessage, type GlProjectRef, type MergeRequest, type MrScope, 
 import { Avatar, ErrorBox, Skeleton } from "../../components/common";
 import { useMenus } from "../../components/MenuHost";
 import { formatTime } from "../../lib/format";
-import { useNav } from "../../state/nav";
+import { useNav, usePageReturn } from "../../state/nav";
 import { useSettings } from "../../state/settings";
 import { mrMenu } from "./gitlabMenu";
 import { MrStatePill, mrProjectPath } from "./MergeRequestView";
@@ -53,6 +53,11 @@ export function useMrList(source: { scope: MrScope } | { project: GlProjectRef }
     setItems(null);
     void load(1);
   }, [load]);
+
+  // 回到 GitLab 页面时在原地刷新；加载过更多时不刷新，免得列表变短
+  usePageReturn(() => {
+    if (page === 1) void load(1);
+  });
 
   /** 用详情里的最新数据更新列表中的一项。 */
   const replace = (mr: MergeRequest) => setItems((list) => list?.map((m) => (m.id === mr.id ? { ...m, ...mr } : m)) ?? list);
