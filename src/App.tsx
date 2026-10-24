@@ -184,12 +184,6 @@ function Shell() {
     <div className="shell">
       <nav className="sidebar">
         <div className="sidebar-drag" data-tauri-drag-region />
-        <div className="brand" data-tauri-drag-region>
-          <span className="brand-mark">
-            <LayoutDashboard size={13} strokeWidth={2.5} />
-          </span>
-          NextWorkZone
-        </div>
         <button className="search-trigger" onClick={() => setPaletteOpen(true)} title="搜索问题、项目、文档，或跳转到页面">
           <Search size={14} />
           <span>搜索</span>

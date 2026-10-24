@@ -12,7 +12,7 @@ pub const CAPTURE_LABEL: &str = "capture";
 const OPEN_EVENT: &str = "capture-open";
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, CAPTURE_LABEL, WebviewUrl::App("index.html#capture".into()))
+    let builder = WebviewWindowBuilder::new(app, CAPTURE_LABEL, WebviewUrl::App("index.html#capture".into()))
         .title("快速记录")
         .inner_size(620.0, 340.0)
         .resizable(false)
@@ -22,8 +22,11 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .visible_on_all_workspaces(true)
         .visible(false)
-        .center()
-        .build()?;
+        .center();
+    // macOS 26 起整窗使用 Liquid Glass；更早的系统由界面画卡片背景
+    #[cfg(target_os = "macos")]
+    let builder = builder.effects(crate::appearance::floating_effects(None, 22.0));
+    builder.build()?;
     let shortcut = app.state::<AppState>().config().workspace.capture_shortcut;
     shortcuts::init(app, Action::Capture, &shortcut);
     Ok(())

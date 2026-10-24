@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookText, ArrowRight, CalendarDays, Check, CheckSquare, CircleDot } from "lucide-react";
+import { BookText, ArrowRight, CalendarDays, Check, CircleDot } from "lucide-react";
 import { api, type Todo } from "../../api";
 import { formatDay, today, useWorkspaceRefresh, workspaceChanged } from "../../lib/workspace";
 import { useNav } from "../../state/nav";
@@ -31,7 +31,6 @@ export function TodayTodos() {
     <div className="card home-card">
       <div className="card-title">
         <h2>
-          <CheckSquare size={16} className="muted" />
           今天的待办 {todos && todos.length > 0 && <span className="count">{todos.length}</span>}
         </h2>
         <span className="row-actions">

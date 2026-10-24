@@ -1,6 +1,8 @@
+mod appearance;
 mod asset;
 mod capture;
 mod clipboard;
+mod context_menu;
 mod commands;
 mod devbridge;
 mod shortcuts;
@@ -30,6 +32,7 @@ pub fn run() {
                 Store::Keychain
             };
             app.manage(state::AppState::load(config_dir.join("config.json"), cache_dir, data_dir, store)?);
+            appearance::setup(app.handle());
             tauri::async_runtime::spawn(session::keep_alive_loop(app.handle().clone()));
             tauri::async_runtime::spawn(workspace::sync_loop(app.handle().clone()));
             tauri::async_runtime::spawn(jira_index::sync_loop(app.handle().clone()));
@@ -45,6 +48,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            appearance::ui_glass,
+            context_menu::menu_popup,
             settings::get_settings,
             settings::save_settings,
             settings::clear_token,

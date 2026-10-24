@@ -97,15 +97,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .visible(false)
         // 面板不接收拖入的文件；关掉后卡片可以用网页拖放拖到其他应用（Windows 上两者冲突）
         .disable_drag_drop_handler();
-    // 面板背景使用系统的毛玻璃材质；Linux 上没有，界面改用不透明背景
+    // 面板背景使用系统的玻璃材质（macOS 26 起为 Liquid Glass）；Linux 上没有，界面改用不透明背景
     #[cfg(target_os = "macos")]
-    let builder = builder.effects(
-        tauri::window::EffectsBuilder::new()
-            .effect(tauri::window::Effect::Popover)
-            .state(tauri::window::EffectState::Active)
-            .radius(16.0)
-            .build(),
-    );
+    let builder = builder.effects(crate::appearance::floating_effects(Some(tauri::window::Effect::Popover), 22.0));
     #[cfg(windows)]
     let builder = builder.effects(tauri::window::EffectsBuilder::new().effect(tauri::window::Effect::Acrylic).build());
     let window = builder.build()?;

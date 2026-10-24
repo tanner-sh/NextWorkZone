@@ -38,4 +38,12 @@ const load: Promise<ReactNode> = capture
       ))
     : import("./App").then(({ App }) => <App />);
 
-void load.then((ui) => createRoot(document.getElementById("root")!).render(<StrictMode>{ui}</StrictMode>));
+// macOS 26 起窗口使用 Liquid Glass（见 src-tauri/src/appearance.rs），样式随之调整；先确定再渲染，避免闪一下旧样式
+const glass = navigator.userAgent.includes("Mac")
+  ? import("@tauri-apps/api/core").then(({ invoke }) => invoke<boolean>("ui_glass")).then(
+      (on) => on && document.documentElement.classList.add("glass"),
+      () => {},
+    )
+  : Promise.resolve();
+
+void Promise.all([load, glass]).then(([ui]) => createRoot(document.getElementById("root")!).render(<StrictMode>{ui}</StrictMode>));

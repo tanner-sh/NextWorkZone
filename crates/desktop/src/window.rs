@@ -25,3 +25,24 @@ pub fn focus_alone(ns_window: *mut c_void) -> bool {
         false
     }
 }
+
+/// 主窗口侧栏的玻璃面板：贴着窗口左侧、上下留出 `inset` 的圆角面板，放在网页内容后面，
+/// 网页把这块区域留成透明即可显示出来。
+#[derive(Debug, Clone, Copy)]
+pub struct GlassSidebar {
+    pub inset: f64,
+    pub width: f64,
+    pub radius: f64,
+}
+
+/// 在窗口中放入侧栏的 Liquid Glass 面板。返回 false 表示系统不支持（macOS 26 以前或其他平台），
+/// 调用方改用其他材质或不透明背景。
+pub fn glass_sidebar(ns_window: *mut c_void, sidebar: GlassSidebar) -> bool {
+    #[cfg(target_os = "macos")]
+    return crate::macos::glass_sidebar(ns_window, sidebar);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (ns_window, sidebar);
+        false
+    }
+}

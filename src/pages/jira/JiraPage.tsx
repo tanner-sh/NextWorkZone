@@ -221,6 +221,8 @@ export function JiraPage() {
     return issues.filter((i) => `${i.key} ${i.summary} ${i.project.name} ${i.status.name} ${i.assignee ?? ""}`.toLowerCase().includes(q));
   }, [issues, filter]);
 
+  // 列表中都是同一个项目时不必每条都显示项目名
+  const multiProject = useMemo(() => new Set((issues ?? []).map((i) => i.project.name)).size > 1, [issues]);
   const groups = useMemo(() => {
     if (view.group === "none") return [{ name: "", issues: visible }];
     const map = new Map<string, IssueSummary[]>();
@@ -355,7 +357,7 @@ export function JiraPage() {
           <div className="list-meta">
             <div className="input-icon">
               <Search size={14} />
-              <input value={filter} placeholder="筛选当前列表" onChange={(e) => setFilter(e.target.value)} />
+              <input value={filter} placeholder={issues && issues.length > 0 ? `筛选 ${issues.length} 条` : "筛选当前列表"} onChange={(e) => setFilter(e.target.value)} />
             </div>
             <button className={`btn subtle icon${toolbarMenu.target === "saved" ? " active" : ""}`} title="常用查询" onClick={(e) => toolbarMenu.open(e, savedMenu(), "saved")}>
               <Bookmark size={15} />
@@ -370,14 +372,13 @@ export function JiraPage() {
               <Plus size={16} />
             </button>
           </div>
-          <div className="muted small">
-            {query.label && <strong className="query-label">{query.label} · </strong>}
-            {issues && !(mode === "search" && !searchJql(form))
-              ? localSearch
-                ? `本机问题库中找到 ${total >= 200 ? "200+" : total} 条`
-                : `共 ${total} 条${total > issues.length ? `，已显示 ${issues.length} 条` : ""}`
-              : ""}
-          </div>
+          {/* 条数在筛选框中显示；常用查询的名称、只加载了一部分、本机搜索时才多一行说明 */}
+          {issues && !(mode === "search" && !searchJql(form)) && (query.label || localSearch || total > issues.length) && (
+            <div className="muted small">
+              {query.label && <strong className="query-label">{query.label} · </strong>}
+              {localSearch ? `本机问题库中找到 ${total >= 200 ? "200+" : total} 条` : `共 ${total} 条${total > issues.length ? `，已显示 ${issues.length} 条` : ""}`}
+            </div>
+          )}
         </div>
         {error && <ErrorBox message={error} onRetry={() => load(jql, fieldIds)} />}
         {createWarning && <ErrorBox message={createWarning} />}
@@ -423,22 +424,22 @@ export function JiraPage() {
                               <Highlight text={hits.get(issue.key)!.snippet!.text} query={form.text} />
                             </div>
                           )}
-                          {view.fields.some((f) => issue.extra?.[f.id]) && (
-                            // 额外字段排成一行（名称灰色、值正常色），放不下时截断，悬停看全部
-                            <div className="issue-extra small" title={view.fields.filter((f) => issue.extra?.[f.id]).map((f) => `${f.name}：${issue.extra![f.id]}`).join("\n")}>
-                              {view.fields.map(
-                                (f) =>
-                                  issue.extra?.[f.id] && (
-                                    <span key={f.id}>
-                                      <span className="muted">{f.name} </span>
-                                      {f.kind === "datetime" ? formatTime(issue.extra[f.id]) : issue.extra[f.id]}
-                                    </span>
-                                  ),
-                              )}
-                            </div>
-                          )}
+                          {/* 最后一行：额外字段（名称灰色、值正常色，放不下时截断，悬停看全部）或所属项目，然后是更新时间和人 */}
                           <div className="issue-item-bottom muted small">
-                            <span className="ellipsis">{issue.project.name}</span>
+                            {view.fields.some((f) => issue.extra?.[f.id]) ? (
+                              <span className="issue-extra ellipsis" title={view.fields.filter((f) => issue.extra?.[f.id]).map((f) => `${f.name}：${issue.extra![f.id]}`).join("\n")}>
+                                {view.fields.map(
+                                  (f) =>
+                                    issue.extra?.[f.id] && (
+                                      <span key={f.id}>
+                                        {f.name} <span className="extra-value">{f.kind === "datetime" ? formatTime(issue.extra[f.id]) : issue.extra[f.id]}</span>
+                                      </span>
+                                    ),
+                                )}
+                              </span>
+                            ) : (
+                              <span className="ellipsis">{multiProject ? issue.project.name : ""}</span>
+                            )}
                             <span className="nowrap">{formatTime(issue.updated)}</span>
                             {personOf(issue) && (
                               <span className="nowrap person" title={mode === "mine" ? `报告人：${issue.reporter}` : `经办人：${issue.assignee}`}>

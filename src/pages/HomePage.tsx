@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage, type IssueSummary, type Project, type WeeklyView, type WikiRecent } from "../api";
-import { ArrowRight, BookText, CheckCircle2, CircleDot, ClipboardList, Clock3, FolderGit2, NotebookPen } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3 } from "lucide-react";
 import { Skeleton, StatusPill, SysImg } from "../components/common";
 import { formatTime } from "../lib/format";
 import { reminderLabel, useReminders } from "../lib/reminders";
@@ -73,7 +73,6 @@ export function HomePage() {
         <div className="card home-card">
           <div className="card-title">
             <h2>
-              <NotebookPen size={16} className="muted" />
               本周周报
             </h2>
             <button className="btn subtle" onClick={() => navigate({ page: "weekly" })}>
@@ -88,7 +87,6 @@ export function HomePage() {
         <div className="card home-card wide-card">
           <div className="card-title">
             <h2>
-              <CircleDot size={16} className="muted" />
               我的未解决问题 {issues.status === "ok" && <span className="count">{issues.data.total}</span>}
               {dueCount > 0 && <span className="due-chip soon">{dueCount} 个快到期或已逾期</span>}
             </h2>
@@ -134,7 +132,6 @@ export function HomePage() {
         <div className="card home-card">
           <div className="card-title">
             <h2>
-              <BookText size={16} className="muted" />
               最近查看的 Wiki
             </h2>
             <button className="btn subtle" onClick={() => navigate({ page: "wiki" })}>
@@ -166,7 +163,6 @@ export function HomePage() {
         <div className="card home-card">
           <div className="card-title">
             <h2>
-              <FolderGit2 size={16} className="muted" />
               最近活跃的项目
             </h2>
             <button className="btn subtle" onClick={() => navigate({ page: "gitlab" })}>
@@ -207,7 +203,6 @@ function WorkLogCard() {
     <div className="card home-card">
       <div className="card-title">
         <h2>
-          <ClipboardList size={16} className="muted" />
           今天的工作记录 {log.status === "ok" && log.data.events.length > 0 && <span className="count">{log.data.events.length}</span>}
         </h2>
         <span className="row-actions">

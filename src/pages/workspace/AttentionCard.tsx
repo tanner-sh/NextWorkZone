@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlarmClock, BellOff, BellRing, BookText, CalendarDays, Check, CheckSquare, ChevronDown, ChevronRight, CircleDot, Clock3, GitPullRequest, RefreshCw } from "lucide-react";
+import { AlarmClock, BellOff, BookText, CalendarDays, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, CircleDot, Clock3, GitPullRequest, RefreshCw } from "lucide-react";
 import { api, errorMessage, type InboxItem, type Todo } from "../../api";
 import { Skeleton } from "../../components/common";
 import { useContextMenu, type MenuInput } from "../../components/ContextMenu";
@@ -69,11 +69,23 @@ export function AttentionCard() {
   const items = view?.items ?? [];
   const snoozed = view?.snoozed ?? [];
 
+  // 没有任何需要处理的事：只占一行，不占一整块
+  if (view && items.length === 0 && snoozed.length === 0 && view.notes.length === 0 && !error) {
+    return (
+      <div className="attention-calm wide-card" title="@你、分配给你、评论，到期的问题和请你审核的合并请求会出现在这里">
+        <CheckCircle2 size={15} />
+        没有需要处理的事
+        <button className="btn subtle icon" title="刷新" onClick={refresh} disabled={loading}>
+          <RefreshCw size={13} className={loading ? "spin" : ""} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="card home-card wide-card attention">
       <div className="card-title">
         <h2>
-          <BellRing size={16} className="muted" />
           需要处理 {items.length > 0 && <span className="count">{items.length}</span>}
         </h2>
         <button className="btn subtle icon" title="刷新" onClick={refresh} disabled={loading}>
@@ -87,7 +99,6 @@ export function AttentionCard() {
         </p>
       ))}
       {!view && !error && <Skeleton lines={3} />}
-      {view && items.length === 0 && <p className="muted small">没有需要处理的事。@你、分配给你、评论，到期的问题和请你审核的合并请求会出现在这里。</p>}
       {items.length > 0 && (
         <ul className="inbox-list">
           {items.map((item) => (

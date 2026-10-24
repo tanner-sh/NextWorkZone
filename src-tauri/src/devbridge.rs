@@ -9,7 +9,9 @@
 //! ```
 //!
 //! 请求体是异步函数体，用 `return` 返回值；结果以 JSON 返回。默认在主窗口执行，
-//! 请求头 `x-window: <窗口 label>` 可以指定其他窗口。
+//! 请求头 `x-window: <窗口 label>` 可以指定其他窗口。请求头 `x-toggle: capture` 或 `x-toggle: clipboard`
+//! 先像按下全局快捷键一样显示或隐藏这个浮动窗口（快捷键可能被同时运行的正式版占用）。
+//! 请求头 `x-theme: dark|light|system` 切换应用窗口的外观，用于检查深色模式而不改系统设置。
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -65,11 +67,25 @@ fn handle(mut stream: TcpStream, app: &AppHandle, pending: &Pending, token: &str
         respond(&mut stream, 403, "forbidden");
         return;
     }
+    let header = |name: &str| headers.lines().find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case(name)).map(|(_, v)| v.trim().to_string()));
+    match header("x-toggle").as_deref() {
+        Some("capture") => run_on_main(app, crate::capture::toggle),
+        Some("clipboard") => run_on_main(app, crate::clipboard::toggle),
+        _ => {}
+    }
+    if let Some(theme) = header("x-theme") {
+        let theme = match theme.as_str() {
+            "dark" => Some(tauri::Theme::Dark),
+            "light" => Some(tauri::Theme::Light),
+            _ => None,
+        };
+        for window in app.webview_windows().values() {
+            let _ = window.set_theme(theme);
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
     // 默认在主窗口执行；请求头 `x-window: <窗口 label>` 可以指定其他窗口（例如 clipboard）
-    let label = headers
-        .lines()
-        .find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case("x-window")).map(|(_, v)| v.trim().to_string()))
-        .unwrap_or_else(|| "main".into());
+    let label = header("x-window").unwrap_or_else(|| "main".into());
     let Some(window) = app.get_webview_window(&label) else {
         respond(&mut stream, 500, "no window");
         return;
@@ -96,6 +112,21 @@ fn handle(mut stream: TcpStream, app: &AppHandle, pending: &Pending, token: &str
             respond(&mut stream, 504, "timeout");
         }
     }
+}
+
+/// 在主线程执行并等待完成（显示窗口等操作需要在主线程）。
+fn run_on_main(app: &AppHandle, f: fn(&AppHandle)) {
+    let (tx, rx) = channel();
+    let handle = app.clone();
+    if app.run_on_main_thread(move || {
+        f(&handle);
+        let _ = tx.send(());
+    })
+    .is_ok()
+    {
+        let _ = rx.recv_timeout(Duration::from_secs(5));
+    }
+    std::thread::sleep(Duration::from_millis(300));
 }
 
 fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
