@@ -126,7 +126,8 @@ struct RichEditorView: NSViewRepresentable {
         tv.isVerticallyResizable = false
         tv.textContainerInset = NSSize(width: 0, height: 6)
         tv.textContainer?.lineFragmentPadding = 2
-        tv.textContainer?.widthTracksTextView = true
+        // 容器宽度在 setFrameSize 中跟随视图（视图还没有宽度时不跟随）
+        tv.textContainer?.widthTracksTextView = false
         tv.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
         tv.delegate = context.coordinator
         tv.coordinator = context.coordinator
@@ -156,7 +157,9 @@ struct RichEditorView: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: EditorTextView, context: Context) -> CGSize? {
         let proposed = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let width = (proposed ?? (tv.frame.width > 0 ? tv.frame.width : 600)).rounded()
+        let width = (proposed ?? (tv.frame.width >= RichNSTextView.minLayoutWidth ? tv.frame.width : 600)).rounded()
+        // 求最小尺寸时的 0 宽度不排版（长文按 0 宽度排版要几秒）
+        if width < RichNSTextView.minLayoutWidth { return CGSize(width: width, height: minHeight) }
         return CGSize(width: width, height: max(minHeight, tv.height(forWidth: width)))
     }
 
@@ -329,14 +332,15 @@ final class EditorTextView: NSTextView {
     // MARK: 大小
 
     func height(forWidth width: CGFloat) -> CGFloat {
-        guard let container = textContainer, let layout = layoutManager else { return 0 }
-        // 量的时候暂停容器宽度跟随视图（视图还没有宽度时会变成 0）
-        container.widthTracksTextView = false
+        guard let container = textContainer, let layout = layoutManager, width >= RichNSTextView.minLayoutWidth else { return 0 }
         defer {
-            if frame.width > 0 { container.containerSize = NSSize(width: frame.width, height: .greatestFiniteMagnitude) }
-            container.widthTracksTextView = true
+            if frame.width >= RichNSTextView.minLayoutWidth, abs(container.containerSize.width - frame.width) > 0.5 {
+                container.containerSize = NSSize(width: frame.width, height: .greatestFiniteMagnitude)
+            }
         }
-        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        if abs(container.containerSize.width - width) > 0.5 {
+            container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        }
         layout.ensureLayout(for: container)
         return ceil(layout.usedRect(for: container).height + textContainerInset.height * 2)
     }
@@ -344,7 +348,10 @@ final class EditorTextView: NSTextView {
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = abs(newSize.width - frame.width) > 0.5
         super.setFrameSize(newSize)
-        textContainer?.containerSize = NSSize(width: newSize.width, height: .greatestFiniteMagnitude)
+        guard newSize.width >= RichNSTextView.minLayoutWidth, let container = textContainer else { return }
+        if abs(container.containerSize.width - newSize.width) > 0.5 {
+            container.containerSize = NSSize(width: newSize.width, height: .greatestFiniteMagnitude)
+        }
         if widthChanged { coordinator?.heightMaybeChanged() }
     }
 

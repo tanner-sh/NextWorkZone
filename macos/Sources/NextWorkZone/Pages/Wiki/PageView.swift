@@ -60,9 +60,10 @@ struct PageView: View {
             onLoaded(detail)
             favorites.refresh(FavoritePage(id: detail.id, title: detail.title, space: detail.spaceName))
             let d = try await Rich.fromHTML(detail.html)
-            doc = d
+            // 先查好页面中的 Jira 问题再显示：长页面只排版一次
             let keys = d.issueKeys(jiraBase: model.baseUrl(.jira))
             if !keys.isEmpty && model.isReady(.jira) { issues = await IssueLookup.fetch(keys) }
+            doc = d
             if let anchor, let i = d.headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = d.headings[i].index }
         } catch {
             self.error = errorMessage(error)

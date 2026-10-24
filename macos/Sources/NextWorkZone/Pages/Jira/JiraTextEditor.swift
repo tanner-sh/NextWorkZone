@@ -378,7 +378,7 @@ struct MarkupTextView: NSViewRepresentable {
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false
         tv.isVerticallyResizable = false
-        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.widthTracksTextView = false
         tv.textContainer?.lineFragmentPadding = 2
         tv.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
         tv.delegate = context.coordinator
@@ -395,13 +395,11 @@ struct MarkupTextView: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: KeyTextView, context: Context) -> CGSize? {
         let proposed = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let width = (proposed ?? (tv.frame.width > 0 ? tv.frame.width : 600)).rounded()
+        let width = (proposed ?? (tv.frame.width >= RichNSTextView.minLayoutWidth ? tv.frame.width : 600)).rounded()
         guard let container = tv.textContainer, let layout = tv.layoutManager else { return nil }
-        // 量的时候暂停容器宽度跟随视图（视图还没有宽度时会变成 0）
-        container.widthTracksTextView = false
+        if width < RichNSTextView.minLayoutWidth { return CGSize(width: width, height: minHeight) }
         defer {
-            if tv.frame.width > 0 { container.containerSize = NSSize(width: tv.frame.width, height: .greatestFiniteMagnitude) }
-            container.widthTracksTextView = true
+            if tv.frame.width >= RichNSTextView.minLayoutWidth { container.containerSize = NSSize(width: tv.frame.width, height: .greatestFiniteMagnitude) }
         }
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
@@ -418,7 +416,7 @@ struct MarkupTextView: NSViewRepresentable {
 
         override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
-            textContainer?.containerSize = NSSize(width: newSize.width, height: .greatestFiniteMagnitude)
+            if newSize.width >= RichNSTextView.minLayoutWidth { textContainer?.containerSize = NSSize(width: newSize.width, height: .greatestFiniteMagnitude) }
         }
     }
 

@@ -45,6 +45,7 @@ struct RichTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let textView = RichNSTextView(usingTextLayoutManager: false)
+        textView.textContainer?.widthTracksTextView = false
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -64,21 +65,25 @@ struct RichTextView: NSViewRepresentable {
             textView.isVerticallyResizable = true
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
-            textView.textContainer?.widthTracksTextView = true
-            textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
             textView.textContainerInset = NSSize(width: 28, height: 20)
+            textView.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
             return scroll
         }
-        textView.textContainer?.widthTracksTextView = true
+        // 容器宽度由 RichNSTextView 跟随视图宽度（视图还没有宽度时不跟随，见 setFrameSize）
+        textView.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
         return textView
     }
 
     func updateNSView(_ view: NSView, context: Context) {
         let c = context.coordinator
         c.parent = self
-        let key = "\(doc.hashValue)|\(model.sessionVersion)|\(baseSize)"
-        if c.renderedKey != key {
-            c.renderedKey = key
+        // 内容没变时比较几乎不花时间（数组共用存储时直接判定相等）；不要对整篇文档求哈希
+        if c.renderedDoc != doc || c.renderedSession != model.sessionVersion || c.renderedBaseSize != baseSize {
+            c.renderedDoc = doc
+            c.renderedSession = model.sessionVersion
+            c.renderedBaseSize = baseSize
+            // 已查过的问题直接带上，免得查到后整篇再排一次
+            if model.isReady(.jira) { c.issues.merge(IssueLookup.cached(doc.issueKeys(jiraBase: model.baseUrl(.jira)))) { _, b in b } }
             c.render()
             c.lookupIssues(doc)
         }
@@ -94,18 +99,17 @@ struct RichTextView: NSViewRepresentable {
         let frameWidth = textView.frame.width
         // 没有建议宽度或建议无限宽（求理想大小）时按当前宽度排版
         let proposed = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let width = (proposed ?? (frameWidth > 0 ? frameWidth : 600)).rounded()
+        let width = (proposed ?? (frameWidth >= RichNSTextView.minLayoutWidth ? frameWidth : 600)).rounded()
         if let cached = c.heights[width] { return CGSize(width: width, height: cached) }
-        // 按建议的宽度排版求高度，结果按宽度缓存（SwiftUI 会用不同宽度多次询问）。
-        // 量的时候暂停“容器宽度跟随视图”，否则容器会立刻变回视图当前的宽度（第一次排版前是 0，什么都排不出来）
-        container.widthTracksTextView = false
+        // 求最小尺寸时 SwiftUI 会用 0 之类的宽度询问：按这种宽度排版长文要几秒（每个字一行），直接用已知的高度回答
+        if width < RichNSTextView.minLayoutWidth { return CGSize(width: width, height: c.heights.values.max() ?? 0) }
+        // 按建议的宽度排版求高度，结果按宽度缓存（SwiftUI 会用不同宽度多次询问）
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
         let height = ceil(layout.usedRect(for: container).height + textView.textContainerInset.height * 2)
         c.heights[width] = height
-        // 之后显示时按实际宽度排版
-        if frameWidth > 0 { container.containerSize = NSSize(width: frameWidth, height: .greatestFiniteMagnitude) }
-        container.widthTracksTextView = true
+        // 之后显示时按实际宽度排版（实际宽度还不可用时保持刚才的宽度，避免再排一遍）
+        if frameWidth >= RichNSTextView.minLayoutWidth { container.containerSize = NSSize(width: frameWidth, height: .greatestFiniteMagnitude) }
         return CGSize(width: width, height: height)
     }
 
@@ -113,7 +117,9 @@ struct RichTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RichTextView!
         weak var textView: NSTextView?
-        var renderedKey = ""
+        var renderedDoc: RichDoc?
+        var renderedSession = -1
+        var renderedBaseSize: CGFloat = 0
         var scrolledHeading: Int?
         var issues: [String: IssueSummary] = [:]
         /// 各宽度下的高度（内容变化后清空）
@@ -123,6 +129,10 @@ struct RichTextView: NSViewRepresentable {
         func render() {
             guard let textView else { return }
             var renderer = RichRenderer(service: parent.service, issues: issues, baseSize: parent.baseSize) { [weak self] in self?.imageLoaded() }
+            #if DEBUG
+            let t0 = Date()
+            defer { debugLog("RICH rendered \(parent.doc.blocks.count) blocks in \(Int(Date().timeIntervalSince(t0) * 1000))ms") }
+            #endif
             let text = renderer.render(parent.doc)
             heights = [:]
             textView.textStorage?.setAttributedString(text)
@@ -201,17 +211,20 @@ struct RichTextView: NSViewRepresentable {
 }
 
 /// 只读的富文本视图。
+///
+/// 文字容器的宽度跟随视图宽度，但视图还没有宽度（刚创建、隐藏时为 0）时不跟随：
+/// 按 0 宽度排版长文要几秒（每个字一行），之后还要按实际宽度再排一遍。
 final class RichNSTextView: NSTextView {
-    override var intrinsicContentSize: NSSize {
-        guard let lm = layoutManager, let container = textContainer else { return super.intrinsicContentSize }
-        lm.ensureLayout(for: container)
-        let h = lm.usedRect(for: container).height + textContainerInset.height * 2
-        return NSSize(width: NSView.noIntrinsicMetric, height: ceil(h))
-    }
+    /// 小于这个宽度时不排版
+    static let minLayoutWidth: CGFloat = 50
 
-    override func layout() {
-        super.layout()
-        invalidateIntrinsicContentSize()
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard newSize.width >= Self.minLayoutWidth, let container = textContainer else { return }
+        let width = newSize.width - textContainerInset.width * 2
+        if abs(container.containerSize.width - width) > 0.5 {
+            container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        }
     }
 }
 
@@ -251,6 +264,14 @@ enum RichLinks {
 /// 批量查询问题的概要和状态（Jira 未配置或查询失败时为空）。
 enum IssueLookup {
     nonisolated(unsafe) private static var cache: [String: IssueSummary] = [:]
+
+    /// 已经查过的问题（不发请求）。
+    @MainActor
+    static func cached(_ keys: [String]) -> [String: IssueSummary] {
+        var map: [String: IssueSummary] = [:]
+        for k in keys { if let hit = cache[k] { map[k] = hit } }
+        return map
+    }
 
     @MainActor
     static func fetch(_ keys: [String]) async -> [String: IssueSummary] {

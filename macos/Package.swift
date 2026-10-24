@@ -17,8 +17,9 @@ let package = Package(
             path: "Sources/NextWorkZone",
             swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("BareSlashRegexLiterals")],
             linkerSettings: [
-                .unsafeFlags(["-L\(rustLib)"]),
-                .linkedLibrary("nextworkzone_ffi"),
+                // 明确链接静态库：同一目录下还有动态库（生成绑定时用），只写库名时链接器会选动态库，
+                // 应用就会依赖仓库里的 target 目录
+                .unsafeFlags(["\(rustLib)/libnextworkzone_ffi.a"]),
                 .linkedFramework("AppKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
