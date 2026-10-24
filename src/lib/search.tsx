@@ -1,4 +1,4 @@
-// 统一搜索的共用部分：先取本机结果、再补上服务器结果的 hook，以及高亮关键词。⌘K 和搜索页共用。
+// 统一搜索的共用部分：先取本机结果、再补上服务器结果的 hook，以及高亮关键词。Ctrl+K 和搜索页共用。
 import { useEffect, useState, type ReactNode } from "react";
 import { api, errorMessage, type SearchResults } from "../api";
 

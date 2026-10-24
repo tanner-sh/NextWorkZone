@@ -123,26 +123,22 @@ export function WorkspaceSettingsCard() {
 }
 
 const DEFAULT_SHORTCUT = "Alt+Space";
-const isMac = navigator.userAgent.includes("Mac");
+const KEY_NAMES: Record<string, string> = { CommandOrControl: "Ctrl", Control: "Ctrl", Alt: "Alt", Shift: "Shift", Super: "Win", Space: "Space" };
 
-/** 快捷键的显示：macOS 上用 ⌘⌥⇧⌃ 符号。 */
+/** 快捷键的显示，例如 `Ctrl+Alt+V`。 */
 export function displayShortcut(shortcut: string): string {
   if (!shortcut) return "未使用";
-  const names: Record<string, string> = isMac
-    ? { CommandOrControl: "⌘", Command: "⌘", Alt: "⌥", Shift: "⇧", Control: "⌃", Space: "Space" }
-    : { CommandOrControl: "Ctrl", Control: "Ctrl", Alt: "Alt", Shift: "Shift", Space: "Space" };
-  const parts = shortcut.split("+").map((part) => names[part] ?? part);
-  // macOS 菜单中修饰键的惯用顺序：⌃⌥⇧⌘
-  const rank = (part: string) => (part.length === 1 && "⌃⌥⇧⌘".includes(part) ? "⌃⌥⇧⌘".indexOf(part) : 9);
-  if (isMac) parts.sort((a, b) => rank(a) - rank(b));
-  return parts.join(isMac ? "" : "+");
+  return shortcut
+    .split("+")
+    .map((part) => KEY_NAMES[part] ?? part)
+    .join("+");
 }
 
 /** 由按键事件得到快捷键（至少一个修饰键加一个普通键），例如 `Alt+Space`；只按了修饰键时返回 null。 */
 function shortcutOf(e: React.KeyboardEvent): string | null {
   const key = e.code.startsWith("Key") ? e.code.slice(3) : e.code.startsWith("Digit") ? e.code.slice(5) : /^F\d+$/.test(e.code) || e.code === "Space" ? e.code : null;
   if (!key) return null;
-  const mods = [e.metaKey && (isMac ? "Command" : "Super"), e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean) as string[];
+  const mods = [e.metaKey && "Super", e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean) as string[];
   if (mods.length === 0 && !key.startsWith("F")) return null;
   return [...mods, key].join("+");
 }

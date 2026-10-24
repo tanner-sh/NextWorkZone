@@ -50,7 +50,7 @@ export function SearchPage() {
   const { results, pending, error } = useUnifiedSearch(input, LIMIT);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 从 ⌘K 再次进入时使用新的搜索文字
+  // 从 Ctrl+K 再次进入时使用新的搜索文字
   useEffect(() => {
     if (current.page !== "search") return;
     if (current.searchQuery !== undefined) setInput(current.searchQuery);

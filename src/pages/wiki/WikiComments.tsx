@@ -76,7 +76,7 @@ export function WikiComments({ pageId }: { pageId: string }) {
         </ul>
       )}
       {comments && comments.length === 0 && <p className="muted small">还没有评论</p>}
-      <CommentBox placeholder="发表评论（⌘↵ 发送）" onSubmit={async (text) => setComments(await api.wikiAddComment(pageId, null, text))} />
+      <CommentBox placeholder="发表评论（Ctrl+Enter 发送）" onSubmit={async (text) => setComments(await api.wikiAddComment(pageId, null, text))} />
     </section>
   );
 }

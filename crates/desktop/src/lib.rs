@@ -6,7 +6,6 @@
 pub mod apps;
 pub mod clipboard;
 pub mod input;
-pub mod window;
 
 #[cfg(target_os = "macos")]
 mod macos;

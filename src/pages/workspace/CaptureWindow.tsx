@@ -108,7 +108,7 @@ export function CaptureWindow() {
       e.preventDefault();
       const index = MODES.findIndex((m) => m.id === mode);
       switchMode(MODES[(index + (e.shiftKey ? MODES.length - 1 : 1)) % MODES.length].id);
-    } else if ((e.metaKey || e.ctrlKey) && ["1", "2", "3"].includes(e.key)) {
+    } else if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) {
       e.preventDefault();
       switchMode(MODES[Number(e.key) - 1].id);
     }
@@ -128,7 +128,7 @@ export function CaptureWindow() {
           ))}
         </div>
         <span className="muted small" data-tauri-drag-region>
-          Tab 切换 · ↵ 保存 · ⇧↵ 换行 · Esc 收起
+          Tab 切换 · Enter 保存 · Shift+Enter 换行 · Esc 收起
         </span>
       </div>
       <textarea ref={input} className="capture-input" value={text} rows={3} placeholder={current.placeholder} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />

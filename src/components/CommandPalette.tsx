@@ -51,7 +51,7 @@ export function copyClip(id: string) {
   );
 }
 
-/** ⌘K 全局搜索：页面跳转、新建待办，同时搜索工作空间和 Jira、GitLab、Wiki。 */
+/** Ctrl+K 全局搜索：页面跳转、新建待办，同时搜索工作空间和 Jira、GitLab、Wiki。 */
 export function CommandPalette({ onClose, onQuickTodo }: { onClose: () => void; onQuickTodo: () => void }) {
   const { navigate } = useNav();
   const { baseUrl, isReady } = useSettings();
@@ -99,10 +99,10 @@ export function CommandPalette({ onClose, onQuickTodo }: { onClose: () => void; 
       }
     }
     if (!q || "新建待办 xjdb todo".includes(q)) {
-      list.push({ id: "action-todo", icon: Plus, group: "操作", title: "新建待办", subtitle: "⌘⇧N", run: go(onQuickTodo) });
+      list.push({ id: "action-todo", icon: Plus, group: "操作", title: "新建待办", subtitle: "Ctrl+Shift+N", run: go(onQuickTodo) });
     }
     if (q.length >= 2 && !/^https?:\/\//.test(q)) {
-      list.push({ id: "search-page", icon: ListFilter, group: "搜索", title: `查看“${query.trim()}”的全部结果`, subtitle: "按类型筛选 · ⌘↵", run: go(() => navigate({ page: "search", searchQuery: query.trim() })) });
+      list.push({ id: "search-page", icon: ListFilter, group: "搜索", title: `查看“${query.trim()}”的全部结果`, subtitle: "按类型筛选 · Ctrl+Enter", run: go(() => navigate({ page: "search", searchQuery: query.trim() })) });
       if (isReady("confluence")) {
         list.push({ id: "wiki-search", icon: Search, group: "搜索", title: `在 Wiki 中搜索“${query.trim()}”`, subtitle: "按空间、时间筛选", run: go(() => navigate({ page: "wiki", wikiSearch: query.trim() })) });
       }
@@ -145,7 +145,7 @@ export function CommandPalette({ onClose, onQuickTodo }: { onClose: () => void; 
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive((a) => Math.max(a - 1, 0));
-    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    } else if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault();
       if (searchable) openSearchPage();
     } else if (e.key === "Enter") {
@@ -188,7 +188,7 @@ export function CommandPalette({ onClose, onQuickTodo }: { onClose: () => void; 
             <>
               <span><kbd>↑</kbd> <kbd>↓</kbd> 选择</span>
               <span><kbd>↵</kbd> 打开</span>
-              <span><kbd>⌘</kbd> <kbd>↵</kbd> 全部结果</span>
+              <span><kbd>Ctrl</kbd> <kbd>Enter</kbd> 全部结果</span>
               <span><kbd>Esc</kbd> 关闭</span>
             </>
           )}

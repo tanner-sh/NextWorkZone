@@ -14,7 +14,7 @@ export function ToolsSettingsCard() {
         </span>
         <div>
           <h2>工具</h2>
-          <p className="muted small">提高效率的小工具。每个工具都可以从侧边栏、⌘K 搜索中打开。</p>
+          <p className="muted small">提高效率的小工具。每个工具都可以从侧边栏、Ctrl+K 搜索中打开。</p>
         </div>
       </div>
       {TOOLS.map((tool) => (

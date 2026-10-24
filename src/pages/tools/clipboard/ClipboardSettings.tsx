@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { CheckCircle2, Pause, Play, ShieldAlert, Trash2, X } from "lucide-react";
+import { CheckCircle2, Pause, Play, Trash2, X } from "lucide-react";
 import { api, CLIP_SETTINGS_EVENT, errorMessage, type ClipboardConfig, type ClipSettings, type IgnoredApp } from "../../../api";
 import { formatSize } from "../../../lib/format";
 import { useNav } from "../../../state/nav";
 import { displayShortcut, ShortcutField } from "../../workspace/WorkspaceSettingsCard";
-import { isMac } from "./clip";
 
 const DEFAULT_SHORTCUT = "CommandOrControl+Alt+V";
 const KEEP_DAYS = [
@@ -144,17 +143,6 @@ export function ClipboardSettings() {
               <p className="small ok-text">
                 <CheckCircle2 size={13} /> 可以直接粘贴
               </p>
-            ) : settings.pasteSupport === "needsPermission" ? (
-              <div className="notice warn small">
-                <ShieldAlert size={14} />
-                <span className="grow">
-                  需要在“系统设置 → 隐私与安全性 → 辅助功能”（较新的系统中叫“设备控制和数据访问”）中允许 NextWorkZone，才能替你按下 ⌘V。授权前选中条目只会复制到剪贴板。
-                  已经打开了开关仍然提示时，在列表中选中 NextWorkZone 点“−”删除，再点“去授权”重新添加。
-                </span>
-                <button className="btn small-btn" onClick={() => void api.clipRequestPermission()}>
-                  去授权
-                </button>
-              </div>
             ) : (
               <p className="notice warn small">{settings.pasteNote ?? "当前系统不支持自动粘贴"}，选中条目只会复制到剪贴板。</p>
             )}
@@ -164,7 +152,7 @@ export function ClipboardSettings() {
           <input type="checkbox" checked={config.plainText} onChange={(e) => void save({ plainText: e.target.checked })} />
           默认粘贴为纯文本（去掉网页、文档中的格式）
         </label>
-        <p className="muted small indent">{config.plainText ? "需要保留格式时，在面板中按" : "需要去掉格式时，在面板中按"} ⇧↩。</p>
+        <p className="muted small indent">{config.plainText ? "需要保留格式时，在面板中按" : "需要去掉格式时，在面板中按"} Shift+Enter。</p>
       </div>
 
       <div className="card">
@@ -273,14 +261,14 @@ export function ClipboardSettings() {
                 ))}
               </select>
             )}
-            <p className="muted small">在这些应用中复制的内容不会被记录。列表中是曾经复制过内容的应用{isMac ? "" : "（按可执行文件识别）"}。</p>
+            <p className="muted small">在这些应用中复制的内容不会被记录。列表中是曾经复制过内容的应用（按可执行文件识别）。</p>
           </div>
         </div>
       </div>
       {error && <p className="notice error">{error}</p>}
       <p className="muted small">
-        面板中的操作：↩ 粘贴 · ⇧↩ 粘贴为纯文本 · 空格 预览 · {isMac ? "⌘" : "Ctrl+"}E 编辑后粘贴 · {isMac ? "⌘" : "Ctrl+"}1–9 快速粘贴 · Tab 切换置顶板 · ⇧←/→ 或{" "}
-        {isMac ? "⌘" : "Ctrl+"}点击 多选。{" "}
+        面板中的操作：Enter 粘贴 · Shift+Enter 粘贴为纯文本 · 空格 预览 · Ctrl+E 编辑后粘贴 · Ctrl+1–9 快速粘贴 · Tab 切换置顶板 · Shift+←/→ 或{" "}
+        Ctrl+点击 多选。{" "}
         <button className="link-btn" onClick={() => navigate({ page: "tools", tool: "clipboard" })}>
           查看历史
         </button>

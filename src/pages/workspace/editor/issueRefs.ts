@@ -1,4 +1,4 @@
-// 编辑器中识别 Jira 问题键：存在的问题加上状态样式和概要提示，⌘+点击打开。
+// 编辑器中识别 Jira 问题键：存在的问题加上状态样式和概要提示，Ctrl+点击打开。
 // 正文保持纯文本（Markdown 里仍是 ABC-123），只做显示层的装饰。
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -85,7 +85,7 @@ function decorate(doc: PmNode): DecorationSet {
           class: `issue-ref status-${info.status.category}`,
           "data-issue-key": key,
           "data-status": info.status.name,
-          title: `${key} ${info.summary}\n${info.status.name} · ⌘+点击打开`,
+          title: `${key} ${info.summary}\n${info.status.name} · Ctrl+点击打开`,
         }),
       );
     }

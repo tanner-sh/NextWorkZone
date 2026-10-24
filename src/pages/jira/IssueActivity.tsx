@@ -103,7 +103,7 @@ function Comments({ issue, newSince, onChange }: { issue: IssueDetail; newSince:
           issueKey={issue.key}
           onImage={(img) => setImages((list) => [...list, img])}
           minHeight={72}
-          placeholder="添加评论（⌘↵ 发送，输入 @ 提及同事）"
+          placeholder="添加评论（Ctrl+Enter 发送，输入 @ 提及同事）"
           onSubmitShortcut={() => void send()}
           footer={
             <>

@@ -6,7 +6,7 @@ import { useNav } from "../../state/nav";
 import { useContextMenu } from "../../components/ContextMenu";
 import { todoMenu } from "./todoMenu";
 
-/** 首页的“今天”：到期（含逾期）的待办，可直接勾选；添加和安排在“待办”页（或 ⌘⇧N）。 */
+/** 首页的“今天”：到期（含逾期）的待办，可直接勾选；添加和安排在“待办”页（或 Ctrl+Shift+N）。 */
 export function TodayTodos() {
   const { navigate } = useNav();
   const [todos, setTodos] = useState<Todo[] | null>(null);
@@ -75,7 +75,7 @@ export function TodayTodos() {
         ))}
         {todos && todos.length === 0 && (
           <li className="muted small" style={{ padding: "4px 0" }}>
-            今天没有到期的待办。按 ⌘⇧N 随时记一条，或到
+            今天没有到期的待办。按 Ctrl+Shift+N 随时记一条，或到
             <button className="link small" onClick={() => navigate({ page: "todos" })}>
               待办
             </button>

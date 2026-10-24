@@ -385,9 +385,9 @@ export function WikiEditor(props: Props) {
   // ---------- 渲染 ----------
 
   const tools: { icon: ReactNode; title: string; run: () => void }[] = [
-    { icon: <Bold size={15} />, title: "粗体（⌘B）", run: () => exec("bold") },
-    { icon: <Italic size={15} />, title: "斜体（⌘I）", run: () => exec("italic") },
-    { icon: <Underline size={15} />, title: "下划线（⌘U）", run: () => exec("underline") },
+    { icon: <Bold size={15} />, title: "粗体（Ctrl+B）", run: () => exec("bold") },
+    { icon: <Italic size={15} />, title: "斜体（Ctrl+I）", run: () => exec("italic") },
+    { icon: <Underline size={15} />, title: "下划线（Ctrl+U）", run: () => exec("underline") },
     { icon: <Strikethrough size={15} />, title: "删除线", run: () => exec("strikeThrough") },
     { icon: <Code size={15} />, title: "行内代码", run: () => wrapInline("code") },
   ];
@@ -510,7 +510,7 @@ export function WikiEditor(props: Props) {
           onFocus={() => document.execCommand("defaultParagraphSeparator", false, "p")}
           onKeyDown={(e) => {
             if (mention && mentionRef.current?.onKey(e)) return;
-            const mod = e.metaKey || e.ctrlKey;
+            const mod = e.ctrlKey;
             if (e.key === "Enter" && mod && props.onSubmitShortcut) {
               e.preventDefault();
               flush();
@@ -540,7 +540,7 @@ export function WikiEditor(props: Props) {
           onBlur={() => window.setTimeout(() => setMention(null), 150)}
           onKeyDown={(e) => {
             if (mention && mentionRef.current?.onKey(e)) return;
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && props.onSubmitShortcut) {
+            if (e.key === "Enter" && e.ctrlKey && props.onSubmitShortcut) {
               e.preventDefault();
               props.onSubmitShortcut();
             }

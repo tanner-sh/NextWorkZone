@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
-import { Menu, type CheckMenuItemOptions, type MenuItemOptions, type PredefinedMenuItemOptions, type SubmenuOptions } from "@tauri-apps/api/menu";
-import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
 import { errorMessage } from "../api";
 
 export interface MenuAction {
@@ -41,22 +38,14 @@ function clean(items: MenuInput[]): MenuEntry[] {
   return result;
 }
 
-/** macOS 上用系统菜单：外观（Liquid Glass）、动画和键盘操作与系统一致。其他平台用网页菜单。 */
-const NATIVE = navigator.userAgent.includes("Mac") && "__TAURI_INTERNALS__" in window;
-
 /**
  * 右键菜单。`open` 在 onContextMenu 中调用（也可以在按钮的 onClick 中调用，菜单显示在按钮下方）；
  * `target` 是当前打开菜单的对象，用于高亮所在行；`menu` 需要渲染到页面中。
  */
 export function useContextMenu() {
   const [state, setState] = useState<{ x: number; y: number; items: MenuEntry[]; target: string | null } | null>(null);
-  const [nativeTarget, setNativeTarget] = useState<string | null>(null);
   const close = useCallback(() => setState(null), []);
-  const show = useCallback((x: number, y: number, list: MenuEntry[], target: string | null) => {
-    if (!NATIVE) return setState({ x, y, items: list, target });
-    setNativeTarget(target);
-    void popupNative(list, x, y).finally(() => setNativeTarget(null));
-  }, []);
+  const show = useCallback((x: number, y: number, list: MenuEntry[], target: string | null) => setState({ x, y, items: list, target }), []);
   const open = useCallback(
     (e: React.MouseEvent | MouseEvent, items: MenuInput[], target: string | null = null) => {
       e.preventDefault();
@@ -84,68 +73,7 @@ export function useContextMenu() {
   const menu = state
     ? createPortal(<MenuList key={`${state.x},${state.y}`} items={state.items} anchor={{ x: state.x, y: state.y }} onDone={close} focus />, document.body)
     : null;
-  return { open, openAt, target: state?.target ?? nativeTarget, menu };
-}
-
-// ---------- 系统菜单 ----------
-
-type NativeEntry = MenuItemOptions | CheckMenuItemOptions | SubmenuOptions | PredefinedMenuItemOptions;
-
-/** 在窗口中的 (x, y) 处弹出系统菜单，菜单关闭后返回。 */
-async function popupNative(items: MenuEntry[], x: number, y: number) {
-  // 打开时才加载的子菜单先显示“加载中”，加载完成后替换（菜单打开时也会更新）
-  const pending: { id: string; load: () => Promise<MenuInput[]> }[] = [];
-  const menu = await Menu.new({ items: nativeEntries(items, pending) });
-  for (const { id, load } of pending) {
-    const fill = async (list: MenuEntry[]) => {
-      const sub = await menu.get(id);
-      if (!sub || !("removeAt" in sub)) return;
-      await sub.append(nativeEntries(list, pending));
-      await sub.removeAt(0);
-    };
-    load().then(
-      (list) => fill(clean(list).length > 0 ? clean(list) : [{ label: "没有可用的选项", disabled: true }]),
-      (e) => fill([{ label: `加载失败：${errorMessage(e)}`, disabled: true }]),
-    );
-  }
-  try {
-    // 不用 menu.popup：它在菜单打开期间占用资源，上面的“加载中”就无法替换（见 src-tauri/src/context_menu.rs）
-    await invoke("menu_popup", { rid: menu.rid, x, y });
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-let nativeId = 0;
-
-function nativeEntries(items: MenuEntry[], pending: { id: string; load: () => Promise<MenuInput[]> }[]): NativeEntry[] {
-  return items.map((item): NativeEntry => {
-    if (item === "separator") return { item: "Separator" };
-    const enabled = !item.disabled;
-    if (item.children) return { text: item.label, enabled, items: nativeEntries(clean(item.children), pending) };
-    if (item.loadChildren) {
-      const id = `nwz-sub-${++nativeId}`;
-      pending.push({ id, load: item.loadChildren });
-      return { id, text: item.label, enabled, items: [{ text: "加载中…", enabled: false }] };
-    }
-    const action = () => void runNative(item);
-    return item.checked !== undefined ? { text: item.label, enabled, checked: item.checked, action } : { text: item.label, enabled, action };
-  });
-}
-
-/** 执行菜单项；需要确认的（删除等）先弹出系统的确认框。 */
-async function runNative(item: MenuAction) {
-  if (item.confirm) {
-    // confirm 是网页菜单中“再点一次”的提示，括号里的说明在确认框中保留
-    const detail = item.confirm.match(/（(.+)）/)?.[1];
-    const ok = await confirmDialog(detail ?? `确定要${item.label}吗？`, { title: item.label, kind: "warning", okLabel: item.label, cancelLabel: "取消" });
-    if (!ok) return;
-  }
-  try {
-    await item.onSelect?.();
-  } catch (e) {
-    console.error(e);
-  }
+  return { open, openAt, target: state?.target ?? null, menu };
 }
 
 const hasSub = (item: MenuAction) => Boolean(item.children || item.loadChildren);

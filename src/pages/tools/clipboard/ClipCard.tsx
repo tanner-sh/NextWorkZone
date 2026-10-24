@@ -46,7 +46,7 @@ function IssueLine({ issue }: { issue: IssueHit }) {
 
 interface CardProps {
   item: ClipItem;
-  /** 在列表中的序号，前 9 个显示 ⌘1–⌘9 */
+  /** 在列表中的序号，前 9 个显示 Ctrl+1–Ctrl+9 */
   index: number;
   selected: boolean;
   /** 多选时的序号（从 1 开始） */

@@ -50,7 +50,7 @@ interface Props {
   onCreateTodos?: (lines: string[]) => void;
   /** 选中文字后“创建 Jira 问题” */
   onCreateIssue?: (text: string, insertKey: (key: string) => void) => void;
-  /** ⌘+点击内部链接、问题键时打开 */
+  /** Ctrl+点击内部链接、问题键时打开 */
   onOpenDoc: (id: string) => void;
   onOpenIssue: (key: string) => void;
   footer?: ReactNode;
@@ -134,7 +134,7 @@ export function NoteEditor(props: Props) {
           const target = event.target as HTMLElement;
           const issue = target.closest<HTMLElement>("[data-issue-key]");
           const anchor = target.closest("a");
-          const mod = event.metaKey || event.ctrlKey;
+          const mod = event.ctrlKey;
           if (issue && mod) {
             event.preventDefault();
             propsRef.current.onOpenIssue(issue.dataset.issueKey!);
@@ -218,8 +218,8 @@ export function NoteEditor(props: Props) {
       { icon: <Heading3 size={15} />, title: "标题 3", active: editor.isActive("heading", { level: 3 }), run: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
     ],
     [
-      { icon: <Bold size={15} />, title: "粗体（⌘B）", active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
-      { icon: <Italic size={15} />, title: "斜体（⌘I）", active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
+      { icon: <Bold size={15} />, title: "粗体（Ctrl+B）", active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
+      { icon: <Italic size={15} />, title: "斜体（Ctrl+I）", active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
       { icon: <Strikethrough size={15} />, title: "删除线", active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
       { icon: <Code size={15} />, title: "行内代码", active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
       { icon: <Link2 size={15} />, title: "链接（输入 [[ 链接文档）", active: editor.isActive("link"), run: setLink },
@@ -234,8 +234,8 @@ export function NoteEditor(props: Props) {
       { icon: <Minus size={15} />, title: "分隔线", run: () => editor.chain().focus().setHorizontalRule().run() },
     ],
     [
-      { icon: <Undo2 size={15} />, title: "撤销（⌘Z）", disabled: !editor.can().undo(), run: () => editor.chain().focus().undo().run() },
-      { icon: <Redo2 size={15} />, title: "重做（⇧⌘Z）", disabled: !editor.can().redo(), run: () => editor.chain().focus().redo().run() },
+      { icon: <Undo2 size={15} />, title: "撤销（Ctrl+Z）", disabled: !editor.can().undo(), run: () => editor.chain().focus().undo().run() },
+      { icon: <Redo2 size={15} />, title: "重做（Ctrl+Shift+Z）", disabled: !editor.can().redo(), run: () => editor.chain().focus().redo().run() },
     ],
   ];
 
@@ -317,7 +317,7 @@ export function NoteEditor(props: Props) {
       <EditorContent editor={editor} className="note-content rich" />
       {error && <div className="wiki-note error">{error}</div>}
       <div className="note-footer muted small">
-        <span className="grow">⌘+点击打开链接和问题 · 输入 [[ 链接文档 · 可粘贴截图</span>
+        <span className="grow">Ctrl+点击打开链接和问题 · 输入 [[ 链接文档 · 可粘贴截图</span>
         {props.footer}
       </div>
     </div>

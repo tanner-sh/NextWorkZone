@@ -3,7 +3,7 @@ import { Send } from "lucide-react";
 import { errorMessage } from "../api";
 import { ErrorBox } from "./common";
 
-/** 评论输入框：⌘↵ 发送，Esc 取消（有取消按钮时）。 */
+/** 评论输入框：Ctrl+Enter 发送，Esc 取消（有取消按钮时）。 */
 export function CommentBox({ placeholder, onSubmit, onCancel, initial = "", submitLabel = "发送" }: { placeholder: string; onSubmit: (text: string) => Promise<void>; onCancel?: () => void; initial?: string; submitLabel?: string }) {
   const [text, setText] = useState(initial);
   const [sending, setSending] = useState(false);
@@ -30,7 +30,7 @@ export function CommentBox({ placeholder, onSubmit, onCancel, initial = "", subm
         autoFocus={Boolean(onCancel)}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (e.key === "Enter" && e.ctrlKey) {
             e.preventDefault();
             void submit();
           } else if (e.key === "Escape" && onCancel) {

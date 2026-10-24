@@ -1,0 +1,363 @@
+import AppKit
+import SwiftUI
+
+// MARK: - 图片
+
+/// 系统内的图片（图标、头像、附件缩略图等）：需要认证时经由 Rust 应用层取回，结果缓存在内存中。
+@MainActor
+final class ImageCache {
+    static let shared = ImageCache()
+    private let cache = NSCache<NSString, NSImage>()
+    private var failed: Set<String> = []
+    private var loading: [String: Task<NSImage?, Never>] = [:]
+
+    func cached(_ path: String) -> NSImage? { cache.object(forKey: path as NSString) }
+    func hasFailed(_ path: String) -> Bool { failed.contains(path) }
+
+    /// 网页登录状态变化后，之前失败的图片可以再试。
+    func clearFailures() { failed.removeAll() }
+
+    func load(_ path: String) async -> NSImage? {
+        if let image = cached(path) { return image }
+        if failed.contains(path) { return nil }
+        if let task = loading[path] { return await task.value }
+        let task = Task<NSImage?, Never> {
+            do {
+                let (data, type) = try await API.shared.asset(path)
+                let image = NSImage(data: data)
+                #if DEBUG
+                if image == nil { debugLog("图片无法解码：\(path) \(type ?? "") \(data.count) 字节") }
+                #endif
+                return image
+            } catch {
+                #if DEBUG
+                debugLog("图片加载失败：\(path) \(errorMessage(error))")
+                #endif
+                return nil
+            }
+        }
+        loading[path] = task
+        let image = await task.value
+        loading[path] = nil
+        if let image { cache.setObject(image, forKey: path as NSString) } else { failed.insert(path) }
+        return image
+    }
+
+    /// 资源路径：系统地址（相对路径或完整地址）属于已配置的系统时经由应用层，否则为 `nil`（直接按网址加载）。
+    static func path(service: Service, src: String) -> String? {
+        let base = AppModel.shared.baseUrl(service)
+        let isSystem = (src.hasPrefix("/") && !src.hasPrefix("//")) || (!base.isEmpty && (src == base || src.hasPrefix(base + "/")))
+        guard isSystem else { return nil }
+        return "\(service.rawValue)/\(src.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? src)"
+    }
+}
+
+/// 显示来自某个系统的图片；加载成功前不占位，失败（例如需要网页登录）时不显示。
+struct SysImage: View {
+    var service: Service
+    var src: String?
+    var size: CGFloat? = nil
+    @Environment(AppModel.self) private var model
+    @State private var image: NSImage?
+
+    var body: some View {
+        // 加载前用透明占位（空视图不会执行 task）
+        ZStack {
+            if let image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: image == nil ? (size ?? 1) : size, height: image == nil ? (size ?? 1) : size)
+        .task(id: "\(src ?? "")|\(model.sessionVersion)") { await load() }
+    }
+
+    private func load() async {
+        guard let src, !src.isEmpty else { image = nil; return }
+        if let path = ImageCache.path(service: service, src: src) {
+            image = await ImageCache.shared.load(path)
+        } else if let url = URL(string: src), let (data, _) = try? await URLSession.shared.data(from: url) {
+            image = NSImage(data: data)
+        }
+    }
+}
+
+/// 本机资源（工作空间图片、剪贴板图片）。
+struct AssetImage: View {
+    var path: String
+    var contentMode: ContentMode = .fit
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else {
+                Color.clear
+            }
+        }
+        .task(id: path) { image = await ImageCache.shared.load(path) }
+    }
+}
+
+// MARK: - 人名、状态
+
+/// 人名头像：中文名取最后两个字，其他取首字母。
+struct Avatar: View {
+    var name: String?
+    var size: CGFloat = 24
+
+    private static let colors: [Color] = [
+        Color(red: 0.39, green: 0.40, blue: 0.95), Color(red: 0.05, green: 0.65, blue: 0.91), Color(red: 0.08, green: 0.72, blue: 0.65),
+        Color(red: 0.13, green: 0.77, blue: 0.37), Color(red: 0.96, green: 0.62, blue: 0.04), Color(red: 0.94, green: 0.27, blue: 0.27),
+        Color(red: 0.93, green: 0.28, blue: 0.60), Color(red: 0.55, green: 0.36, blue: 0.96), Color(red: 0.39, green: 0.45, blue: 0.55),
+    ]
+
+    var body: some View {
+        let text = (name ?? "").trimmingCharacters(in: .whitespaces)
+        if !text.isEmpty {
+            let cjk = text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+            let initials = cjk ? String(text.suffix(2)) : String(text.split(separator: " ").compactMap(\.first).prefix(2)).uppercased()
+            let hash = text.unicodeScalars.reduce(UInt32(7)) { ($0 &* 31 &+ $1.value) }
+            Text(initials)
+                .font(.system(size: size * (cjk ? 0.36 : 0.42), weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Self.colors[Int(hash % UInt32(Self.colors.count))], in: Circle())
+                .help(text)
+        }
+    }
+}
+
+/// Jira 状态：彩色圆点加文字。
+struct StatusPill: View {
+    var status: JiraStatus
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(Self.color(status.category)).frame(width: 7, height: 7)
+            Text(status.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .fixedSize()
+    }
+
+    static func color(_ category: String) -> Color {
+        switch category {
+        case "done": .green
+        case "indeterminate": .blue
+        default: .gray
+        }
+    }
+}
+
+// MARK: - 状态提示
+
+struct ErrorBox: View {
+    var message: String
+    var retry: (() -> Void)? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+            Text(message).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            if let retry {
+                Button("重试", systemImage: "arrow.clockwise", action: retry)
+            }
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct Notice: View {
+    var systemImage = "info.circle"
+    var text: String
+    var tint: Color = .orange
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage).foregroundStyle(tint)
+            Text(text).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.callout)
+        .padding(10)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// 某个系统尚未配置时的占位提示。
+struct NotConfigured: View {
+    var label: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("尚未配置 \(label)", systemImage: "powerplug")
+        } actions: {
+            Button("前往设置") { AppModel.shared.navigate(.settings) }.buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+/// 网页路径（附件、图片）需要网页登录时显示提示。
+struct WebLoginHint: View {
+    var service: Service
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if model.access(service) == .loginRequired {
+            HStack(spacing: 8) {
+                Image(systemName: "key.fill").foregroundStyle(.orange)
+                Text("\(service.label) 的附件和图片需要网页登录后才能显示，登录一次即可。")
+                Spacer()
+                Button("网页登录") { WebLogin.open(service) }
+            }
+            .font(.callout)
+            .padding(10)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+}
+
+/// 加载中的占位。
+struct LoadingView: View {
+    var label = "加载中…"
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(label).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - 提示条
+
+/// 在窗口底部短暂显示一条提示（复制成功、已添加待办等）。
+@MainActor @Observable
+final class Toasts {
+    static let shared = Toasts()
+
+    struct Item: Identifiable, Equatable {
+        let id = UUID()
+        var message: String
+        var error: Bool
+    }
+
+    var items: [Item] = []
+
+    func show(_ message: String, error: Bool = false) {
+        let item = Item(message: message, error: error)
+        items = Array(items.suffix(2)) + [item]
+        Task {
+            try? await Task.sleep(for: .seconds(error ? 4.4 : 2.2))
+            items.removeAll { $0.id == item.id }
+        }
+    }
+}
+
+@MainActor func toast(_ message: String, error: Bool = false) {
+    Toasts.shared.show(message, error: error)
+}
+
+/// 执行异步操作，失败时提示错误。
+@MainActor func guarded(_ action: @escaping @MainActor () async throws -> Void) {
+    Task {
+        do { try await action() } catch { toast("操作失败：\(errorMessage(error))", error: true) }
+    }
+}
+
+struct ToastOverlay: View {
+    @State private var toasts = Toasts.shared
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(toasts.items) { t in
+                Text(t.message)
+                    .font(.callout)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .foregroundStyle(t.error ? Color.red : Color.primary)
+                    .glassEffect(.regular, in: Capsule())
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: toasts.items)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - 剪贴板
+
+enum Pasteboard {
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    static func text() -> String? {
+        NSPasteboard.general.string(forType: .string)
+    }
+}
+
+// MARK: - 小部件
+
+/// 分组标题。
+struct SectionHeader: View {
+    var title: String
+    var count: Int? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title).font(.headline)
+            if let count { Text("\(count)").foregroundStyle(.secondary) }
+        }
+    }
+}
+
+/// 高亮文字中出现的关键词（按空白拆分，不区分大小写）。
+func highlighted(_ text: String, _ query: String) -> AttributedString {
+    var result = AttributedString(text)
+    let terms = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init).filter { !$0.isEmpty }
+    guard !terms.isEmpty else { return result }
+    let lower = text.lowercased()
+    for term in terms {
+        var searchRange = lower.startIndex..<lower.endIndex
+        while let r = lower.range(of: term, range: searchRange) {
+            let start = lower.distance(from: lower.startIndex, to: r.lowerBound)
+            let len = lower.distance(from: r.lowerBound, to: r.upperBound)
+            let a = result.index(result.startIndex, offsetByCharacters: start)
+            let b = result.index(a, offsetByCharacters: len)
+            result[a..<b].backgroundColor = Color.yellow.opacity(0.35)
+            searchRange = r.upperBound..<lower.endIndex
+        }
+    }
+    return result
+}
+
+extension View {
+    /// 列表行的常用外观：可点击整行。
+    func rowTap(_ action: @escaping () -> Void) -> some View {
+        contentShape(Rectangle()).onTapGesture(perform: action)
+    }
+}
+
+/// 输入停顿后再执行（搜索框）。
+@MainActor
+final class Debouncer {
+    private var task: Task<Void, Never>?
+
+    func run(after delay: Duration, _ action: @escaping @MainActor () async -> Void) {
+        task?.cancel()
+        task = Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await action()
+        }
+    }
+
+    func cancel() { task?.cancel() }
+}

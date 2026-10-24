@@ -91,16 +91,16 @@ function Shell() {
   const [kept, setKept] = useState<PageId[]>([]);
   if (KEEP_ALIVE[current.page] && !kept.includes(current.page)) setKept([...kept, current.page]);
 
-  // ⌘K 打开全局搜索，⌘1–⌘9、⌘0 切换页面
+  // Ctrl+K 打开全局搜索，Ctrl+1–Ctrl+9、Ctrl+0 切换页面
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
+      if (!e.ctrlKey) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
         return;
       }
-      // ⌘⇧N 随时记一条待办
+      // Ctrl+Shift+N 随时记一条待办
       if (e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         setQuickTodo(true);
@@ -111,7 +111,7 @@ function Shell() {
         navigate({ page: "settings" });
         return;
       }
-      // ⌘0 是第十个
+      // Ctrl+0 是第十个
       const index = e.key === "0" ? 9 : Number(e.key) - 1;
       if (!e.shiftKey && !e.altKey && index >= 0 && index < NAV_ORDER.length) {
         e.preventDefault();
@@ -183,11 +183,10 @@ function Shell() {
   return (
     <div className="shell">
       <nav className="sidebar">
-        <div className="sidebar-drag" data-tauri-drag-region />
         <button className="search-trigger" onClick={() => setPaletteOpen(true)} title="搜索问题、项目、文档，或跳转到页面">
           <Search size={14} />
           <span>搜索</span>
-          <kbd>⌘K</kbd>
+          <kbd>Ctrl+K</kbd>
         </button>
         {NAV_GROUPS.map((group) => (
           <div className="nav-group" key={group.label}>
@@ -217,8 +216,6 @@ function Shell() {
         <NavButton id="settings" label="设置" icon={Settings2} shortcut="," active={current.page === "settings"} onClick={() => navigate({ page: "settings" })} />
       </nav>
       <div className="main">
-        {/* 没有顶部栏：内容区顶端留一条可以拖动窗口的区域 */}
-        <div className="main-drag" data-tauri-drag-region />
         <main className="content">
           {kept.map((id) => {
             const Page = KEEP_ALIVE[id]!;
@@ -304,7 +301,7 @@ function ToolHost({ tool, tab }: { tool?: string; tab?: string }) {
 function NavButton(props: { id: PageId; label: string; icon: ComponentType<LucideProps>; shortcut?: string; active: boolean; count?: number | null; alert?: string; onClick: () => void }) {
   const Icon = props.icon;
   return (
-    <button className={`nav-item${props.active ? " active" : ""}`} onClick={props.onClick} title={`${props.label}${props.shortcut ? `（⌘${props.shortcut}）` : ""}${props.alert ? `\n${props.alert}` : ""}`}>
+    <button className={`nav-item${props.active ? " active" : ""}`} onClick={props.onClick} title={`${props.label}${props.shortcut ? `（Ctrl+${props.shortcut}）` : ""}${props.alert ? `\n${props.alert}` : ""}`}>
       <Icon size={16} strokeWidth={2} />
       {props.label}
       {props.count ? <span className={`nav-count${props.alert ? " alert" : ""}`}>{props.count}</span> : null}

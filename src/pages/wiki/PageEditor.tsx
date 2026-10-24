@@ -205,7 +205,7 @@ export function PageEditor({ target, onClose, onSaved }: { target: Target; onClo
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!e.ctrlKey) return;
     const format = FORMAT_KEYS[e.key.toLowerCase()];
     if (format && !e.shiftKey && !e.altKey) {
       e.preventDefault();
@@ -232,12 +232,12 @@ export function PageEditor({ target, onClose, onSaved }: { target: Target; onClo
     }
   };
 
-  // ⌘S 保存（切到其他页面时不响应）
+  // Ctrl+S 保存（切到其他页面时不响应）
   const active = usePageActive();
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      if (e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         void review();
       }
@@ -282,15 +282,15 @@ export function PageEditor({ target, onClose, onSaved }: { target: Target; onClo
   }
 
   const tools: { icon: ReactNode; title: string; run: () => void }[] = [
-    { icon: <Undo2 size={15} />, title: "撤销（⌘Z）", run: () => exec("undo") },
-    { icon: <Redo2 size={15} />, title: "重做（⇧⌘Z）", run: () => exec("redo") },
+    { icon: <Undo2 size={15} />, title: "撤销（Ctrl+Z）", run: () => exec("undo") },
+    { icon: <Redo2 size={15} />, title: "重做（Ctrl+Shift+Z）", run: () => exec("redo") },
     { icon: <Pilcrow size={15} />, title: "正文", run: () => exec("formatBlock", "<p>") },
     { icon: <Heading1 size={15} />, title: "一级标题", run: () => exec("formatBlock", "<h1>") },
     { icon: <Heading2 size={15} />, title: "二级标题", run: () => exec("formatBlock", "<h2>") },
     { icon: <Heading3 size={15} />, title: "三级标题", run: () => exec("formatBlock", "<h3>") },
-    { icon: <Bold size={15} />, title: "粗体（⌘B）", run: () => exec("bold") },
-    { icon: <Italic size={15} />, title: "斜体（⌘I）", run: () => exec("italic") },
-    { icon: <Underline size={15} />, title: "下划线（⌘U）", run: () => exec("underline") },
+    { icon: <Bold size={15} />, title: "粗体（Ctrl+B）", run: () => exec("bold") },
+    { icon: <Italic size={15} />, title: "斜体（Ctrl+I）", run: () => exec("italic") },
+    { icon: <Underline size={15} />, title: "下划线（Ctrl+U）", run: () => exec("underline") },
     { icon: <Strikethrough size={15} />, title: "删除线", run: () => exec("strikeThrough") },
     { icon: <Code size={15} />, title: "行内代码", run: () => wrapInline("code") },
     { icon: <List size={15} />, title: "无序列表", run: () => exec("insertUnorderedList") },
@@ -309,7 +309,7 @@ export function PageEditor({ target, onClose, onSaved }: { target: Target; onClo
           <X size={14} />
           取消
         </button>
-        <button className="btn primary" disabled={!session || checking} onClick={() => void review()} title="⌘S">
+        <button className="btn primary" disabled={!session || checking} onClick={() => void review()} title="Ctrl+S">
           <Save size={14} />
           {checking ? "检查中…" : target.kind === "edit" ? "保存…" : "创建…"}
         </button>

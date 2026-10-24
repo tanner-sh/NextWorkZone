@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { Menu } from "@tauri-apps/api/menu";
 import type { MenuItemOptions, PredefinedMenuItemOptions, SubmenuOptions } from "@tauri-apps/api/menu";
-import { ClipboardList, CornerDownLeft, Pause, Plus, Search, Settings2, ShieldAlert, X } from "lucide-react";
+import { ClipboardList, CornerDownLeft, Pause, Plus, Search, Settings2, X } from "lucide-react";
 import { api, CLIP_OPEN_EVENT, CLIP_SETTINGS_EVENT, errorMessage, type ClipItem, type ClipKind, type ClipSettings, type IssueHit } from "../../../api";
 import { SettingsProvider, useSettings } from "../../../state/settings";
 import { smartActions, itemIssueKeys, type ClipAction } from "./actions";
@@ -217,7 +217,7 @@ function Panel() {
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing) return;
       const typing = e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLInputElement && e.target !== input.current);
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = e.ctrlKey;
       if (e.key === "Escape") {
         e.preventDefault();
         if (newBoard !== null) setNewBoard(null);
@@ -319,7 +319,7 @@ function Panel() {
     marked.includes(item.id) ? marked.map((id) => list.find((i) => i.id === id)).filter((i): i is ClipItem => Boolean(i)) : [item];
 
   const onCardClick = (e: React.MouseEvent, item: ClipItem, i: number) => {
-    if (e.metaKey || e.ctrlKey) {
+    if (e.ctrlKey) {
       setMarked((m) => (m.includes(item.id) ? m.filter((id) => id !== item.id) : [...(m.length || !current ? m : [current.id].filter((id) => id !== item.id)), item.id]));
     } else if (e.shiftKey && current) {
       const [from, to] = [Math.min(index, i), Math.max(index, i)];
@@ -450,20 +450,12 @@ function Panel() {
       <footer className="clip-foot">
         {notice ? (
           <span className={notice.error ? "error-text" : "clip-notice"}>{notice.text}</span>
-        ) : settings?.config.autoPaste && settings.pasteSupport === "needsPermission" ? (
-          <span className="clip-permission">
-            <ShieldAlert size={13} />
-            在系统设置中允许 NextWorkZone 控制电脑（辅助功能）后，选中即可直接粘贴到 {target ?? "之前的应用"}；现在只会复制。
-            <button className="link-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => void api.clipRequestPermission()}>
-              去授权
-            </button>
-          </span>
         ) : (
           <span className="clip-hints">
             <span>
               <CornerDownLeft size={11} /> {pasteLabel}
             </span>
-            <span>⇧↩ 纯文本</span>
+            <span>Shift+Enter 纯文本</span>
             {autoPaste && <span>{MOD}C 复制</span>}
             <span>空格 预览</span>
             <span>{MOD}E 编辑</span>
@@ -474,7 +466,7 @@ function Panel() {
           </span>
         )}
         <span className="spacer" />
-        {marked.length > 0 && <span className="clip-count">已选 {marked.length} 条 · ↩ 按顺序一起粘贴</span>}
+        {marked.length > 0 && <span className="clip-count">已选 {marked.length} 条 · Enter 按顺序一起粘贴</span>}
         {settings && !marked.length && <span className="muted">{settings.stats.items.toLocaleString()} 条</span>}
       </footer>
 
@@ -559,7 +551,7 @@ function PreviewLayer(props: {
             spellCheck={false}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && e.ctrlKey) {
                 e.preventDefault();
                 props.onPaste(true, draft);
               }
@@ -602,7 +594,7 @@ function PreviewLayer(props: {
           {editing ? (
             <>
               <button className="btn primary small-btn" onClick={() => props.onPaste(true, draft)}>
-                {props.verb}修改后的内容 <kbd>{MOD}↩</kbd>
+                {props.verb}修改后的内容 <kbd>{MOD}Enter</kbd>
               </button>
               <button
                 className="btn small-btn"
@@ -620,7 +612,7 @@ function PreviewLayer(props: {
           ) : (
             <>
               <button className="btn primary small-btn" onClick={() => props.onPaste()}>
-                {props.pasteLabel} <kbd>↩</kbd>
+                {props.pasteLabel} <kbd>Enter</kbd>
               </button>
               {item.kind !== "image" && item.kind !== "file" && (
                 <button className="btn small-btn" onClick={props.onEdit}>

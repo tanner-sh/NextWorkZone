@@ -1,0 +1,4 @@
+.build/
+build/
+Sources/CoreFFI/include/
+Sources/NextWorkZone/Generated/

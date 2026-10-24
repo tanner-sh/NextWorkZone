@@ -1,5 +1,12 @@
 // Rust command 的类型化封装。前端只通过这里与 Rust 层交互。
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
+
+/** 窗口相关的命令由 Tauri 端直接处理，其余命令都经过应用层的统一入口 `core`。 */
+const PLATFORM_COMMANDS = new Set(["web_login", "capture_hide", "capture_clipboard", "clipboard_read_text", "clip_hide", "clip_open_main", "clip_drag", "dev_eval_result"]);
+
+function invoke<T>(cmd: string, args?: InvokeArgs): Promise<T> {
+  return PLATFORM_COMMANDS.has(cmd) ? tauriInvoke<T>(cmd, args) : tauriInvoke<T>("core", { cmd, args: args ?? {} });
+}
 
 export type Service = "jira" | "confluence" | "gitlab";
 
@@ -1344,7 +1351,6 @@ export const api = {
   clipSaveSettings: (config: ClipboardConfig) => invoke<ClipSettings>("clip_save_settings", { config }),
   /** 暂停记录：minutes 为 0 表示恢复，负数表示直到手动恢复 */
   clipPause: (minutes: number) => invoke<ClipSettings>("clip_pause", { minutes }),
-  clipRequestPermission: () => invoke<void>("clip_request_permission"),
   clipIgnoreCandidates: () => invoke<IgnoredApp[]>("clip_ignore_candidates"),
   /** 标记为刚刚使用（拖到其他应用后） */
   clipTouch: (ids: string[]) => invoke<void>("clip_touch", { ids }),

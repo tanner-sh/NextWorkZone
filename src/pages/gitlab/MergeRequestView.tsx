@@ -382,7 +382,7 @@ export function MergeRequestView({ mrRef, onBack, onChanged }: { mrRef: MrRef; o
               </ul>
             )}
             <CommentBox
-              placeholder="发表评论，支持 Markdown（⌘↵ 发送）"
+              placeholder="发表评论，支持 Markdown（Ctrl+Enter 发送）"
               onSubmit={async (body) => {
                 const d = await api.glMrAddNote(project, iid, body);
                 setDiscussions((list) => [...(list ?? []), d]);
@@ -616,7 +616,7 @@ function Thread({ discussion: d, actions, compact, outdated, onShowDiff }: { dis
               <CommentBox
                 initial={n.body}
                 submitLabel="保存"
-                placeholder="编辑评论（⌘↵ 保存，Esc 取消）"
+                placeholder="编辑评论（Ctrl+Enter 保存，Esc 取消）"
                 onCancel={() => setEditing(null)}
                 onSubmit={async (body) => {
                   await actions.edit(d, n, body);
@@ -631,7 +631,7 @@ function Thread({ discussion: d, actions, compact, outdated, onShowDiff }: { dis
       {!collapsed &&
         (replying ? (
           <CommentBox
-            placeholder="回复（⌘↵ 发送，Esc 取消）"
+            placeholder="回复（Ctrl+Enter 发送，Esc 取消）"
             onCancel={() => setReplying(false)}
             onSubmit={async (body) => {
               await actions.reply(d, body);

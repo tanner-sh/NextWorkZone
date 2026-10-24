@@ -19,8 +19,7 @@ export const KINDS = Object.keys(KIND_META) as ClipKind[];
 /** 置顶板可选的颜色。 */
 export const BOARD_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280"];
 
-export const isMac = navigator.userAgent.includes("Mac");
-export const MOD = isMac ? "⌘" : "Ctrl+";
+export const MOD = "Ctrl+";
 
 /** 卡片标题栏的颜色：来源应用图标的主色，没有时用类型的颜色。 */
 export function headColor(item: ClipItem): string {

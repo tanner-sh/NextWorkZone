@@ -5,7 +5,7 @@
 // - 其余位置由这里按点击的目标生成：输入框（撤销、剪切、复制、粘贴、全选）、选中的文字、链接、图片、代码块；
 // - 页面区域可以用 `contributeMenu` 附加本区域的操作（例如 Wiki 页面、问题详情）。
 //   没有更具体的目标时这些操作直接列出，否则放在以区域命名的子菜单中；
-// - 按住 ⌥ 右键仍显示系统菜单（调试时检查元素）。
+// - 按住 Alt 右键仍显示 WebView 自带的菜单（调试时检查元素）。
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { openLink, routeUrl } from "../lib/links";
 import { useIssueMenu, type IssueMenuOptions, type IssueTarget } from "../pages/jira/issueMenu";
@@ -18,7 +18,7 @@ import { targetItems } from "./menuTargets";
 // ---------- 区域附加的操作 ----------
 
 export interface MenuSection {
-  /** 作为子菜单时的名称，例如“当前页面”“FYXM-123” */
+  /** 作为子菜单时的名称，例如“当前页面”“PROJ-123” */
   label: string;
   items: MenuInput[];
 }

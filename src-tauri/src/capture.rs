@@ -5,7 +5,9 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::shortcuts::{self, Action};
-use crate::state::AppState;
+use std::sync::Arc;
+
+use nextworkzone_app::AppState;
 
 pub const CAPTURE_LABEL: &str = "capture";
 /// 显示窗口时发给快速记录界面的事件（界面据此清空输入、读取剪贴板）。
@@ -23,11 +25,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .visible_on_all_workspaces(true)
         .visible(false)
         .center();
-    // macOS 26 起整窗使用 Liquid Glass；更早的系统由界面画卡片背景
-    #[cfg(target_os = "macos")]
-    let builder = builder.effects(crate::appearance::floating_effects(None, 22.0));
+    // 窗口透明，由界面画卡片背景
     builder.build()?;
-    let shortcut = app.state::<AppState>().config().workspace.capture_shortcut;
+    let shortcut = app.state::<Arc<AppState>>().config().workspace.capture_shortcut;
     shortcuts::init(app, Action::Capture, &shortcut);
     Ok(())
 }
@@ -39,22 +39,16 @@ pub fn toggle(app: &AppHandle) {
         hide(app);
         return;
     }
-    #[cfg(target_os = "macos")]
-    let _ = app.show();
     let _ = window.center();
     let _ = window.show();
     let _ = window.set_focus();
     let _ = window.emit(OPEN_EVENT, ());
 }
 
-/// 隐藏快速记录窗口。主窗口没有显示时把整个应用隐藏，焦点回到之前使用的应用。
+/// 隐藏快速记录窗口。
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(CAPTURE_LABEL) {
         let _ = window.hide();
-    }
-    #[cfg(target_os = "macos")]
-    if !app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) {
-        let _ = app.hide();
     }
 }
 

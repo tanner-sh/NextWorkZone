@@ -17,29 +17,26 @@
         "width": 1280,
         "height": 820,
         "minWidth": 960,
-        "minHeight": 600,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "trafficLightPosition": {
-          "x": 18,
-          "y": 24
-        },
-        "transparent": true
+        "minHeight": 600
       }
     ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data: blob: nextworkzone: http://nextworkzone.localhost; style-src 'self' 'unsafe-inline'"
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis",
+      "msi",
+      "deb",
+      "appimage",
+      "rpm"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
       "icons/icon.ico"
     ]
   }

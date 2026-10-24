@@ -2,9 +2,6 @@ import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-// macOS 上窗口透明，侧边栏显示系统材质（见 tauri.conf.json 的 windowEffects）
-if (navigator.userAgent.includes("Mac")) document.documentElement.classList.add("mac");
-
 // 改名前的本地设置（已保存的查询、周报草稿等）迁移到新前缀，只执行一次
 try {
   for (const key of Object.keys(localStorage)) {
@@ -38,12 +35,4 @@ const load: Promise<ReactNode> = capture
       ))
     : import("./App").then(({ App }) => <App />);
 
-// macOS 26 起窗口使用 Liquid Glass（见 src-tauri/src/appearance.rs），样式随之调整；先确定再渲染，避免闪一下旧样式
-const glass = navigator.userAgent.includes("Mac")
-  ? import("@tauri-apps/api/core").then(({ invoke }) => invoke<boolean>("ui_glass")).then(
-      (on) => on && document.documentElement.classList.add("glass"),
-      () => {},
-    )
-  : Promise.resolve();
-
-void Promise.all([load, glass]).then(([ui]) => createRoot(document.getElementById("root")!).render(<StrictMode>{ui}</StrictMode>));
+void load.then((ui) => createRoot(document.getElementById("root")!).render(<StrictMode>{ui}</StrictMode>));

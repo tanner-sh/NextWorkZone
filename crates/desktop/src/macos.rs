@@ -2,13 +2,9 @@
 
 use std::ffi::c_void;
 
-use objc2::runtime::AnyClass;
-use objc2::{AllocAnyThread, MainThreadMarker, MainThreadOnly};
+use objc2::AllocAnyThread;
 
-use objc2_app_kit::{
-    NSApplicationActivationOptions, NSAutoresizingMaskOptions, NSColor, NSEvent, NSBitmapImageFileType, NSBitmapImageRep, NSGlassEffectView,
-    NSPasteboard, NSRunningApplication, NSWindow, NSWindowCollectionBehavior, NSWindowOrderingMode, NSWorkspace,
-};
+use objc2_app_kit::{NSApplicationActivationOptions, NSBitmapImageFileType, NSBitmapImageRep, NSEvent, NSPasteboard, NSRunningApplication, NSWorkspace};
 use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
 use crate::apps::AppInfo;
@@ -61,54 +57,6 @@ pub fn icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
     // SAFETY: 空的属性字典
     let data = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()) }?;
     Some(data.to_vec())
-}
-
-pub fn float_over_fullscreen(ns_window: *mut c_void) {
-    if ns_window.is_null() {
-        return;
-    }
-    // SAFETY: 调用方传入的是有效的 NSWindow 指针，并在主线程调用
-    let window = unsafe { &*(ns_window as *const NSWindow) };
-    window.setCollectionBehavior(
-        window.collectionBehavior()
-            | NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary
-            | NSWindowCollectionBehavior::IgnoresCycle,
-    );
-}
-
-pub fn glass_sidebar(ns_window: *mut c_void, sidebar: crate::window::GlassSidebar) -> bool {
-    // NSGlassEffectView 从 macOS 26 开始才有
-    if ns_window.is_null() || AnyClass::get(c"NSGlassEffectView").is_none() {
-        return false;
-    }
-    let Some(mtm) = MainThreadMarker::new() else { return false };
-    // SAFETY: 调用方传入的是有效的 NSWindow 指针，并在主线程调用
-    let window = unsafe { &*(ns_window as *const NSWindow) };
-    let Some(content) = window.contentView() else { return false };
-    let height = (content.bounds().size.height - sidebar.inset * 2.0).max(0.0);
-    let frame = NSRect::new(NSPoint::new(sidebar.inset, sidebar.inset), NSSize::new(sidebar.width, height));
-    let glass = NSGlassEffectView::initWithFrame(NSGlassEffectView::alloc(mtm), frame);
-    glass.setCornerRadius(sidebar.radius);
-    // 左边和上下边距固定，随窗口改变高度
-    glass.setAutoresizingMask(NSAutoresizingMaskOptions::ViewHeightSizable | NSAutoresizingMaskOptions::ViewMaxXMargin);
-    content.addSubview_positioned_relativeTo(&glass, NSWindowOrderingMode::Below, None);
-    // 玻璃折射的是它后面的窗口背景；透明窗口后面是桌面，换成系统的窗口背景色，侧栏颜色才稳定
-    window.setBackgroundColor(Some(&NSColor::windowBackgroundColor()));
-    true
-}
-
-pub fn focus_alone(ns_window: *mut c_void) -> bool {
-    if ns_window.is_null() {
-        return false;
-    }
-    // SAFETY: 调用方传入的是有效的 NSWindow 指针，并在主线程调用
-    let window = unsafe { &*(ns_window as *const NSWindow) };
-    window.makeKeyAndOrderFront(None);
-    // 不带 ActivateAllWindows：只把关键窗口（即这个窗口）带到前面
-    #[allow(deprecated)]
-    NSRunningApplication::currentApplication().activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
-    true
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]

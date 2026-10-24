@@ -9,7 +9,7 @@ const DUE_OPTIONS = [
   { label: "明天", due: () => addDays(today(), 1) },
 ];
 
-/** ⌘⇧N：在任何页面快速记一条待办。 */
+/** Ctrl+Shift+N：在任何页面快速记一条待办。 */
 export function QuickTodo({ onClose, initialTitle = "" }: { onClose: () => void; initialTitle?: string }) {
   const [title, setTitle] = useState(initialTitle);
   const [dueIndex, setDueIndex] = useState(1);

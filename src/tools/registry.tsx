@@ -1,4 +1,4 @@
-// 小工具的注册表。新增工具时在 TOOLS 中加一项：侧边栏的“工具”分组、⌘K 搜索、设置页的“工具”卡片都据此生成。
+// 小工具的注册表。新增工具时在 TOOLS 中加一项：侧边栏的“工具”分组、Ctrl+K 搜索、设置页的“工具”卡片都据此生成。
 import { lazy, useEffect, useState, type ComponentType } from "react";
 import { ClipboardList, type LucideIcon } from "lucide-react";
 import { api } from "../api";
@@ -13,7 +13,7 @@ export interface ToolDef {
   icon: LucideIcon;
   /** 一句话说明，显示在设置页和搜索结果中 */
   description: string;
-  /** ⌘K 搜索的关键词（含拼音首字母） */
+  /** Ctrl+K 搜索的关键词（含拼音首字母） */
   keywords: string;
   /** 工具页面；`tab` 为要打开的标签（例如 settings） */
   Page: ComponentType<{ tab?: string }>;

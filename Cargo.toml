@@ -15,6 +15,8 @@ nextworkzone-workspace = { path = "crates/workspace" }
 nextworkzone-preview = { path = "crates/preview" }
 nextworkzone-clipboard = { path = "crates/clipboard" }
 nextworkzone-desktop = { path = "crates/desktop" }
+nextworkzone-app = { path = "crates/app" }
+nextworkzone-richdoc = { path = "crates/richdoc" }
 
 base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }

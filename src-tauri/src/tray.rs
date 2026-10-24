@@ -1,4 +1,4 @@
-//! 托盘（macOS 菜单栏）图标：关闭窗口后应用留在后台，从这里重新打开或直接执行常用操作。
+//! 托盘图标：关闭窗口后应用留在后台，从这里重新打开或直接执行常用操作。
 
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem};
@@ -36,25 +36,23 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     TrayIconBuilder::with_id("main")
-        .icon(Image::from_bytes(include_bytes!("../icons/tray-template.png"))?)
-        .icon_as_template(true)
+        .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
         .tooltip("NextWorkZone")
         .menu(&menu)
-        // macOS 习惯单击菜单栏图标弹出菜单；其他系统左键单击打开窗口，右键弹出菜单
-        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        // 左键单击打开窗口，右键弹出菜单
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
             "show" => show_main(app),
             "capture" => crate::capture::toggle(app),
             "clipboard" => crate::clipboard::toggle(app),
-            "clipboard-pause" => crate::clipboard::toggle_paused(app),
+            "clipboard-pause" => nextworkzone_app::clipboard::toggle_paused(&app.state::<std::sync::Arc<nextworkzone_app::AppState>>()),
             action => {
                 show_main(app);
                 let _ = app.emit(TRAY_EVENT, action);
             }
         })
         .on_tray_icon_event(|tray, event| {
-            #[cfg(not(target_os = "macos"))]
             if let tauri::tray::TrayIconEvent::Click {
                 button: tauri::tray::MouseButton::Left,
                 button_state: tauri::tray::MouseButtonState::Up,
@@ -63,8 +61,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             {
                 show_main(tray.app_handle());
             }
-            #[cfg(target_os = "macos")]
-            let _ = (tray, event);
         })
         .build(app)?;
     app.manage(ClipboardPauseItem(pause));
@@ -79,9 +75,6 @@ pub fn update_clipboard_pause(app: &AppHandle, paused: bool) {
 
 /// 显示并聚焦主窗口（关闭窗口时只是隐藏了它）。
 pub fn show_main(app: &AppHandle) {
-    // 快速记录收起时可能隐藏了整个应用
-    #[cfg(target_os = "macos")]
-    let _ = app.show();
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

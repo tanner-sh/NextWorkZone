@@ -147,7 +147,7 @@ function FileDiffView({ id, diff, annotations }: { id: string; diff: FileDiff; a
                       <tr className="diff-thread">
                         <td colSpan={4}>
                           <CommentBox
-                            placeholder={`评论第 ${r.newNo ?? r.oldNo} 行（⌘↵ 发送，Esc 取消）`}
+                            placeholder={`评论第 ${r.newNo ?? r.oldNo} 行（Ctrl+Enter 发送，Esc 取消）`}
                             onCancel={() => setComposing(null)}
                             onSubmit={async (body) => {
                               await onComment(diff, { oldLine: r.kind === "add" ? null : r.oldNo, newLine: r.kind === "del" ? null : r.newNo }, body);

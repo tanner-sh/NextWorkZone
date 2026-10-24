@@ -36,7 +36,7 @@ function eventText(e: WorkEvent): string {
   return `${action} · ${subject}${detail ? `：${detail}` : ""}`;
 }
 
-/** 同一个问题上的几件事合成一句，例如“FYX-1 概要：处理中 → 已解决；评论 1 条；修改了附件”。 */
+/** 同一个问题上的几件事合成一句，例如“PROJ-1 概要：处理中 → 已解决；评论 1 条；修改了附件”。 */
 function describeJira(list: WorkEvent[]): string {
   const parts: string[] = [];
   for (const e of list) {

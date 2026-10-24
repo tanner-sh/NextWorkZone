@@ -7,26 +7,12 @@ use nextworkzone_core::{Error, Result};
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-/// 使用全局快捷键的功能。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Action {
-    Capture,
-    Clipboard,
-}
+pub use nextworkzone_app::Shortcut as Action;
 
-impl Action {
-    fn label(self) -> &'static str {
-        match self {
-            Action::Capture => "快速记录",
-            Action::Clipboard => "剪贴板",
-        }
-    }
-
-    fn run(self, app: &AppHandle) {
-        match self {
-            Action::Capture => crate::capture::toggle(app),
-            Action::Clipboard => crate::clipboard::toggle(app),
-        }
+fn run(action: Action, app: &AppHandle) {
+    match action {
+        Action::Capture => crate::capture::toggle(app),
+        Action::Clipboard => crate::clipboard::toggle(app),
     }
 }
 
@@ -72,7 +58,7 @@ pub fn set(app: &AppHandle, action: Action, shortcut: &str) -> Result<()> {
     }
     let registered = manager.on_shortcut(shortcut, move |app, _, event| {
         if event.state == ShortcutState::Pressed {
-            action.run(app);
+            run(action, app);
         }
     });
     match registered {
@@ -88,7 +74,7 @@ pub fn set(app: &AppHandle, action: Action, shortcut: &str) -> Result<()> {
             if let Some(old) = old
                 && manager.on_shortcut(old.as_str(), move |app, _, event| {
                     if event.state == ShortcutState::Pressed {
-                        action.run(app);
+                        run(action, app);
                     }
                 })
                 .is_ok()

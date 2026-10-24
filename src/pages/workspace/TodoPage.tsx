@@ -210,7 +210,7 @@ export function TodoPage() {
         ) : (
           <div className="empty-center">
             <div className="muted">选择左侧的待办查看详情</div>
-            <div className="muted small">随时按 ⌘⇧N 快速记一条待办</div>
+            <div className="muted small">随时按 Ctrl+Shift+N 快速记一条待办</div>
           </div>
         )}
       </section>
