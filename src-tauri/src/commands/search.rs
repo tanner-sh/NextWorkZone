@@ -65,28 +65,40 @@ pub async fn global_search(app: AppHandle, state: State<'_, AppState>, query: St
     let wiki_local = state.confluence().is_ok() && state.config().wiki_tools.index_enabled && !wiki_index_empty(&state).await;
 
     if local {
-        let ws = state.workspace.clone();
-        let q = query.clone();
-        if let Ok(Ok(hits)) = tauri::async_runtime::spawn_blocking(move || ws.search(&q, limit)).await {
+        // 四个库互不相关，同时查，用时取决于最慢的一个
+        let (workspace, issues, pages, clips) = tokio::join!(
+            async {
+                let ws = state.workspace.clone();
+                let q = query.clone();
+                tauri::async_runtime::spawn_blocking(move || ws.search(&q, limit)).await.ok().and_then(|r| r.ok())
+            },
+            async {
+                if !jira_local {
+                    return None;
+                }
+                let index = state.issue_index.clone();
+                let q = IndexQuery { text: query.clone(), limit: limit as u32, ..Default::default() };
+                tauri::async_runtime::spawn_blocking(move || index.search(&q, "")).await.ok().and_then(|r| r.ok())
+            },
+            async { if wiki_local { search_wiki_local(&state, &query, limit).await.and_then(|r| r.ok()) } else { None } },
+            async {
+                let store = app.try_state::<Clip>()?.store.clone();
+                let q = ListQuery { text: query.clone(), limit: Some(limit), ..Default::default() };
+                tauri::async_runtime::spawn_blocking(move || store.list(&q)).await.ok().and_then(|r| r.ok())
+            },
+        );
+        if let Some(hits) = workspace {
             results.workspace = hits;
         }
-        if jira_local {
-            let index = state.issue_index.clone();
-            let q = IndexQuery { text: query.clone(), limit: limit as u32, ..Default::default() };
-            if let Ok(Ok(hits)) = tauri::async_runtime::spawn_blocking(move || index.search(&q, "")).await {
-                results.issues = hits;
-                results.issues_source = Some("local");
-            }
+        if let Some(hits) = issues {
+            results.issues = hits;
+            results.issues_source = Some("local");
         }
-        if wiki_local && let Some(Ok(hits)) = search_wiki_local(&state, &query, limit).await {
+        if let Some(hits) = pages {
             results.pages = hits;
         }
-        if let Some(clip) = app.try_state::<Clip>() {
-            let store = clip.store.clone();
-            let q = ListQuery { text: query.clone(), limit: Some(limit), ..Default::default() };
-            if let Ok(Ok(items)) = tauri::async_runtime::spawn_blocking(move || store.list(&q)).await {
-                results.clips = items;
-            }
+        if let Some(items) = clips {
+            results.clips = items;
         }
     }
 

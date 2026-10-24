@@ -24,7 +24,10 @@ function merge(local: SearchResults, remote: SearchResults): SearchResults {
   };
 }
 
-/** 输入停顿 `delay` 毫秒后搜索；少于两个字或是网址时不搜索。 */
+/** 本机结果只需几十毫秒，输入稍停就查。 */
+const LOCAL_DELAY = 100;
+
+/** 输入停顿后搜索：本机数据停顿 100 毫秒就查，服务器停顿 `delay` 毫秒才查（避免边输入边发请求）。少于两个字或是网址时不搜索。 */
 export function useUnifiedSearch(query: string, limit: number, delay = 250): UnifiedSearch {
   const [state, setState] = useState<UnifiedSearch>({ results: null, pending: false, error: null });
 
@@ -36,21 +39,23 @@ export function useUnifiedSearch(query: string, limit: number, delay = 250): Uni
     }
     let cancelled = false;
     setState((s) => ({ ...s, pending: true }));
-    const timer = setTimeout(async () => {
-      try {
-        const local = await api.globalSearch(q, { phase: "local", limit });
-        if (cancelled) return;
-        setState({ results: local, pending: true, error: null });
-        const remote = await api.globalSearch(q, { phase: "remote", limit });
-        if (cancelled) return;
-        setState({ results: merge(local, remote), pending: false, error: null });
-      } catch (e) {
-        if (!cancelled) setState((s) => ({ ...s, pending: false, error: errorMessage(e) }));
-      }
-    }, delay);
+    // 清除计时器后，等待它的搜索不再开始
+    const timers: number[] = [];
+    const after = (ms: number) => new Promise<void>((resolve) => timers.push(window.setTimeout(resolve, ms)));
+    const fail = (e: unknown) => {
+      if (!cancelled) setState((s) => ({ ...s, pending: false, error: errorMessage(e) }));
+    };
+    const local = after(LOCAL_DELAY).then(() => api.globalSearch(q, { phase: "local", limit }));
+    local.then((results) => {
+      if (!cancelled) setState({ results, pending: true, error: null });
+    }, fail);
+    const remote = after(Math.max(delay, LOCAL_DELAY)).then(() => api.globalSearch(q, { phase: "remote", limit }));
+    Promise.all([local, remote]).then(([l, r]) => {
+      if (!cancelled) setState({ results: merge(l, r), pending: false, error: null });
+    }, fail);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      timers.forEach(clearTimeout);
     };
   }, [query, limit, delay]);
 
