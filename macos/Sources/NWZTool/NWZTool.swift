@@ -3,6 +3,7 @@ import NWZCore
 import NWZServices
 import NWZJira
 import NWZWiki
+import NWZGitLab
 import NWZRich
 
 @main
@@ -21,6 +22,7 @@ struct NWZTool {
             NWZTool jira-search <JQL>、jira-issue <问题键>、jira-fields；支持 --data-dir。
             只读查询当前账号与版本；默认读取 NextWorkZone-dev 的配置和凭据。
             """
+        if arguments.first?.hasPrefix("gl-") == true { return try await gitlab(arguments) }
         if arguments.first?.hasPrefix("jira-") == true { return try await jira(arguments) }
         if arguments.first?.hasPrefix("wiki-") == true || arguments.first == "weekly-load" { return try await wiki(arguments) }
         if arguments == ["--help"] || arguments == ["-h"] { print(usage); return 0 }
@@ -57,6 +59,21 @@ struct NWZTool {
         }
         return failed ? 1 : 0
     }
+    private static func gitlab(_ arguments: [String]) async throws -> Int32 {
+        var args = arguments, paths = AppPaths(development: true)
+        if let index = args.firstIndex(of: "--data-dir") {
+            guard index + 1 < args.count else { throw NWZError.other("--data-dir 后需要指定目录") }
+            paths = AppPaths(dataDirectory: URL(fileURLWithPath: NSString(string: args[index + 1]).expandingTildeInPath))
+            args.removeSubrange(index...(index + 1))
+        }
+        guard args.count <= 2 else { throw NWZError.other("用法：NWZTool gl-命令 [JSON 参数] [--data-dir 目录]") }
+        let input = args.count == 2 ? try JSONDecoder().decode([String: JSONValue].self, from: Data(args[1].utf8)) : [:]
+        let settings = try SettingsService(paths: paths, configuration: ConfigurationStore(path: paths.config))
+        let client = try await GitLabClient(rest: settings.restClient(.gitlab))
+        let data = try await GitLabDebug.run(args[0].replacingOccurrences(of: "-", with: "_"), arguments: input, client: client)
+        FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10])); return 0
+    }
+
     private static func jira(_ arguments: [String]) async throws -> Int32 {
         var args = arguments
         var paths = AppPaths(development: true)

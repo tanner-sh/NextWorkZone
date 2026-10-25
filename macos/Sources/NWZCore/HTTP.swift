@@ -9,7 +9,8 @@ public struct HTTPResponse: Sendable {
     public init(data: Data, status: Int, headers: [String: String] = [:], url: URL) {
         self.data = data; self.status = status; self.headers = headers; self.url = url
     }
-    public var contentType: String? { headers.first { $0.key.lowercased() == "content-type" }?.value }
+    public func header(_ name: String) -> String? { headers.first { $0.key.lowercased() == name.lowercased() }?.value }
+    public var contentType: String? { header("content-type") }
 }
 
 public protocol HTTPTransport: Sendable {

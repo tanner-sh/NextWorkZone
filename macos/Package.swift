@@ -18,15 +18,16 @@ let package = Package(
         .target(name: "NWZWorkspace", dependencies: ["NWZCore", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "NWZJira", dependencies: ["NWZCore", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "NWZWiki", dependencies: ["NWZCore", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(name: "NWZGitLab", dependencies: ["NWZCore", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "NWZPreview", dependencies: ["NWZCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .target(name: "NWZServices", dependencies: ["NWZCore", "NWZWorkspace", "NWZRich", "NWZPreview", "NWZJira", "NWZWiki"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .executableTarget(name: "NWZTool", dependencies: ["NWZServices", "NWZCore", "NWZJira", "NWZWiki"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .testTarget(name: "NWZTests", dependencies: ["NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "CLibXML2"], resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
+        .target(name: "NWZServices", dependencies: ["NWZCore", "NWZWorkspace", "NWZRich", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .executableTarget(name: "NWZTool", dependencies: ["NWZServices", "NWZCore", "NWZJira", "NWZWiki", "NWZGitLab"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "NWZTests", dependencies: ["NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab", "CLibXML2"], resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
         // UniFFI 生成的 C 头文件（由 build.sh 放入 include/）
         .target(name: "CoreFFI", path: "Sources/CoreFFI"),
         .executableTarget(
             name: "NextWorkZone",
-            dependencies: ["CoreFFI", "NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki"],
+            dependencies: ["CoreFFI", "NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab"],
             path: "Sources/NextWorkZone",
             swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("BareSlashRegexLiterals")],
             linkerSettings: [
