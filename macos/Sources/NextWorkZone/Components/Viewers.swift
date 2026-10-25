@@ -10,24 +10,48 @@ final class PreviewWindow: NSObject, NSWindowDelegate {
     static let shared = PreviewWindow()
     private var window: NSWindow?
 
+    /// 小于这个尺寸的窗口（包括记住的尺寸）不合用，改用默认大小。
+    private static let minSize = NSSize(width: 720, height: 520)
+    private static let autosaveName = "NextWorkZonePreviewWindow"
+
     func show<V: View>(title: String, _ content: V) {
         let host = NSHostingController(rootView: content.environment(AppModel.shared))
+        // 窗口大小不随内容变化：默认会缩到内容的最小尺寸（图片查看器只有 400×300）
+        host.sizingOptions = []
         if window == nil {
-            let w = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
+            let w = KeyWindow(contentRect: NSRect(origin: .zero, size: Self.minSize), styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.isReleasedWhenClosed = false
             w.titlebarAppearsTransparent = true
             w.delegate = self
-            w.setFrameAutosaveName("NextWorkZonePreview")
-            if !w.setFrameUsingName("NextWorkZonePreview") { w.center() }
+            // 先恢复记住的大小再设最小尺寸：否则记住的过小尺寸会先被撑到最小尺寸，看起来就“合用”了。
+            // 之前的版本会把窗口缩到内容的最小尺寸并记住，所以换一个名称，不再使用那时记住的大小。
+            if !w.setFrameUsingName(Self.autosaveName) || w.frame.width < Self.minSize.width || w.frame.height < Self.minSize.height {
+                w.setFrame(Self.defaultFrame(), display: false)
+            }
+            w.minSize = Self.minSize
+            w.setFrameAutosaveName(Self.autosaveName)
             window = w
         }
-        window?.contentViewController = host
+        // 设置 contentViewController 时窗口会改成控制器视图的尺寸（新建时为 0，再被撑到最小尺寸），保留原来的位置和大小
+        if let window {
+            let frame = window.frame
+            window.contentViewController = host
+            window.setFrame(frame, display: false)
+        }
         window?.title = title
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 
     func close() { window?.orderOut(nil) }
+
+    /// 与主窗口一样大（与 Tauri 版铺满窗口的查看器相当）；主窗口不可见时取屏幕的 85%。
+    private static func defaultFrame() -> NSRect {
+        if let main = MainWindow.window, main.isVisible, main.frame.width >= minSize.width { return main.frame }
+        let area = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
+        let size = NSSize(width: area.width * 0.85, height: area.height * 0.85)
+        return NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
+    }
 
     /// Esc 关闭。
     private final class KeyWindow: NSWindow {
@@ -49,10 +73,18 @@ private struct ImageViewerView: View {
     @State private var image: NSImage?
     @State private var failed = false
 
+    @State private var actualSize = false
+
     var body: some View {
         Group {
             if let image {
-                ZoomableImage(image: image)
+                ZoomableImage(image: image, actualSize: actualSize) { actualSize.toggle() }
+                    .overlay(alignment: .topTrailing) {
+                        Button(actualSize ? "适应窗口" : "原始大小", systemImage: actualSize ? "arrow.down.right.and.arrow.up.left" : "1.magnifyingglass") { actualSize.toggle() }
+                            .buttonStyle(.glass)
+                            .padding(.top, 34).padding(.trailing, 14)
+                            .help("也可以双击图片切换；按住 ⌥ 滚动或双指捏合缩放")
+                    }
             } else if failed {
                 ContentUnavailableView("无法加载图片", systemImage: "photo", description: Text("可能需要先网页登录"))
             } else {
@@ -73,30 +105,81 @@ private struct ImageViewerView: View {
     }
 }
 
-/// 可缩放、拖动的图片（NSScrollView 的放大功能）。
+/// 可缩放、拖动的图片（NSScrollView 的放大功能）。默认缩小到适应窗口（不放大小图），图片比窗口小时居中；
+/// `actualSize` 为真时按原始大小显示。双击切换。
 struct ZoomableImage: NSViewRepresentable {
     var image: NSImage
+    var actualSize = false
+    var onDoubleClick: () -> Void = {}
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
+        scroll.contentView = CenteringClipView()
         scroll.allowsMagnification = true
-        scroll.minMagnification = 0.1
+        scroll.minMagnification = 0.05
         scroll.maxMagnification = 8
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
         scroll.backgroundColor = .windowBackgroundColor
-        let view = NSImageView(image: image)
+        let view = ImageView(image: image)
         view.imageScaling = .scaleNone
         view.frame = CGRect(origin: .zero, size: image.size)
+        view.onDoubleClick = { context.coordinator.onDoubleClick() }
         scroll.documentView = view
-        DispatchQueue.main.async {
-            let fit = min(scroll.bounds.width / max(image.size.width, 1), scroll.bounds.height / max(image.size.height, 1), 1)
-            scroll.magnification = fit
-        }
+        context.coordinator.scroll = scroll
+        // 窗口大小变化时，适应窗口的状态下重新适应
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.resized), name: NSView.frameDidChangeNotification, object: scroll)
+        scroll.postsFrameChangedNotifications = true
+        DispatchQueue.main.async { context.coordinator.apply() }
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {}
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let c = context.coordinator
+        c.onDoubleClick = onDoubleClick
+        if c.actualSize != actualSize {
+            c.actualSize = actualSize
+            c.apply()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(image: image, actualSize: actualSize) }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        let image: NSImage
+        var actualSize: Bool
+        var onDoubleClick: () -> Void = {}
+        weak var scroll: NSScrollView?
+        init(image: NSImage, actualSize: Bool) { self.image = image; self.actualSize = actualSize }
+
+        func apply() {
+            guard let scroll, scroll.bounds.width > 0 else { return }
+            let fit = min(scroll.bounds.width / max(image.size.width, 1), scroll.bounds.height / max(image.size.height, 1), 1)
+            scroll.magnification = actualSize ? 1 : fit
+        }
+
+        @objc func resized() { if !actualSize { apply() } }
+    }
+
+    private final class ImageView: NSImageView {
+        var onDoubleClick: () -> Void = {}
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 { onDoubleClick() } else { super.mouseDown(with: event) }
+        }
+    }
+}
+
+/// 内容比可见区域小时居中显示（默认贴在左上角）。
+final class CenteringClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        guard let document = documentView else { return rect }
+        if rect.width > document.frame.width { rect.origin.x = (document.frame.width - rect.width) / 2 }
+        if rect.height > document.frame.height { rect.origin.y = (document.frame.height - rect.height) / 2 }
+        return rect
+    }
 }
 
 /// 附件预览：图片、PDF、音视频、Office 文档由系统的快速查看显示；文本、表格、压缩包由应用层转换后显示（能识别 GBK 等编码）。

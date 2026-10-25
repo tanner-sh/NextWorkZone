@@ -128,7 +128,7 @@ private struct LinkForm: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(issueKey) 的关系").font(.callout).foregroundStyle(.secondary)
-                    SearchPicker<Relation>(selected: relation.map { [$0] } ?? [], onChange: { relation = $0.first }, search: { q in relations.filter { q.isEmpty || $0.label.lowercased().contains(q.lowercased()) } }, label: { $0.label }, detail: { $0.typeName }, placeholder: types == nil ? "正在加载链接类型…" : "搜索关系，例如“阻塞”", searchOnFocus: true)
+                    SearchPicker<Relation>(selected: relation.map { [$0] } ?? [], onChange: { relation = $0.first }, search: { q in relations.filter { q.isEmpty || $0.label.lowercased().contains(q.lowercased()) } }, label: { $0.label }, detail: { $0.typeName }, placeholder: types == nil ? "正在加载链接类型…" : "搜索关系，例如“阻塞”", searchOnFocus: true, sourceVersion: types?.count ?? -1)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("问题").font(.callout).foregroundStyle(.secondary)

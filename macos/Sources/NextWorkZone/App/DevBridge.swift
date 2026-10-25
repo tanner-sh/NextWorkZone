@@ -123,6 +123,8 @@ enum DevBridge {
             t.searchQuery = query["searchQuery"]
             model.navigate(t)
         case "/palette": model.paletteOpen.toggle()
+        // /image?src=<地址>&service=jira：打开图片查看器
+        case "/image": if let src = query["src"] { ImageViewer.show(src: src, service: Service(rawValue: query["service"] ?? "") ?? .jira, alt: "") }
         case "/quick-todo": model.quickTodoOpen.toggle()
         case "/capture": CaptureWindow.shared.toggle()
         case "/clipboard": ClipboardPanel.shared.toggle()

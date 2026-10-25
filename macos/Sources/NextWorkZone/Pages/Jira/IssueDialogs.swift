@@ -120,7 +120,8 @@ struct CreateIssueSheet: View {
                             search: { q in (projects ?? []).filter { "\($0.key) \($0.name)".lowercased().contains(q.lowercased()) || q.isEmpty } },
                             label: { "\($0.name)（\($0.key)）" },
                             placeholder: projects == nil ? "正在加载项目…" : "搜索项目名称或键",
-                            searchOnFocus: true
+                            searchOnFocus: true,
+                            sourceVersion: projects?.count ?? -1
                         )
                     }
                 }

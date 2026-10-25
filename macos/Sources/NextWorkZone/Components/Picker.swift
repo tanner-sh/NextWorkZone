@@ -15,6 +15,8 @@ struct SearchPicker<Item: Hashable>: View {
     var idleHeading: String? = nil
     /// 允许直接使用输入的文字（例如新标签）
     var allowCustom: ((String) -> Item)? = nil
+    /// 候选数据异步加载时传入（例如条数）：变化后重新搜索。否则聚焦时数据还没到，候选列表一直是空的
+    var sourceVersion: Int = 0
 
     @State private var text = ""
     @State private var results: [Item] = []
@@ -53,6 +55,9 @@ struct SearchPicker<Item: Hashable>: View {
                     .onChange(of: text) { _, q in query(q) }
                     .onChange(of: focused) { _, f in
                         if f && searchOnFocus && text.isEmpty { query("") }
+                    }
+                    .onChange(of: sourceVersion) {
+                        if focused && (searchOnFocus || !text.isEmpty) { query(text) }
                     }
                     .onKeyPress(.downArrow) { active = min(active + 1, max(results.count - 1, 0)); return .handled }
                     .onKeyPress(.upArrow) { active = max(active - 1, 0); return .handled }
