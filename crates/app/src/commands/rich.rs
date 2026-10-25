@@ -8,14 +8,6 @@ pub async fn rich_from_html(html: String) -> Result<Doc> {
     Ok(rich::from_html(&html))
 }
 
-pub async fn rich_from_markdown(markdown: String) -> Result<Doc> {
-    Ok(rich::from_markdown(&markdown))
-}
-
-pub async fn rich_to_markdown(doc: Doc) -> Result<String> {
-    Ok(rich::to_markdown(&doc))
-}
-
 pub async fn rich_to_wiki(doc: Doc) -> Result<String> {
     Ok(rich::to_wiki(&doc))
 }

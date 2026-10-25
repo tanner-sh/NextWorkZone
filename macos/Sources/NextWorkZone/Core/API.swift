@@ -1,6 +1,7 @@
 import Foundation
 import NWZCore
 import NWZServices
+import NWZRich
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -34,6 +35,11 @@ final class API: @unchecked Sendable {
         if cmd == "test_connection" {
             guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
             return try JSONEncoder().encode(await settings.testConnection(service))
+        }
+        if cmd == "rich_from_markdown" { return try JSONEncoder().encode(Markdown.parse(args["markdown"]?.string ?? "")) }
+        if cmd == "rich_to_markdown" {
+            guard let doc = args["doc"]?.decode(RichDoc.self) else { throw APIError(message: "缺少文档") }
+            return try JSONEncoder().encode(Markdown.write(doc))
         }
         let object = JSONValue.object(args)
         let text = String(decoding: try JSONEncoder().encode(object), as: UTF8.self)
