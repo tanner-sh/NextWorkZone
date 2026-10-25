@@ -1,0 +1,86 @@
+{
+  "key": "ABC-1",
+  "fields": {
+    "summary": "导入失败",
+    "created": "2026-10-22T09:00:00.000+0800",
+    "reporter": {
+      "name": "me",
+      "displayName": "ME"
+    },
+    "comment": {
+      "comments": [
+        {
+          "id": "1",
+          "author": {
+            "name": "me",
+            "displayName": "ME"
+          },
+          "created": "2026-10-22T11:00:00.000+0800",
+          "body": "已修复，见 [~bob]"
+        },
+        {
+          "id": "2",
+          "author": {
+            "name": "bob",
+            "displayName": "BOB"
+          },
+          "created": "2026-10-22T12:00:00.000+0800",
+          "body": "好"
+        },
+        {
+          "id": "3",
+          "author": {
+            "name": "me",
+            "displayName": "ME"
+          },
+          "created": "2026-10-23T09:00:00.000+0800",
+          "body": "第二天"
+        }
+      ]
+    }
+  },
+  "changelog": {
+    "histories": [
+      {
+        "id": "10",
+        "author": {
+          "name": "me",
+          "displayName": "ME"
+        },
+        "created": "2026-10-22T14:00:00.000+0800",
+        "items": [
+          {
+            "field": "status",
+            "fromString": "处理中",
+            "toString": "已解决"
+          },
+          {
+            "field": "resolution",
+            "fromString": null,
+            "toString": "已修复"
+          },
+          {
+            "field": "计划日期",
+            "fromString": "a",
+            "toString": "b"
+          }
+        ]
+      },
+      {
+        "id": "11",
+        "author": {
+          "name": "bob",
+          "displayName": "BOB"
+        },
+        "created": "2026-10-22T15:00:00.000+0800",
+        "items": [
+          {
+            "field": "assignee",
+            "fromString": "me",
+            "toString": "bob"
+          }
+        ]
+      }
+    ]
+  }
+}

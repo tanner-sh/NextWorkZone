@@ -1,0 +1,128 @@
+{
+  "key": "ABC-1",
+  "fields": {
+    "summary": "概要",
+    "issuetype": {
+      "iconUrl": "i.png"
+    },
+    "created": "2026-10-01T09:00:00.000+0800",
+    "reporter": {
+      "name": "bob",
+      "displayName": "BOB"
+    },
+    "assignee": {
+      "name": "me",
+      "displayName": "ME"
+    },
+    "comment": {
+      "comments": [
+        {
+          "id": "1",
+          "author": {
+            "name": "bob",
+            "displayName": "BOB"
+          },
+          "created": "2026-10-21T09:00:00.000+0800",
+          "body": "旧评论"
+        },
+        {
+          "id": "2",
+          "author": {
+            "name": "bob",
+            "displayName": "BOB"
+          },
+          "created": "2026-10-22T11:00:00.000+0800",
+          "body": "请看 [~me] 这个 !image.png!"
+        },
+        {
+          "id": "3",
+          "author": {
+            "name": "me",
+            "displayName": "ME"
+          },
+          "created": "2026-10-22T12:00:00.000+0800",
+          "body": "我自己的"
+        },
+        {
+          "id": "4",
+          "author": {
+            "name": "amy",
+            "displayName": "AMY"
+          },
+          "created": "2026-10-22T12:30:00.000+0800",
+          "body": "{quote}\n原文\n{quote}\n同意"
+        }
+      ]
+    }
+  },
+  "changelog": {
+    "histories": [
+      {
+        "id": "10",
+        "author": {
+          "name": "bob",
+          "displayName": "BOB"
+        },
+        "created": "2026-10-22T13:00:00.000+0800",
+        "items": [
+          {
+            "field": "status",
+            "fromString": "处理中",
+            "toString": "已解决"
+          },
+          {
+            "field": "resolution",
+            "fromString": null,
+            "toString": "已修复"
+          }
+        ]
+      },
+      {
+        "id": "11",
+        "author": {
+          "name": "bob",
+          "displayName": "BOB"
+        },
+        "created": "2026-10-22T13:01:00.000+0800",
+        "items": [
+          {
+            "field": "assignee",
+            "fromString": "BOB",
+            "toString": "ME",
+            "to": "me"
+          }
+        ]
+      },
+      {
+        "id": "12",
+        "author": {
+          "name": "amy",
+          "displayName": "AMY"
+        },
+        "created": "2026-10-22T13:02:00.000+0800",
+        "items": [
+          {
+            "field": "截止日期",
+            "fromString": "2026-10-21",
+            "toString": "2026-10-27"
+          }
+        ]
+      },
+      {
+        "id": "13",
+        "author": {
+          "name": "me",
+          "displayName": "ME"
+        },
+        "created": "2026-10-22T13:03:00.000+0800",
+        "items": [
+          {
+            "field": "status",
+            "fromString": "已解决",
+            "toString": "关闭"
+          }
+        ]
+      }
+    ]
+  }
+}

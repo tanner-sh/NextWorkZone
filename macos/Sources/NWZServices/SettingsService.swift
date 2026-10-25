@@ -14,6 +14,8 @@ public actor SettingsService {
     private var credentials: [String: String]
     private let bridge: (any LegacySettingsBridge)?
     private let injectedClient: HTTPClient?
+    private var cachedClient: HTTPClient?
+    private var clientProxy: String?
 
     public init(paths: AppPaths, configuration: ConfigurationStore, bridge: (any LegacySettingsBridge)? = nil, client: HTTPClient? = nil) throws {
         self.paths = paths; self.configuration = configuration; self.bridge = bridge; injectedClient = client
@@ -109,7 +111,22 @@ public actor SettingsService {
         let config = configuration.snapshot()
         let base = try config.baseURL(for: service)
         guard let token = credentials[Secret.token.key(for: service)], !token.isEmpty else { throw NWZError.missingToken(service) }
-        let client = try injectedClient ?? HTTPClient(proxy: config.proxy)
+        let client = try httpClient()
         return try await ConnectionProbe.check(service, base: base, token: token, client: client)
+    }
+
+    public func restClient(_ service: Service) throws -> RESTClient {
+        let base = try configuration.snapshot().baseURL(for: service)
+        guard let token = credentials[Secret.token.key(for: service)], !token.isEmpty else { throw NWZError.missingToken(service) }
+        return RESTClient(baseURL: base, token: token, authorizationHeader: service == .gitlab ? "PRIVATE-TOKEN" : "Authorization", http: try httpClient())
+    }
+
+    private func httpClient() throws -> HTTPClient {
+        if let injectedClient { return injectedClient }
+        let proxy = configuration.snapshot().proxy
+        if let cachedClient, proxy == clientProxy { return cachedClient }
+        let client = try HTTPClient(proxy: proxy)
+        cachedClient = client; clientProxy = proxy
+        return client
     }
 }

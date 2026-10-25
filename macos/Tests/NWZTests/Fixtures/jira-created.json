@@ -1,0 +1,21 @@
+{
+  "key": "ABC-2",
+  "fields": {
+    "summary": "新问题",
+    "created": "2026-10-22T11:00:00.000+0800",
+    "reporter": {
+      "name": "bob",
+      "displayName": "BOB"
+    },
+    "assignee": {
+      "name": "me",
+      "displayName": "ME"
+    },
+    "comment": {
+      "comments": []
+    }
+  },
+  "changelog": {
+    "histories": []
+  }
+}
