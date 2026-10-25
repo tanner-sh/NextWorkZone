@@ -139,7 +139,12 @@ public actor WikiIndex {
     }
     public func isEmpty() async throws -> Bool { try await database.query("SELECT COUNT(*) AS n FROM pages").first?["n"]?.integer == 0 }
     public func search(_ query: WikiQuery, me: String = "", now: Date = Date()) async throws -> [WikiPageHit] {
+        try await search(query, me: me, now: now, shortcut: true)
+    }
+    /// `shortcut` 为假时总是做完整查询（测试中用来核对两种查法的结果相同）。
+    func search(_ query: WikiQuery, me: String = "", now: Date = Date(), shortcut: Bool) async throws -> [WikiPageHit] {
         let terms = Self.terms(query.text)
+        if shortcut, terms.count == 1, terms[0].unicodeScalars.count < 3, let hits = try await searchShort(terms[0], query, me: me, now: now) { return hits }
         var args: [SQLValue] = [], conditions: [String] = [], scores: [String] = [], parameters: [String] = []
         func arg(_ value: SQLValue) -> String { args.append(value); return "?\(args.count)" }
         for term in terms {
@@ -160,6 +165,24 @@ public actor WikiIndex {
         let filter = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
         let sql = "WITH top AS (SELECT rowid AS r,\(score) AS score,modified_ms FROM pages \(filter) ORDER BY score DESC,modified_ms DESC LIMIT \(limit)) SELECT \(Self.hitColumns),\(Self.snippetColumns(parameters)) FROM top JOIN pages ON pages.rowid=top.r ORDER BY top.score DESC,top.modified_ms DESC"
         return try await database.query(sql, args).map(Self.hit)
+    }
+    /// 一两个字的单个关键词：用不上 trigram 索引，完整的查询要逐页查找全部正文（几千个页面约 50 毫秒）。
+    /// 结果的顺序是标题含关键词的在前、各自按修改时间排列，所以分两步：先取标题匹配的；不够时再按修改时间
+    /// 倒序逐页找正文匹配的，找够就停。常用词很快就能找够。结果与完整查询相同。
+    private func searchShort(_ term: String, _ query: WikiQuery, me: String, now: Date) async throws -> [WikiPageHit]? {
+        var args: [SQLValue] = [.text(term)], conditions: [String] = []
+        func arg(_ value: SQLValue) -> String { args.append(value); return "?\(args.count)" }
+        if let space = query.space, !space.isEmpty { conditions.append("space_key=\(arg(.text(space)))") }
+        if let kind = query.kind, !kind.isEmpty { conditions.append("kind=\(arg(.text(kind)))") }
+        if query.mine == true, !me.isEmpty { conditions.append("author=\(arg(.text(me)))") }
+        if let days = query.days, days > 0 { conditions.append("modified_ms>=\(arg(.integer(Int64(now.timeIntervalSince1970 * 1000 - Double(days) * 86_400_000))))") }
+        let limit = min(300, max(1, query.limit == nil || query.limit == 0 ? 50 : query.limit!))
+        let extra = conditions.map { " AND " + $0 }.joined()
+        let columns = "\(Self.hitColumns),\(Self.snippetColumns(["?1"]))"
+        let titled = try await database.query("SELECT \(columns) FROM pages WHERE instr(title_lc,?1)>0\(extra) ORDER BY modified_ms DESC LIMIT \(limit)", args)
+        guard titled.count < limit else { return titled.map(Self.hit) }
+        let rest = try await database.query("SELECT \(columns) FROM pages INDEXED BY pages_modified WHERE instr(title_lc,?1)=0 AND instr(text_lc,?1)>0\(extra) ORDER BY modified_ms DESC LIMIT \(limit - titled.count)", args)
+        return (titled + rest).map(Self.hit)
     }
     public func pagesWithIssue(_ key: String, limit: Int) async throws -> [WikiPageHit] {
         try await database.query("SELECT \(Self.hitColumns),\(Self.snippetColumns(["?2"])) FROM pages WHERE instr(jira_keys,?1)>0 ORDER BY modified_ms DESC LIMIT \(max(0, limit))", [.text(" " + key + " "), .text(Self.fold(key))]).map(Self.hit)

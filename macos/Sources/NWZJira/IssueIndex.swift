@@ -64,7 +64,12 @@ public actor IssueIndex {
         return (projects.reduce(0) { $0 + $1.count }, projects, lastSync)
     }
     public func search(_ query: IndexQuery, me: String) async throws -> [IssueHit] {
+        try await search(query, me: me, shortcut: true)
+    }
+    /// `shortcut` 为假时总是做完整查询（测试中用来核对两种查法的结果相同）。
+    func search(_ query: IndexQuery, me: String, shortcut: Bool) async throws -> [IssueHit] {
         let terms = JiraIndexText.terms(query.text)
+        if shortcut, terms.count == 1, !JiraQueries.looksLikeKey(terms[0]), let hits = try await searchSummaries(terms[0], query, me: me) { return hits }
         var arguments: [SQLValue] = [], conditions: [String] = [], scores: [String] = []
         func bind(_ value: String) -> String { arguments.append(.text(value)); return "?\(arguments.count)" }
         for term in terms {
@@ -83,6 +88,21 @@ public actor IssueIndex {
         let order = scores.isEmpty ? "" : "(" + scores.joined(separator: " + ") + ") DESC,"
         let rows = try await database.query("SELECT data FROM issues \(filter) ORDER BY \(order) updated_ms DESC LIMIT \(limit)", arguments)
         return Self.decode(rows).map { $0.hit(terms: terms) }
+    }
+    /// 单个关键词：概要中含关键词的得分至少 10，只在描述、评论中出现的最多 4，所以概要匹配的已经够数时，
+    /// 结果就是它们（同样按得分、更新时间排列），不必逐个查找很长的描述和评论。不够数时返回 nil，做完整查询。
+    private func searchSummaries(_ term: String, _ query: IndexQuery, me: String) async throws -> [IssueHit]? {
+        var arguments: [SQLValue] = [.text(term)], conditions = ["instr(summary_lc,?1)>0"]
+        func bind(_ value: String) -> String { arguments.append(.text(value)); return "?\(arguments.count)" }
+        if !query.project.isEmpty { conditions.append("project=\(bind(query.project))") }
+        if query.state == "unresolved" { conditions.append("resolved=0") }
+        if query.state == "resolved" { conditions.append("resolved=1") }
+        if query.mine && !me.isEmpty { conditions.append("instr(participants,\(bind(" " + me + " ")))>0") }
+        let limit = min(500, max(1, query.limit == nil || query.limit == 0 ? 100 : query.limit!))
+        let score = "10+(instr(description_lc,?1)>0)*3+(instr(comments_lc,?1)>0)"
+        let rows = try await database.query("SELECT data FROM issues WHERE \(conditions.joined(separator: " AND ")) ORDER BY \(score) DESC, updated_ms DESC LIMIT \(limit)", arguments)
+        guard rows.count == limit else { return nil }
+        return Self.decode(rows).map { $0.hit(terms: [term]) }
     }
     public func byKeys(_ keys: [String]) async throws -> [IssueHit] {
         var result: [IssueHit] = []
