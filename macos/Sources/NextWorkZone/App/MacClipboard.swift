@@ -65,7 +65,8 @@ final class MacClipboard: SystemClipboard {
     func canPaste() -> Bool { AXIsProcessTrusted() }
 
     func requestPastePermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // kAXTrustedCheckOptionPrompt 的值；直接引用那个全局变量在 Swift 6 中会被当作可变的共享状态
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             DispatchQueue.main.async { NSWorkspace.shared.open(url) }

@@ -72,7 +72,7 @@ enum GitLab {
     }
 
     /// 合并请求；`onOpen` 不提供时（正在查看）不显示“打开”。
-    static func mrMenu(_ mr: MergeRequest, onOpen: (() -> Void)? = nil) -> [MenuSpec] {
+    static func mrMenu(_ mr: MergeRequest, onOpen: (@MainActor () -> Void)? = nil) -> [MenuSpec] {
         let keys = AppModel.shared.isReady(.jira) ? issueKeys(in: "\(mr.title) \(mr.sourceBranch)") : []
         var specs: [MenuSpec] = []
         if let onOpen { specs.append(.action("打开", icon: "arrow.triangle.pull", onOpen)) }
@@ -92,7 +92,7 @@ enum GitLab {
     }
 
     /// 代码浏览中的文件或目录。
-    static func treeEntryMenu(_ entry: TreeEntry, projectUrl: String, ref: String, onOpen: @escaping () -> Void) -> [MenuSpec] {
+    static func treeEntryMenu(_ entry: TreeEntry, projectUrl: String, ref: String, onOpen: @escaping @MainActor () -> Void) -> [MenuSpec] {
         let encodedPath = entry.path.split(separator: "/").map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }.joined(separator: "/")
         let url = "\(projectUrl)/-/\(entry.kind == "tree" ? "tree" : "blob")/\(ref.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ref)/\(encodedPath)"
         var specs: [MenuSpec] = []
@@ -101,7 +101,7 @@ enum GitLab {
         return specs
     }
 
-    static func commitMenu(_ c: Commit, onOpen: @escaping () -> Void) -> [MenuSpec] {
+    static func commitMenu(_ c: Commit, onOpen: @escaping @MainActor () -> Void) -> [MenuSpec] {
         var specs: [MenuSpec] = [.action("查看提交", icon: "smallcircle.filled.circle", onOpen), .separator, copy("复制提交 SHA", c.id, icon: "doc.on.doc"), copy("复制短 SHA", c.shortId), copy("复制提交信息", c.message.isEmpty ? c.title : c.message)]
         if let url = c.webUrl {
             specs.append(copy("复制链接", url, icon: "link"))
@@ -111,7 +111,7 @@ enum GitLab {
         return specs
     }
 
-    static func branchMenu(_ b: Branch, projectUrl: String, onOpen: @escaping () -> Void, onCreateMr: (() -> Void)?) -> [MenuSpec] {
+    static func branchMenu(_ b: Branch, projectUrl: String, onOpen: @escaping @MainActor () -> Void, onCreateMr: (@MainActor () -> Void)?) -> [MenuSpec] {
         let url = "\(projectUrl)/-/tree/\(b.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? b.name)"
         var specs: [MenuSpec] = [.action("浏览代码", icon: "doc.text", onOpen)]
         if let onCreateMr { specs.append(.action("发起合并请求…", icon: "arrow.triangle.pull", onCreateMr)) }

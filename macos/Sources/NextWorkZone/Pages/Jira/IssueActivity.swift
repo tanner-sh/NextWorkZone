@@ -152,7 +152,7 @@ private struct CommentItem: View {
     private var menu: [MenuSpec] {
         let c = comment
         let base = AppModel.shared.baseUrl(.jira)
-        var specs: [MenuSpec] = [.action("引用回复", icon: "arrowshape.turn.up.left", onQuote)]
+        var specs: [MenuSpec] = [.action("引用回复", icon: "arrowshape.turn.up.left") { onQuote() }]
         if c.mine { specs.append(.action("编辑", icon: "pencil") { editing = c.body }) }
         specs += [
             .separator,

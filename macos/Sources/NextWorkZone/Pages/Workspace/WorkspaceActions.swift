@@ -18,7 +18,7 @@ enum TodoActions {
 
     /// `onPromote` 提供时显示“创建为 Jira 问题”。
     static func menu(_ todo: Todo, onSaved: @escaping (Todo) -> Void = { _ in }, onDeleted: @escaping (Todo) -> Void = { _ in }, onPromote: ((Todo) -> Void)? = nil) -> [MenuSpec] {
-        func update(_ patch: @escaping (inout Todo) -> Void) -> () -> Void {
+        func update(_ patch: @escaping (inout Todo) -> Void) -> @MainActor () -> Void {
             { guarded { onSaved(try await save(todo, patch)) } }
         }
         func dueOption(_ label: String, _ due: String?) -> MenuSpec {
@@ -118,7 +118,7 @@ enum DocActions {
     }
 
     /// `beforeDelete` 在删除前调用，用于先关闭正在编辑的文档。
-    static func deleteItem(id: String, label: String, beforeDelete: @escaping () -> Void) -> MenuSpec {
+    static func deleteItem(id: String, label: String, beforeDelete: @escaping @MainActor () -> Void) -> MenuSpec {
         .item(label, icon: "trash", destructive: true, confirm: "确认删除？") {
             guarded {
                 beforeDelete()

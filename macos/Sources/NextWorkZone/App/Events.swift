@@ -14,7 +14,7 @@ enum Events {
 
     /// 发出事件；`payload` 为 JSON 文本。
     static func post(_ event: String, payload: String = "null") {
-        let send = { NotificationCenter.default.post(name: name(event), object: nil, userInfo: ["payload": payload]) }
+        let send: @Sendable () -> Void = { NotificationCenter.default.post(name: name(event), object: nil, userInfo: ["payload": payload]) }
         if Thread.isMainThread { send() } else { DispatchQueue.main.async(execute: send) }
     }
 

@@ -370,7 +370,7 @@ private struct BranchesTab: View {
                         }
                     }
                     .rowTap { onOpen(b.name) }
-                    .contextMenu(specs: { GitLab.branchMenu(b, projectUrl: projectUrl, onOpen: { onOpen(b.name) }, onCreateMr: !b.default && !b.merged ? { onCreateMr(b.name) } : nil) })
+                    .contextMenu(specs: { GitLab.branchMenu(b, projectUrl: projectUrl, onOpen: { onOpen(b.name) }, onCreateMr: !b.default && !b.merged ? { @MainActor in onCreateMr(b.name) } : nil) })
                 }
             }
             .listStyle(.inset)

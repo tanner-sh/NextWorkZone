@@ -63,7 +63,7 @@ final class IssueMenu {
             onUpdated?(detail)
             toast(message)
         }
-        let copy: (@escaping () async throws -> String) -> () -> Void = { text in
+        let copy: (@escaping () async throws -> String) -> @MainActor () -> Void = { text in
             { guarded {
                 Pasteboard.copy(try await text())
                 toast("已复制")
@@ -75,9 +75,10 @@ final class IssueMenu {
             specs.append(.separator)
         }
         specs.append(.lazy("流转", icon: "arrow.left.arrow.right") { [weak self] in
+            // 先发出请求，再在主线程上取问题信息，两者同时进行
             async let available = API.shared.jiraTransitions(key)
-            async let issue = full()
-            let (list, info) = try await (available, issue)
+            let info = try await full()
+            let list = try await available
             TemplateStore.shared.load()
             // 流转模板打开预先填好的对话框，确认后提交
             let usable = TemplateStore.shared.list.compactMap { tpl -> (JiraTemplate, Transition)? in
@@ -96,8 +97,8 @@ final class IssueMenu {
         })
         specs.append(.lazy("分配", icon: "person") { [weak self] in
             async let meTask = API.shared.jiraMe()
-            async let issueTask = full()
-            let (me, issue) = try await (meTask, issueTask)
+            let issue = try await full()
+            let me = try await meTask
             return [
                 .action("分配给我", disabled: issue.assigneeName == me) { guarded { updated(try await API.shared.jiraAssign(key, assignee: me), "\(key) 已分配给你") } },
                 .action("分配给…") { self?.assigning = AssignRequest(issue: issue, done: onUpdated) },
@@ -107,8 +108,8 @@ final class IssueMenu {
         })
         specs.append(.lazy("优先级", icon: "flag") {
             async let listTask = API.shared.jiraPriorities()
-            async let issueTask = full()
-            let (list, issue) = try await (listTask, issueTask)
+            let issue = try await full()
+            let list = try await listTask
             return list.map { p in
                 let isCurrent = issue.priority?.name == p.name
                 return .action(p.name, checked: isCurrent) {

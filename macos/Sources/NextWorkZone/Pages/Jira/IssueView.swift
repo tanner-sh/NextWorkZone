@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -513,18 +514,14 @@ private struct ChangesSince: View {
 /// 从拖入的项目中取出文件路径。
 func loadURLs(_ providers: [NSItemProvider], completion: @escaping @MainActor ([String]) -> Void) {
     let group = DispatchGroup()
-    let lock = NSLock()
-    var paths: [String] = []
+    // 各个回调在不同线程上执行
+    let paths = OSAllocatedUnfairLock<[String]>(initialState: [])
     for p in providers {
         group.enter()
         _ = p.loadObject(ofClass: URL.self) { url, _ in
-            if let url, url.isFileURL {
-                lock.lock()
-                paths.append(url.path)
-                lock.unlock()
-            }
+            if let url, url.isFileURL { paths.withLock { $0.append(url.path) } }
             group.leave()
         }
     }
-    group.notify(queue: .main) { MainActor.assumeIsolated { completion(paths) } }
+    group.notify(queue: .main) { MainActor.assumeIsolated { completion(paths.withLock { $0 }) } }
 }

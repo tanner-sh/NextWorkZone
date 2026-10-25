@@ -124,7 +124,7 @@ enum AttachmentViewer {
     /// 超过这个大小的文件不在应用内预览（需要先整个下载）。
     static let maxPreviewBytes = 30 * 1024 * 1024
 
-    static func menu(_ a: Attachment, preview: @escaping () -> Void, service: Service) -> [MenuSpec] {
+    static func menu(_ a: Attachment, preview: @escaping @MainActor () -> Void, service: Service) -> [MenuSpec] {
         [
             .action("预览", icon: "eye", preview),
             .action("用系统应用打开", icon: "arrow.up.forward.app") { openExternal(a, service: service) },

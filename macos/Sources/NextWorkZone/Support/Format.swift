@@ -1,14 +1,15 @@
 import Foundation
 
-/// 时间、日期、大小的显示方式，与 src/lib/format.ts、src/lib/workspace.ts 相同。
+/// 时间、日期、大小的显示方式。
 enum Fmt {
-    private static let iso: ISO8601DateFormatter = {
+    // ISO8601DateFormatter 可以在多个线程中同时使用，创建后不再修改
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
 
-    private static let isoNoFraction: ISO8601DateFormatter = {
+    nonisolated(unsafe) private static let isoNoFraction: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f

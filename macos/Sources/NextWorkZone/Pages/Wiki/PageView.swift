@@ -73,11 +73,11 @@ struct PageView: View {
     /// 更多按钮、页面空白处右键共用。
     private func pageActions(_ page: WikiPageDetail) -> [MenuSpec] {
         var specs: [MenuSpec] = []
-        if page.canEdit { specs.append(.action("编辑", icon: "pencil", onEdit)) }
+        if page.canEdit { specs.append(.action("编辑", icon: "pencil") { onEdit() }) }
         specs.append(.action("历史版本", icon: "clock.arrow.circlepath") { history = true })
         specs.append(.action("刷新", icon: "arrow.clockwise") { Task { await load() } })
         specs.append(.separator)
-        return specs + WikiMenus.page(id: page.id, title: page.title, space: page.spaceName, current: true, onNewChild: onNewChild)
+        return specs + WikiMenus.page(id: page.id, title: page.title, space: page.spaceName, current: true, onNewChild: { onNewChild() })
     }
 
     /// 点击任务的勾选框：勾选或取消（写入 Wiki）。

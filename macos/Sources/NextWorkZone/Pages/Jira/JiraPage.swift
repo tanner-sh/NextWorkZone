@@ -390,7 +390,7 @@ struct JiraPage: View {
                     }
                 }
             }
-            if let issues, visible.isEmpty { Text("没有匹配的问题").foregroundStyle(.secondary) }
+            if issues != nil, visible.isEmpty { Text("没有匹配的问题").foregroundStyle(.secondary) }
             if let issues, total > issues.count, filter.isEmpty {
                 Button(loadingMore ? "加载中…" : "加载更多（还有 \(total - issues.count) 条）", action: loadMore)
                     .disabled(loadingMore)

@@ -6,7 +6,8 @@ enum CodeHighlight {
     abstract and as async await boolean break byte case catch char class const continue def default defer del do double elif else enum export extends false final finally float fn for from func function go goto if impl import in instanceof int interface is let long loop match mod module mut namespace new nil none not null object or override package private protected pub public return self short static struct super switch synchronized this throw throws trait true try type typeof undefined unsafe use val var void volatile where while with yield select insert update delete into values set join left right inner outer on group by order having limit union create table alter drop index primary key foreign references begin commit rollback declare procedure
     """.split(whereSeparator: \.isWhitespace).map(String.init))
 
-    private static let patterns: [(Regex<Substring>, NSColor)] = [
+    // 规则创建后不再修改，可以在多个线程中同时使用
+    nonisolated(unsafe) private static let patterns: [(Regex<Substring>, NSColor)] = [
         (try! Regex(#"//[^\n ]*|#(?!include)[^\n ]*|--[^\n ]*|/\*[\s\S]*?\*/"#), .systemGreen),
         (try! Regex(#""(?:\\.|[^"\\\n ])*"|'(?:\\.|[^'\\\n ])*'|`[^`]*`"#), .systemRed),
         (try! Regex(#"\b\d+(?:\.\d+)?\b"#), .systemPurple),

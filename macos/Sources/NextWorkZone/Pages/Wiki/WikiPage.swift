@@ -346,7 +346,7 @@ private struct SpaceTreeView: View {
         .help(s.description.isEmpty ? s.name : s.description)
         .rowTap { tree.toggle(id) }
         .tag(id)
-        .contextMenu(specs: { [.action(open ? "收起" : "展开") { tree.toggle(id) }, .separator] + WikiMenus.space(s, onCreate: { onCreate(s.key, nil) }, onRefresh: open ? { tree.refreshChildren(id) } : nil) })
+        .contextMenu(specs: { [.action(open ? "收起" : "展开") { tree.toggle(id) }, .separator] + WikiMenus.space(s, onCreate: { onCreate(s.key, nil) }, onRefresh: open ? { @MainActor in tree.refreshChildren(id) } : nil) })
     }
 
     private func pageRow(_ n: WikiNode, space: WikiSpace, depth: Int) -> some View {

@@ -18,7 +18,7 @@ enum KBImport {
         }
         for field in issue.fields where field.html != nil || textareas.contains(field.id) {
             parts.append("## \(field.name)")
-            parts.append(try await field.html.asyncMap { try await Rich.htmlToMarkdown($0, baseUrl: jiraBase) } ?? field.text)
+            if let html = field.html { parts.append(try await Rich.htmlToMarkdown(html, baseUrl: jiraBase)) } else { parts.append(field.text) }
         }
         if !issue.comments.isEmpty {
             parts.append("## 讨论记录")
@@ -60,14 +60,5 @@ enum KBImport {
     static func wikiVersion(_ url: String?) -> Int? {
         guard let url, let m = url.firstMatch(of: /[?&]pageVersion=(\d+)/) else { return nil }
         return Int(m.1)
-    }
-}
-
-extension Optional {
-    func asyncMap<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
-        switch self {
-        case .some(let v): try await transform(v)
-        case .none: nil
-        }
     }
 }

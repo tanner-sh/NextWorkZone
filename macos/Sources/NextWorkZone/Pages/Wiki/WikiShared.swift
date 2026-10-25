@@ -41,7 +41,7 @@ enum WikiMenus {
     static func pageUrl(_ id: String) -> String { "\(AppModel.shared.baseUrl(.confluence))/pages/viewpage.action?pageId=\(id)" }
 
     /// `title` 和 `space` 未知时（例如正文中的链接）按需查询。
-    static func page(id: String, title: String? = nil, space: String? = nil, current: Bool = false, onNewChild: (() -> Void)? = nil) -> [MenuSpec] {
+    static func page(id: String, title: String? = nil, space: String? = nil, current: Bool = false, onNewChild: (@MainActor () -> Void)? = nil) -> [MenuSpec] {
         let url = pageUrl(id)
         var cached: (String, String)? = title.flatMap { t in space.map { (t, $0) } }
         let info: () async throws -> (String, String) = {
@@ -51,7 +51,7 @@ enum WikiMenus {
             return (p.title, p.spaceName)
         }
         let getTitle: () async throws -> String = { if let title { return title }; return try await info().0 }
-        let copy: (@escaping () async throws -> String) -> () -> Void = { text in
+        let copy: (@escaping () async throws -> String) -> @MainActor () -> Void = { text in
             { guarded { Pasteboard.copy(try await text()); toast("已复制") } }
         }
         let favorite = WikiFavorites.shared.contains(id)
@@ -93,7 +93,7 @@ enum WikiMenus {
         return specs
     }
 
-    static func space(_ space: WikiSpace, onCreate: (() -> Void)? = nil, onRefresh: (() -> Void)? = nil) -> [MenuSpec] {
+    static func space(_ space: WikiSpace, onCreate: (@MainActor () -> Void)? = nil, onRefresh: (@MainActor () -> Void)? = nil) -> [MenuSpec] {
         let url = "\(AppModel.shared.baseUrl(.confluence))/display/\(space.key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? space.key)"
         var specs: [MenuSpec] = []
         if let home = space.homepageId { specs.append(.action("打开空间首页", icon: "text.book.closed") { AppModel.shared.navigate(NavTarget(.wiki, wikiPage: home)) }) }
@@ -115,7 +115,7 @@ enum WikiMenus {
 struct CommentBox: View {
     var placeholder: String
     var submitLabel = "发送"
-    var onCancel: (() -> Void)? = nil
+    var onCancel: (@MainActor () -> Void)? = nil
     var onSubmit: (String) async throws -> Void
     @State private var text = ""
     @State private var sending = false

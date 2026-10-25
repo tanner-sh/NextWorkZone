@@ -153,7 +153,7 @@ final class AppHost: NWZCore.AppHost, @unchecked Sendable {
         }
     }
 
-    private func onMain<T>(_ f: @MainActor () -> T) -> T {
+    private func onMain<T: Sendable>(_ f: @MainActor () -> T) -> T {
         if Thread.isMainThread { return MainActor.assumeIsolated(f) }
         return DispatchQueue.main.sync { MainActor.assumeIsolated(f) }
     }

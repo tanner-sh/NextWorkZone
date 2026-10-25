@@ -291,13 +291,12 @@ final class AppModel {
 /// 系统通知（首次使用时请求权限）。
 enum Notifier {
     static func send(_ title: String, _ body: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
-            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }
     }
 }

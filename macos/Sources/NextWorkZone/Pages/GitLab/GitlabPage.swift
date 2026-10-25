@@ -277,7 +277,7 @@ struct GitlabPage: View {
     }
 
     private func projectMenu(_ p: Project) -> [MenuSpec] {
-        let copy: (String) -> () -> Void = { text in { Pasteboard.copy(text); toast("已复制") } }
+        let copy: (String) -> @MainActor () -> Void = { text in { Pasteboard.copy(text); toast("已复制") } }
         let isStarred = starred.contains(p.id)
         return [
             .action("打开", icon: "folder") { openProject(p.id) },

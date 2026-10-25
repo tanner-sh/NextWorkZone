@@ -26,7 +26,7 @@ let package = Package(
             name: "NextWorkZone",
             dependencies: ["NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab", "NWZClipboard"],
             path: "Sources/NextWorkZone",
-            swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("BareSlashRegexLiterals")],
+            swiftSettings: [.swiftLanguageMode(.v6)],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Security"),
