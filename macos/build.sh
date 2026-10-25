@@ -36,8 +36,8 @@ fi
 
 # 命令行工具自带的 macOS 27 SDK 中 SwiftUI 的宏插件只随 Xcode 提供，因此用 26 的 SDK 编译（最低支持 26）
 SDK="${NWZ_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk}"
-SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build "${SWIFT_FLAGS[@]}"
-BIN="$(SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build "${SWIFT_FLAGS[@]}" --show-bin-path)/NextWorkZone"
+SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build --sdk "$SDK" "${SWIFT_FLAGS[@]}"
+BIN="$(SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build --sdk "$SDK" "${SWIFT_FLAGS[@]}" --show-bin-path)/NextWorkZone"
 
 APP="$PWD/build/NextWorkZone.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

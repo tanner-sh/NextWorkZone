@@ -5,15 +5,21 @@ import PackageDescription
 
 let rustLib = ProcessInfo.processInfo.environment["NWZ_RUST_LIB_DIR"] ?? "../target/debug"
 
+let sdk = ProcessInfo.processInfo.environment["SDKROOT"] ?? "/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk"
+
 let package = Package(
     name: "NextWorkZone",
     platforms: [.macOS(.v26)],
     targets: [
+        .systemLibrary(name: "CSQLite"),
+        .systemLibrary(name: "CLibXML2"),
+        .target(name: "NWZCore", dependencies: ["CSQLite"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "NWZTests", dependencies: ["NWZCore", "CLibXML2"], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I", "\(sdk)/usr/include/libxml2"])]),
         // UniFFI 生成的 C 头文件（由 build.sh 放入 include/）
         .target(name: "CoreFFI", path: "Sources/CoreFFI"),
         .executableTarget(
             name: "NextWorkZone",
-            dependencies: ["CoreFFI"],
+            dependencies: ["CoreFFI", "NWZCore"],
             path: "Sources/NextWorkZone",
             swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("BareSlashRegexLiterals")],
             linkerSettings: [
