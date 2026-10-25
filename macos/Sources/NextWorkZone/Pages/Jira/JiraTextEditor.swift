@@ -18,7 +18,7 @@ struct JiraTextEditor: View {
     private static let pendingPrefix = "https://pending.nextworkzone.invalid/"
     private static let colors = ["#de350b", "#ff991f", "#00875a", "#0065ff", "#6554c0", "#97a0af"]
 
-    @State private var visual = UserDefaults.standard.string(forKey: JiraTextEditor.modeKey) != "text"
+    @State private var visual = AppPreferences.shared.string(forKey: JiraTextEditor.modeKey) != "text"
     @State private var controller = RichEditorController()
     @State private var doc: RichDoc?
     /// 最近一次载入或产生的 wiki；外部传入的值与之不同时说明内容被外部替换，需要重新渲染
@@ -154,7 +154,7 @@ struct JiraTextEditor: View {
         }
         if toVisual { emitted = nil }
         visual = toVisual
-        UserDefaults.standard.set(toVisual ? "visual" : "text", forKey: Self.modeKey)
+        AppPreferences.shared.set(toVisual ? "visual" : "text", forKey: Self.modeKey)
     }
 
     private func mapImages(_ doc: RichDoc, _ f: (RichImage) -> RichImage) -> RichDoc {

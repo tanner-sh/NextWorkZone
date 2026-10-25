@@ -77,8 +77,8 @@ final class CaptureModel {
     static let dueOptions: [(String, () -> String?)] = [("今天", { Fmt.today() }), ("明天", { Fmt.addDays(Fmt.today(), 1) }), ("不设日期", { nil })]
     private static let modeKey = "nextworkzone.capture.mode"
 
-    var mode: Mode = Mode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "") ?? .todo {
-        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey) }
+    var mode: Mode = Mode(rawValue: AppPreferences.shared.string(forKey: modeKey) ?? "") ?? .todo {
+        didSet { AppPreferences.shared.set(mode.rawValue, forKey: Self.modeKey) }
     }
     var text = ""
     var dueIndex = 0

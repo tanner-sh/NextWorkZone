@@ -44,8 +44,14 @@ enum WebLogin {
             self.service = service
             self.base = base
             let config = WKWebViewConfiguration()
-            // 持久的数据存储：服务器记住的设备（例如 2FA 的“记住此设备”）下次仍然有效
-            config.websiteDataStore = .default()
+            // 每个系统单独使用新存储，不读取旧登录状态，也不让同主机的两个系统共用账号。
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["NWZ_DATA_DIR"]?.isEmpty == false {
+                config.websiteDataStore = .nonPersistent()
+            } else { config.websiteDataStore = Self.dataStore(service: service, base: base) }
+            #else
+            config.websiteDataStore = Self.dataStore(service: service, base: base)
+            #endif
             if let script = info.autofill {
                 config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
             }
@@ -58,6 +64,14 @@ enum WebLogin {
             window.delegate = self
             webView.navigationDelegate = self
             webView.load(URLRequest(url: url))
+        }
+
+        private static func dataStore(service: Service, base: URL) -> WKWebsiteDataStore {
+            let key = "nextworkzone.webStore.\(service.rawValue).\(base.absoluteString)"
+            let saved = AppPreferences.shared.string(forKey: key).flatMap(UUID.init(uuidString:))
+            let id = saved ?? UUID()
+            if saved == nil { AppPreferences.shared.set(id.uuidString, forKey: key) }
+            return WKWebsiteDataStore(forIdentifier: id)
         }
 
         func show() {

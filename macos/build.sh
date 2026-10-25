@@ -10,6 +10,7 @@ ROOT="${0:A:h:h}"
 cd "${0:A:h}"
 MODE="${1:-debug}"
 export PATH="$HOME/.cargo/bin:$PATH"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${NWZ_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk}"
 export SDKROOT="$SDK"
 export MACOSX_DEPLOYMENT_TARGET=26.0

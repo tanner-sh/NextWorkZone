@@ -8,7 +8,7 @@ struct KnowledgePage: View {
     @Environment(\.pageActive) private var active
     @State private var pages: [DocSummary]?
     @State private var selected: String?
-    @State private var expanded: Set<String> = Set(UserDefaults.standard.stringArray(forKey: KnowledgePage.expandedKey) ?? [])
+    @State private var expanded: Set<String> = Set(AppPreferences.shared.stringArray(forKey: KnowledgePage.expandedKey) ?? [])
     @State private var filter = ""
     @State private var tag: String?
     @State private var importKind: ImportKind?
@@ -89,7 +89,7 @@ struct KnowledgePage: View {
         .onChange(of: model.current.nonce, initial: true) {
             if active, model.current.page == .kb, let id = model.current.docId { selected = id }
         }
-        .onChange(of: expanded) { UserDefaults.standard.set(Array(expanded), forKey: Self.expandedKey) }
+        .onChange(of: expanded) { AppPreferences.shared.set(Array(expanded), forKey: Self.expandedKey) }
         .onChange(of: selected) { expandAncestors() }
         .onChange(of: pages) { expandAncestors() }
         .sheet(item: $importKind) { kind in

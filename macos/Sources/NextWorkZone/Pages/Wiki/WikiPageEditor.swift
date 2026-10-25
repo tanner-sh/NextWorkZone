@@ -48,11 +48,11 @@ struct WikiPageEditor: View {
     }
 
     private func readDraft() -> Draft? {
-        UserDefaults.standard.data(forKey: draftKey).flatMap { try? JSONDecoder().decode(Draft.self, from: $0) }
+        AppPreferences.shared.data(forKey: draftKey).flatMap { try? JSONDecoder().decode(Draft.self, from: $0) }
     }
 
     private func writeDraft(_ d: Draft?) {
-        if let d, let data = try? JSONEncoder().encode(d) { UserDefaults.standard.set(data, forKey: draftKey) } else { UserDefaults.standard.removeObject(forKey: draftKey) }
+        if let d, let data = try? JSONEncoder().encode(d) { AppPreferences.shared.set(data, forKey: draftKey) } else { AppPreferences.shared.removeObject(forKey: draftKey) }
     }
 
     var body: some View {

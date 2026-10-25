@@ -23,6 +23,14 @@ public struct AppPaths: Sendable {
         cache = home.appendingPathComponent("Library/Caches/" + name, isDirectory: true)
     }
 
+    /// 命令行显式选择的数据目录，不受构建模式的环境变量规则影响。
+    public init(dataDirectory: URL, development: Bool = true, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        data = dataDirectory
+        cache = dataDirectory.appendingPathComponent("cache", isDirectory: true)
+        self.home = home
+        self.development = development
+    }
+
     public static func current() -> AppPaths {
         #if DEBUG
         let development = true

@@ -24,11 +24,11 @@ struct WeeklyPage: View {
     private static func draftKey(_ pageId: String, _ section: String) -> String { "nextworkzone.weekly.\(pageId).\(section)" }
 
     private static func readDraft(_ key: String) -> LocalDraft? {
-        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(LocalDraft.self, from: $0) }
+        AppPreferences.shared.data(forKey: key).flatMap { try? JSONDecoder().decode(LocalDraft.self, from: $0) }
     }
 
     private static func writeDraft(_ key: String, _ draft: LocalDraft?) {
-        if let draft, let data = try? JSONEncoder().encode(draft) { UserDefaults.standard.set(data, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        if let draft, let data = try? JSONEncoder().encode(draft) { AppPreferences.shared.set(data, forKey: key) } else { AppPreferences.shared.removeObject(forKey: key) }
     }
 
     private var configured: Bool { model.isReady(.confluence) && !(model.settings?.weeklyPageId.isEmpty ?? true) }

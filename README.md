@@ -4,32 +4,41 @@
 Jira 问题自动进入待办、笔记里的问题键实时显示状态、问题可一键沉淀到知识库、知识库页面可发布到 Wiki。
 工作空间数据保存在本机，可通过同步文件夹在多台电脑间同步。系统地址与凭据均可配置，目前支持 Jira / Confluence 的 Server 与 Data Center 版本。
 
-技术栈：业务逻辑和各系统的接口都在 Rust 中（`crates/`），两个界面共用：
+当前正在分阶段重构为纯 Swift，支持 macOS 26+。P0 基础与设置已迁移：
 
-- **macOS**：SwiftUI 原生应用（`macos/`），最低 macOS 26，通过 UniFFI 调用 Rust（`crates/ffi`）；
-- **Windows、Linux**：Tauri 2 + React + TypeScript + Vite（`src-tauri`、`src`）。
+- `NWZCore`：Swift 6 配置、凭据、HTTP、SQLite、缓存和事件协议，只依赖系统框架与系统库。
+- `NWZServices`：类型化设置服务；`NWZTool` 提供只读连接诊断。
+- SwiftUI 界面行为保持不变，其他业务仍暂时通过过渡桥调用 Rust，后续按领域替换。
+- Tauri 版本已独立归档，本仓库中的旧前端文件将在重构收尾时删除。
+
+新的配置和界面偏好从零开始，不迁移旧版数据。正式版使用 `~/Library/Application Support/NextWorkZone/`，
+开发版使用 `NextWorkZone-dev/`；缓存目录同样按这两个名称隔离。
+正式版凭据存于 service 为 `NextWorkZone`、account 为 `credentials` 的单一钥匙串条目，
+开发版使用数据目录中的 `dev-credentials.json`（0600）。两者互不共享。
+尚未迁移的 Rust 业务库暂留原目录；同步目录已切换到 `<同步文件夹>/NextWorkZone/v2/`。
 
 ## 开发
 
 ```sh
-cargo test --workspace     # Rust 测试
-
-# macOS 原生版（只需要命令行工具，不需要 Xcode）
 macos/build.sh             # 开发版：macos/build/NextWorkZone.app
 macos/build.sh release     # 正式版
-
-# Windows、Linux（Tauri）
-npm install
-npx tauri dev              # 开发模式运行（前端热更新，Rust 改动自动重启）
-npx tauri build            # 打包安装包（target/release/bundle/）
+macos/test.sh              # Swift 测试（swift-testing）
+cargo test --workspace --exclude nextworkzone  # 过渡期 Rust 业务回归测试
 ```
 
-不启动界面、直接对真实系统做只读调用（地址取自应用配置，Token 取自 `~/.nextworkzone/tokens.env`）：
+构建与测试脚本固定使用 macOS 26 SDK。当前 SwiftPM 默认构建引擎会忽略外部 SDK 路径，
+因此脚本显式选择原生构建引擎。开发构建可以用 `NWZ_DATA_DIR` 指向临时目录，
+配置、凭据、界面偏好、缓存及过渡期业务库都会隔离到该目录下。
+
+不启动界面、只读检查三个系统的账号和版本（先在开发版设置页保存地址与令牌）：
 
 ```sh
-cargo run -p nextworkzone-devtools -- ping
-cargo run -p nextworkzone-devtools -- jira-search "assignee = currentUser()"
+macos/.build/debug/NWZTool ping
+macos/.build/debug/NWZTool ping wiki --data-dir /tmp/nwz-test
 ```
+
+`NWZTool` 默认只读取开发版新配置及凭据，支持 `jira`、`wiki`、`gitlab` 和 `all`。
+它不会修改远端内容；未配置或连接失败时返回非零退出码。
 
 ## 结构
 

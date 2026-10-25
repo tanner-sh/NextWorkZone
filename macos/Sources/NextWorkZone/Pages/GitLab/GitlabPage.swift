@@ -87,10 +87,10 @@ struct GitlabPage: View {
     @State private var loading = false
     @State private var error: String?
     @State private var filter = ""
-    @State private var starred: [Int] = UserDefaults.standard.array(forKey: GitlabPage.starredKey) as? [Int] ?? []
+    @State private var starred: [Int] = AppPreferences.shared.array(forKey: GitlabPage.starredKey) as? [Int] ?? []
     @State private var selected: Int?
-    @State private var mode = Mode(rawValue: UserDefaults.standard.string(forKey: GitlabPage.modeKey) ?? "") ?? .mrs
-    @State private var scope = UserDefaults.standard.string(forKey: GitlabPage.scopeKey) ?? "created_by_me"
+    @State private var mode = Mode(rawValue: AppPreferences.shared.string(forKey: GitlabPage.modeKey) ?? "") ?? .mrs
+    @State private var scope = AppPreferences.shared.string(forKey: GitlabPage.scopeKey) ?? "created_by_me"
     @State private var mrState = "opened"
     @State private var mrInput = ""
     @State private var mrSearch = ""
@@ -168,7 +168,7 @@ struct GitlabPage: View {
 
     private func setMode(_ m: Mode) {
         mode = m
-        UserDefaults.standard.set(m.rawValue, forKey: Self.modeKey)
+        AppPreferences.shared.set(m.rawValue, forKey: Self.modeKey)
     }
 
     private func loadProjects() async {
@@ -179,14 +179,14 @@ struct GitlabPage: View {
         loading = false
         // 记住上次打开的项目；没有指定项目时打开它（不在列表里就打开第一个），右侧不留空
         if selected == nil && pendingPath == nil, let list = projects, !list.isEmpty {
-            let last = UserDefaults.standard.integer(forKey: Self.lastProjectKey)
+            let last = AppPreferences.shared.integer(forKey: Self.lastProjectKey)
             selected = list.contains { $0.id == last } ? last : visible.first?.id
         }
     }
 
     private func toggleStar(_ id: Int) {
         if starred.contains(id) { starred.removeAll { $0 == id } } else { starred.append(id) }
-        UserDefaults.standard.set(starred, forKey: Self.starredKey)
+        AppPreferences.shared.set(starred, forKey: Self.starredKey)
     }
 
     private var visible: [Project] {
@@ -199,7 +199,7 @@ struct GitlabPage: View {
 
     private var mrPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: Binding(get: { scope }, set: { scope = $0; UserDefaults.standard.set($0, forKey: Self.scopeKey) })) {
+            Picker("", selection: Binding(get: { scope }, set: { scope = $0; AppPreferences.shared.set($0, forKey: Self.scopeKey) })) {
                 ForEach(Self.scopes, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.segmented)
@@ -273,7 +273,7 @@ struct GitlabPage: View {
     private func openProject(_ id: Int) {
         opening = nil
         selected = id
-        UserDefaults.standard.set(id, forKey: Self.lastProjectKey)
+        AppPreferences.shared.set(id, forKey: Self.lastProjectKey)
     }
 
     private func projectMenu(_ p: Project) -> [MenuSpec] {

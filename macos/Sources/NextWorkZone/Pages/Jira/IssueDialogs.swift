@@ -171,7 +171,7 @@ struct CreateIssueSheet: View {
         }
         .task {
             if projectKey == nil {
-                projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? UserDefaults.standard.dictionary(forKey: Self.lastKey)?["project"] as? String
+                projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? AppPreferences.shared.dictionary(forKey: Self.lastKey)?["project"] as? String
             }
             if let cached = try? await API.shared.jiraCachedCreateProjects(), projects == nil { projects = cached }
             do { projects = try await API.shared.jiraCreateProjects() } catch { projectsError = errorMessage(error) }
@@ -185,7 +185,7 @@ struct CreateIssueSheet: View {
     private func chooseType() {
         guard !issueTypes.isEmpty else { return }
         if let current = issueTypeId, issueTypes.contains(where: { $0.id == current }) { return }
-        let last = UserDefaults.standard.dictionary(forKey: Self.lastKey)?["issueType"] as? String
+        let last = AppPreferences.shared.dictionary(forKey: Self.lastKey)?["issueType"] as? String
         issueTypeId = issueTypes.first { $0.id == last }?.id ?? issueTypes[0].id
     }
 
@@ -220,7 +220,7 @@ struct CreateIssueSheet: View {
                 payload["issuetype"] = ["id": .string(issueTypeId)]
                 // 正文中粘贴的图片随附件一起在创建后上传
                 let created = try await API.shared.jiraCreateIssue(fields: payload, attachments: files + pasted)
-                UserDefaults.standard.set(["project": projectKey, "issueType": issueTypeId], forKey: Self.lastKey)
+                AppPreferences.shared.set(["project": projectKey, "issueType": issueTypeId], forKey: Self.lastKey)
                 if let warn = created.attachmentError { toast("已创建 \(created.key)，但附件上传失败：\(warn)", error: true) } else { toast("已创建 \(created.key)") }
                 onCreated(created.key)
                 dismiss()

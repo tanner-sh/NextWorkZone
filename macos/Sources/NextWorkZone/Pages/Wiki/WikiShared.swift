@@ -12,12 +12,12 @@ final class WikiFavorites {
     static let shared = WikiFavorites()
     private static let key = "nextworkzone.wiki.favorites"
     var list: [FavoritePage] = {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+        guard let data = AppPreferences.shared.data(forKey: key) else { return [] }
         return (try? JSONDecoder().decode([FavoritePage].self, from: data)) ?? []
     }()
 
     private func store() {
-        UserDefaults.standard.set(try? JSONEncoder().encode(list), forKey: Self.key)
+        AppPreferences.shared.set(try? JSONEncoder().encode(list), forKey: Self.key)
     }
 
     func contains(_ id: String) -> Bool { list.contains { $0.id == id } }

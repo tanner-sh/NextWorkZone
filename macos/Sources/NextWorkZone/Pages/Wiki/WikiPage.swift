@@ -26,8 +26,8 @@ struct WikiPage: View {
     private static let lastPageKey = "nextworkzone.wiki.lastPage"
 
     @Environment(AppModel.self) private var model
-    @State private var tab = Tab(rawValue: UserDefaults.standard.string(forKey: WikiPage.tabKey) ?? "") ?? .recent
-    @State private var selected: String? = UserDefaults.standard.string(forKey: WikiPage.lastPageKey)
+    @State private var tab = Tab(rawValue: AppPreferences.shared.string(forKey: WikiPage.tabKey) ?? "") ?? .recent
+    @State private var selected: String? = AppPreferences.shared.string(forKey: WikiPage.lastPageKey)
     @State private var anchor: String?
     @State private var detail: WikiPageDetail?
     @State private var editing: WikiEditing?
@@ -84,14 +84,14 @@ struct WikiPage: View {
 
     private func switchTab(_ next: Tab) {
         tab = next
-        UserDefaults.standard.set(next.rawValue, forKey: Self.tabKey)
+        AppPreferences.shared.set(next.rawValue, forKey: Self.tabKey)
     }
 
     private func open(_ id: String) {
         selected = id
         anchor = nil
         editing = nil
-        UserDefaults.standard.set(id, forKey: Self.lastPageKey)
+        AppPreferences.shared.set(id, forKey: Self.lastPageKey)
     }
 
     private var sidebar: some View {
@@ -128,7 +128,7 @@ struct WikiPage: View {
         } else if let pageId = selected {
             PageView(pageId: pageId, anchor: anchor, onOpen: open, onLoaded: { page in
                 detail = page
-                UserDefaults.standard.set(page.id, forKey: Self.lastPageKey)
+                AppPreferences.shared.set(page.id, forKey: Self.lastPageKey)
                 // 解析过的地址换成页面 id，刷新时不用再解析
                 if selected != page.id { selected = page.id }
                 tree.reveal(page)

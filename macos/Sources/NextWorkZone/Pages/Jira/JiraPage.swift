@@ -27,7 +27,7 @@ struct JiraPage: View {
     @State private var customJql = ""
     @State private var form = JQL.SearchForm()
     @State private var view = JiraPage.loadView()
-    @State private var source: Source = UserDefaults.standard.string(forKey: JiraPage.sourceKey) == "jira" ? .jira : .local
+    @State private var source: Source = AppPreferences.shared.string(forKey: JiraPage.sourceKey) == "jira" ? .jira : .local
     @State private var indexStore = IndexStatusStore.shared
     @State private var viewedStore = ViewedStore.shared
     /// 本机搜索的结果（含匹配处的摘要）；不是本机搜索时为 nil
@@ -54,7 +54,7 @@ struct JiraPage: View {
     @State private var searchDebounce = Debouncer()
 
     static func loadView() -> ListView {
-        guard let data = UserDefaults.standard.data(forKey: viewKey), let v = try? JSONDecoder().decode(ListView.self, from: data) else { return ListView() }
+        guard let data = AppPreferences.shared.data(forKey: viewKey), let v = try? JSONDecoder().decode(ListView.self, from: data) else { return ListView() }
         return v
     }
 
@@ -98,7 +98,7 @@ struct JiraPage: View {
         .onChange(of: form) { searchLocal() }
         .onChange(of: localSearch) { searchLocal() }
         .onChange(of: indexStore.status?.lastSync) { searchLocal() }
-        .onChange(of: view) { UserDefaults.standard.set(try? JSONEncoder().encode(view), forKey: Self.viewKey) }
+        .onChange(of: view) { AppPreferences.shared.set(try? JSONEncoder().encode(view), forKey: Self.viewKey) }
         .sheet(isPresented: $creating) {
             CreateIssueSheet { key in
                 selected = key
@@ -318,7 +318,7 @@ struct JiraPage: View {
             .labelsHidden()
 
             if mode == .search {
-                SearchPanel(form: $form, source: Binding(get: { source }, set: { source = $0; UserDefaults.standard.set($0.rawValue, forKey: Self.sourceKey) }), index: indexStore.status) { f in
+                SearchPanel(form: $form, source: Binding(get: { source }, set: { source = $0; AppPreferences.shared.set($0.rawValue, forKey: Self.sourceKey) }), index: indexStore.status) { f in
                     if let built = JQL.search(f) { query = (built, nil) }
                 }
             }

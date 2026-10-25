@@ -44,7 +44,7 @@ final class AppModel {
     private static let lastToolKey = "nextworkzone.lastTool"
 
     private static func initialTarget() -> NavTarget {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.shared
         // 搜索页需要搜索文字，启动时不恢复
         if let saved = defaults.string(forKey: lastPageKey), let page = PageID(rawValue: saved), page != .search {
             return page == .tools ? NavTarget(.tools, tool: defaults.string(forKey: lastToolKey)) : NavTarget(page)
@@ -55,8 +55,8 @@ final class AppModel {
     func navigate(_ target: NavTarget) {
         current = target
         pending = target
-        UserDefaults.standard.set(target.page.rawValue, forKey: Self.lastPageKey)
-        if let tool = target.tool { UserDefaults.standard.set(tool, forKey: Self.lastToolKey) }
+        AppPreferences.shared.set(target.page.rawValue, forKey: Self.lastPageKey)
+        if let tool = target.tool { AppPreferences.shared.set(tool, forKey: Self.lastToolKey) }
         MainWindow.show()
     }
 
@@ -262,7 +262,7 @@ final class AppModel {
     private func notifyDue(_ due: [Reminder]) {
         guard !due.isEmpty else { return }
         let day = Fmt.today()
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.shared
         let savedDay = defaults.string(forKey: Self.notifiedKey + ".day") ?? ""
         if savedDay != day && Calendar.current.component(.hour, from: Date()) < Self.notifyHour { return }
         let known = savedDay == day ? (defaults.stringArray(forKey: Self.notifiedKey + ".keys") ?? []) : []
@@ -314,11 +314,11 @@ enum ActivityText {
     static let defaultNotify = ["mention", "assigned", "created", "comment", "status", "share", "task"]
 
     static func notifyKinds() -> [String] {
-        UserDefaults.standard.stringArray(forKey: notifyKey) ?? defaultNotify
+        AppPreferences.shared.stringArray(forKey: notifyKey) ?? defaultNotify
     }
 
     static func storeNotifyKinds(_ kinds: [String]) {
-        UserDefaults.standard.set(kinds, forKey: notifyKey)
+        AppPreferences.shared.set(kinds, forKey: notifyKey)
     }
 
     /// 动态对应的问题或页面。
@@ -493,11 +493,11 @@ enum JQL {
     private static let savedKey = "nextworkzone.jira.savedQueries"
 
     static func savedQueries() -> [SavedQuery] {
-        guard let data = UserDefaults.standard.data(forKey: savedKey) else { return [] }
+        guard let data = AppPreferences.shared.data(forKey: savedKey) else { return [] }
         return (try? JSONDecoder().decode([SavedQuery].self, from: data)) ?? []
     }
 
     static func storeSavedQueries(_ list: [SavedQuery]) {
-        UserDefaults.standard.set(try? JSONEncoder().encode(list), forKey: savedKey)
+        AppPreferences.shared.set(try? JSONEncoder().encode(list), forKey: savedKey)
     }
 }
