@@ -14,7 +14,6 @@ nextworkzone-gitlab.workspace = true
 nextworkzone-workspace.workspace = true
 nextworkzone-clipboard.workspace = true
 nextworkzone-desktop.workspace = true
-nextworkzone-richdoc.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

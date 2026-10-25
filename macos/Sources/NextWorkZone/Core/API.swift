@@ -44,6 +44,14 @@ final class API: @unchecked Sendable {
             guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
             return try JSONEncoder().encode(await settings.testConnection(service))
         }
+        if cmd == "rich_edit_load" { return try JSONEncoder().encode(RichEdit.load(args["html"]?.string ?? "")) }
+        if cmd == "rich_markdown_to_storage" { return try JSONEncoder().encode(XHTML.markdownToStorage(args["markdown"]?.string ?? "")) }
+        if cmd == "rich_to_xhtml" || cmd == "rich_edit_xhtml" {
+            guard let doc = args["doc"]?.decode(RichDoc.self) else { throw APIError(message: "缺少文档") }
+            if cmd == "rich_to_xhtml" { return try JSONEncoder().encode(XHTML.write(doc)) }
+            guard let segments = args["segments"]?.decode([RichEdit.Segment].self), let baseline = args["baseline"]?.decode(RichDoc.self) else { throw APIError(message: "缺少编辑基线") }
+            return try JSONEncoder().encode(RichEdit.xhtml(segments: segments, baseline: baseline, edited: doc))
+        }
         if cmd == "rich_from_html" { return try JSONEncoder().encode(HTML.parse(args["html"]?.string ?? "")) }
         if cmd == "rich_html_to_markdown" { return try JSONEncoder().encode(HTML.markdown(args["html"]?.string ?? "", baseURL: args["baseUrl"]?.string ?? "")) }
         if cmd == "rich_to_wiki" {

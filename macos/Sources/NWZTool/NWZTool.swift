@@ -2,6 +2,8 @@ import Foundation
 import NWZCore
 import NWZServices
 import NWZJira
+import NWZWiki
+import NWZRich
 
 @main
 struct NWZTool {
@@ -20,6 +22,7 @@ struct NWZTool {
             只读查询当前账号与版本；默认读取 NextWorkZone-dev 的配置和凭据。
             """
         if arguments.first?.hasPrefix("jira-") == true { return try await jira(arguments) }
+        if arguments.first == "wiki-edit" || arguments.first == "wiki-roundtrip" { return try await wiki(arguments) }
         if arguments == ["--help"] || arguments == ["-h"] { print(usage); return 0 }
         guard arguments.first == "ping" else { throw NWZError.other(usage) }
         var paths = AppPaths(development: true)
@@ -83,6 +86,32 @@ struct NWZTool {
         case "jira-favourite-filters": try await output(client.favouriteFilters())
         default: throw NWZError.other("未知的只读 Jira 命令")
         }
+        return 0
+    }
+
+    private static func wiki(_ arguments: [String]) async throws -> Int32 {
+        guard arguments.count == 2 else { throw NWZError.other("请指定页面 id") }
+        let paths = AppPaths(development: true)
+        let settings = try SettingsService(paths: paths, configuration: ConfigurationStore(path: paths.config))
+        let rest = try await settings.restClient(.confluence)
+        let raw = try await rest.json("GET", "/rest/api/content/" + RESTClient.component(arguments[1]), query: [("expand", "body.storage,version,space")])
+        let source = raw["body"]["storage"]["value"].text
+        let ed = try WikiEdit.toEditable(source)
+        let data: Data
+        if arguments[0] == "wiki-edit" { data = try JSONEncoder().encode(ed) }
+        else {
+            let load = RichEdit.load(ed.html)
+            let xhtml = RichEdit.xhtml(segments: load.segments, baseline: load.doc, edited: load.doc)
+            let restored = try WikiEdit.fromEditable(xhtml, fragments: ed.fragments)
+            data = try JSONEncoder().encode(JSONValue.object([
+                "identical": .bool(source == restored),
+                "normalizedIdentical": .bool(WikiStorage.normalizeEntities(source) == WikiStorage.normalizeEntities(restored)),
+                "bytes": .number(Double(source.utf8.count)), "blocks": .number(Double(load.doc.blocks.count)),
+                "fragments": .number(Double(ed.fragments.count)),
+            ]))
+        }
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([10]))
         return 0
     }
 
