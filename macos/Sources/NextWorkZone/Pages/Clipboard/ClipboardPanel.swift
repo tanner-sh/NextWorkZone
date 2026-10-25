@@ -56,6 +56,8 @@ final class ClipboardPanel {
             hide(restore: true)
             return
         }
+        // 启动时稍后才创建；在那之前按下快捷键时现在创建
+        prepare()
         guard API.shared.clipboard.enabled, let panel else { return }
         let target = API.shared.clipboard.captureTarget()
         place(panel)

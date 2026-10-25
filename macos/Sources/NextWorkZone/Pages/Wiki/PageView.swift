@@ -15,6 +15,9 @@ struct PageView: View {
     @Environment(AppModel.self) private var model
     @State private var page: WikiPageDetail?
     @State private var doc: RichDoc?
+    /// 页面中的标题和引用的问题：长页面遍历一遍要十几毫秒，载入时算好，不在 body 中每次重算
+    @State private var headings: [(level: Int, text: String, index: Int)] = []
+    @State private var issueKeys: [String] = []
     @State private var error: String?
     @State private var history = false
     @State private var scrollTo: Int?
@@ -27,7 +30,6 @@ struct PageView: View {
             if let error {
                 VStack { ErrorBox(message: error) { Task { await load() } } }.padding(24).frame(maxHeight: .infinity, alignment: .top)
             } else if let page {
-                let headings = doc?.headings ?? []
                 HStack(spacing: 0) {
                     ScrollView {
                         content(page)
@@ -64,7 +66,9 @@ struct PageView: View {
             let keys = d.issueKeys(jiraBase: model.baseUrl(.jira))
             if !keys.isEmpty && model.isReady(.jira) { issues = await IssueLookup.fetch(keys) }
             doc = d
-            if let anchor, let i = d.headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = d.headings[i].index }
+            headings = d.headings
+            issueKeys = keys
+            if let anchor, let i = headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = headings[i].index }
         } catch {
             self.error = errorMessage(error)
         }
@@ -146,7 +150,7 @@ struct PageView: View {
                 ProgressView().padding(.bottom, 24)
             }
 
-            let keys = doc?.issueKeys(jiraBase: model.baseUrl(.jira)) ?? []
+            let keys = issueKeys
             if !keys.isEmpty {
                 BlockSection(title: "引用的问题", icon: "smallcircle.filled.circle", count: "\(keys.count)") {
                     VStack(spacing: 6) {

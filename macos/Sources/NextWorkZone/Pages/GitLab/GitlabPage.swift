@@ -107,7 +107,7 @@ struct GitlabPage: View {
             } else if !model.isReady(.gitlab) {
                 NotConfigured(label: "GitLab")
             } else {
-                HSplitView {
+                SplitPane("gitlab", minWidth: 320, idealWidth: 380, maxWidth: 560) {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("", selection: Binding(get: { mode }, set: { setMode($0) })) {
                             Text("合并请求").tag(Mode.mrs)
@@ -119,13 +119,13 @@ struct GitlabPage: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 12)
-                    .frame(minWidth: 320, idealWidth: 380, maxWidth: 560)
-                    detail.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                } trailing: {
+                    detail
                 }
             }
         }
         .onAppear { takeTarget() }
-        .onChange(of: model.pending?.nonce) { takeTarget() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .task(id: model.isReady(.gitlab)) { if model.isReady(.gitlab) { await loadProjects() } }
         .task(id: "\(scope)|\(mrState)|\(mrSearch)|\(model.isReady(.gitlab))") {
             if model.isReady(.gitlab) { await mrList.load(.scope(scope), state: mrState, search: mrSearch) }

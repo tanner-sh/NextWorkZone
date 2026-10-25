@@ -35,6 +35,8 @@ final class CaptureWindow {
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func toggle() {
+        // 启动时稍后才创建；在那之前按下快捷键时现在创建
+        prepare()
         guard let panel else { return }
         if panel.isVisible && panel.isKeyWindow {
             hide()

@@ -43,14 +43,15 @@ struct WikiPage: View {
             } else if !model.isReady(.confluence) {
                 NotConfigured(label: "Wiki")
             } else {
-                HSplitView {
-                    sidebar.frame(minWidth: 260, idealWidth: 300, maxWidth: 460)
-                    detailPane.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                SplitPane("wiki", minWidth: 260, idealWidth: 300, maxWidth: 460) {
+                    sidebar
+                } trailing: {
+                    detailPane
                 }
             }
         }
         .onAppear { takeTarget() }
-        .onChange(of: model.pending?.nonce) { takeTarget() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .task(id: model.isReady(.confluence)) { if model.isReady(.confluence) { tree.loadSpaces() } }
         #if DEBUG
         // 调试通道 /wiki-edit：打开页面的编辑器（只读取，不保存）

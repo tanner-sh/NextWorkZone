@@ -5,7 +5,6 @@ struct NotesPage: View {
     enum Tab { case daily, notes }
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageActive) private var active
     @State private var tab: Tab = .daily
     @State private var notes: [DocSummary]?
     @State private var days: [String] = []
@@ -45,12 +44,13 @@ struct NotesPage: View {
         }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
-        .onChange(of: model.current.nonce, initial: true) { take() }
+        .onAppear { take() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in take() }
     }
 
-    /// 从其他页面（搜索、反向链接）跳转过来。
+    /// 从其他页面（搜索、反向链接）跳转过来。导航通知在页面重新显示之前发出，所以按当前页面判断，而不是 active。
     private func take() {
-        guard active, model.current.page == .notes, let id = model.current.docId else { return }
+        guard model.current.page == .notes, let id = model.current.docId else { return }
         selected = id
         tab = id.hasPrefix("daily-") ? .daily : .notes
     }

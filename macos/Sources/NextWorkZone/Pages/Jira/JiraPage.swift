@@ -71,9 +71,10 @@ struct JiraPage: View {
             } else if !model.isReady(.jira) {
                 NotConfigured(label: "Jira")
             } else {
-                HSplitView {
-                    listPane.frame(minWidth: 340, idealWidth: 420, maxWidth: 620)
-                    detailPane.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                SplitPane("jira", minWidth: 340, idealWidth: 420, maxWidth: 620) {
+                    listPane
+                } trailing: {
+                    detailPane
                 }
             }
         }
@@ -82,7 +83,7 @@ struct JiraPage: View {
             indexStore.start()
             takeTarget()
         }
-        .onChange(of: model.pending?.nonce) { takeTarget() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .task(id: model.isReady(.jira)) {
             if model.isReady(.jira) { filters = (try? await API.shared.jiraFavouriteFilters()) ?? [] }
         }

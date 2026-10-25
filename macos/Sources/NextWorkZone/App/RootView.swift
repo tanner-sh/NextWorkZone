@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// 主窗口：侧栏 + 内容区。待办、笔记、知识库、Jira、Wiki、GitLab 切走后只隐藏、不销毁：
+/// 主窗口：侧栏 + 内容区。待办、笔记、知识库、Jira、Wiki、GitLab 切走后只隐藏、不销毁（见 KeptPages）：
 /// 回来时滚动位置、选中项、搜索条件和展开状态都还在。其余页面每次打开时重新创建。
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var kept: [PageID] = []
 
-    static let keepAlive: Set<PageID> = [.todos, .notes, .kb, .jira, .wiki, .gitlab]
+    static let keepAlive: Set<PageID> = [.todos, .notes, .kb, .jira, .wiki, .gitlab, .settings]
 
     var body: some View {
         @Bindable var model = model
@@ -15,13 +15,8 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
         } detail: {
             ZStack {
-                ForEach(kept, id: \.self) { page in
-                    let active = model.current.page == page
-                    pageView(page)
-                        .environment(\.pageActive, active)
-                        .opacity(active ? 1 : 0)
-                        .allowsHitTesting(active)
-                        .accessibilityHidden(!active)
+                KeptPages(pages: kept, active: model.current.page) { page, active in
+                    AnyView(pageView(page).environment(\.pageActive, active).environment(model))
                 }
                 if !Self.keepAlive.contains(model.current.page) {
                     pageView(model.current.page)
@@ -40,6 +35,8 @@ struct RootView: View {
         .sheet(isPresented: $model.quickTodoOpen) {
             QuickTodoSheet()
         }
+        // 富文本右键菜单中的问题菜单（流转、分配需要的对话框）
+        .issueMenuDialogs(IssueMenu.shared)
         .onChange(of: model.current.page, initial: true) { _, page in
             if Self.keepAlive.contains(page) && !kept.contains(page) { kept.append(page) }
         }

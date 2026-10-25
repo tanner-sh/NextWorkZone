@@ -357,7 +357,7 @@ struct SearchPage: View {
             }
             focused = true
         }
-        .onChange(of: model.pending?.nonce) {
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in
             if let t = model.take(.search), let q = t.searchQuery { input = q }
         }
         .task(id: input) { search.search(input) }

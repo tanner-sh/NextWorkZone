@@ -36,7 +36,11 @@ final class AppModel {
 
     var current: NavTarget = AppModel.initialTarget()
     /// 最近一次带有附加目标（例如打开某个问题）的跳转，由对应页面处理后清除。
-    var pending: NavTarget?
+    /// 不参与观察：页面在 body 中读它（或 current）时，每次导航所有保留的页面都会整体重算，
+    /// 列表很长时切换一次要一两百毫秒。页面改为接收 `navigated` 通知后取走。
+    @ObservationIgnored var pending: NavTarget?
+    /// 导航到新目标后发出。
+    static let navigated = Notification.Name("nwz.navigated")
     var paletteOpen = false
     var quickTodoOpen = false
 
@@ -55,6 +59,7 @@ final class AppModel {
     func navigate(_ target: NavTarget) {
         current = target
         pending = target
+        NotificationCenter.default.post(name: Self.navigated, object: nil)
         AppPreferences.shared.set(target.page.rawValue, forKey: Self.lastPageKey)
         if let tool = target.tool { AppPreferences.shared.set(tool, forKey: Self.lastToolKey) }
         MainWindow.show()

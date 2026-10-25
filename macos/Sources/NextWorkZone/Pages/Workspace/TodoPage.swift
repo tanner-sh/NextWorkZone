@@ -64,11 +64,10 @@ struct TodoPage: View {
     private func count(_ v: ViewKind) -> Int { (todos ?? []).filter { Self.inView($0, v, day) }.count }
 
     var body: some View {
-        HSplitView {
+        SplitPane("todos", minWidth: 320, idealWidth: 400, maxWidth: 560, trailingMin: 420) {
             listPane
-                .frame(minWidth: 320, idealWidth: 400, maxWidth: 560)
+        } trailing: {
             detailPane
-                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .task {
             await load()
@@ -79,7 +78,7 @@ struct TodoPage: View {
             }
         }
         .onWorkspaceChange { Task { await load() } }
-        .onChange(of: model.pending?.nonce) { takeTarget() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .onAppear { takeTarget() }
         .sheet(item: $promoting) { todo in
             CreateIssueSheet(initialSummary: todo.title, initialDescription: todo.notes) { key in

@@ -5,7 +5,6 @@ struct KnowledgePage: View {
     private static let expandedKey = "nextworkzone.kb.expanded"
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageActive) private var active
     @State private var pages: [DocSummary]?
     @State private var selected: String?
     @State private var expanded: Set<String> = Set(AppPreferences.shared.stringArray(forKey: KnowledgePage.expandedKey) ?? [])
@@ -86,9 +85,8 @@ struct KnowledgePage: View {
         }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
-        .onChange(of: model.current.nonce, initial: true) {
-            if active, model.current.page == .kb, let id = model.current.docId { selected = id }
-        }
+        .onAppear { takeTarget() }
+        .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .onChange(of: expanded) { AppPreferences.shared.set(Array(expanded), forKey: Self.expandedKey) }
         .onChange(of: selected) { expandAncestors() }
         .onChange(of: pages) { expandAncestors() }
@@ -106,6 +104,11 @@ struct KnowledgePage: View {
             case .publish: PublishSheet(doc: d.doc)
             }
         }
+    }
+
+    /// 从其他页面（搜索、反向链接）跳转过来。导航通知在页面重新显示之前发出，所以按当前页面判断。
+    private func takeTarget() {
+        if model.current.page == .kb, let id = model.current.docId { selected = id }
     }
 
     private func load() async {
