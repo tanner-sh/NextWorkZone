@@ -98,6 +98,13 @@ struct NWZTool {
         let value = arguments.count > 1 ? arguments[1] : ""
         func output<T: Encodable>(_ value: T) throws { FileHandle.standardOutput.write(try JSONEncoder().encode(value)); FileHandle.standardOutput.write(Data([10])) }
         switch arguments[0] {
+        case "wiki-index-sync":
+            let index = try WikiIndex(path: paths.cache.appendingPathComponent("wiki-index.sqlite").path)
+            let scope = WikiScope(spaces: settings.configuration.snapshot().wikiTools.indexSpaces)
+            let changed = try await index.sync(client: client, scope: scope) { progress in
+                FileHandle.standardError.write(Data("\(progress.done)/\(progress.total)\n".utf8))
+            }
+            try output(["changed": changed, "count": await index.stats().count]); return 0
         case "weekly-load":
             let config = settings.configuration.snapshot().weekly
             guard !config.pageId.isEmpty else { throw NWZError.other("请先在设置中填写周报页面地址") }
