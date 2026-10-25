@@ -4,37 +4,29 @@ import Testing
 @testable import NWZCore
 @testable import NWZServices
 
-final class RecordingBridge: LegacySettingsBridge, Sendable {
-    let config = Mutex(AppConfig())
-    let secrets = Mutex<[String: String]>([:])
-    func setConfiguration(_ value: AppConfig) { config.withLock { $0 = value } }
-    func setSecrets(_ value: [String: String]) { secrets.withLock { $0 = value } }
-}
-
 struct SettingsTests {
     func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
-    func service(_ directory: URL, bridge: RecordingBridge? = nil, transport: OfflineTransport? = nil) throws -> SettingsService {
+    func service(_ directory: URL, transport: OfflineTransport? = nil) throws -> SettingsService {
         let paths = AppPaths(home: directory, development: true, environment: ["NWZ_DATA_DIR": directory.path])
-        return try SettingsService(paths: paths, configuration: ConfigurationStore(path: paths.config), bridge: bridge,
+        return try SettingsService(paths: paths, configuration: ConfigurationStore(path: paths.config),
                                    client: transport.map { HTTPClient(transport: $0) })
     }
 
-    @Test func savesTypedSettingsAndPushesBridge() async throws {
+    @Test func savesTypedSettings() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let bridge = RecordingBridge()
-        let settings = try service(dir, bridge: bridge)
+        let settings = try service(dir)
         #expect(await settings.getSettings().services.allSatisfy { !$0.hasToken })
         let input = SettingsInput(baseUrls: ["jira": "jira.example.com/secure/Dashboard.jspa", "confluence": "wiki.example.com"], tokens: ["jira": " token "], weeklyPage: "42", weeklyPersonName: "张三", webAccounts: ["jira": .init(username: "jira-user", password: "first"), "confluence": .init(username: "wiki-user", password: "second")])
         let saved = try await settings.saveSettings(input)
         #expect(saved.services[0].baseUrl == "https://jira.example.com")
-        #expect(bridge.secrets.withLock { $0["jira"] } == "token")
-        #expect(bridge.secrets.withLock { $0["confluence-password"] } == "second")
-        #expect(bridge.config.withLock { $0.weekly.pageId } == "42")
+        #expect(await settings.secret(.token, for: .jira) == "token")
+        #expect(await settings.secret(.webPassword, for: .confluence) == "second")
+        #expect(settings.configuration.snapshot().weekly.pageId == "42")
         let reopened = try service(dir)
         #expect(await reopened.getSettings() == saved)
         let data = try Data(contentsOf: dir.appendingPathComponent("config.json"))

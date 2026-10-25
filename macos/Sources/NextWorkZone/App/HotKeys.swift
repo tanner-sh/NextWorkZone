@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// 全局快捷键：快速记录、剪贴板等功能各自登记一个快捷键，互不影响。快捷键写法与 Tauri 版相同，例如 `CommandOrControl+Alt+V`。
+/// 全局快捷键：快速记录、剪贴板等功能各自登记一个快捷键，互不影响。快捷键写法例如 `CommandOrControl+Alt+V`（保存在配置中）。
 @MainActor
 final class HotKeys {
     static let shared = HotKeys()

@@ -119,7 +119,7 @@ enum AttachmentViewer {
         return "application/octet-stream"
     }
 
-    /// 由应用层转换后预览的文件类型（与 crates/preview 一致）。
+    /// 由 NWZPreview 转换后预览的文件类型。
     static let converted: Set<String> = Set("csv tsv zip jar war txt log out err trace md json xml yaml yml sql ini conf cfg properties java js ts tsx jsx py rs go c h cpp cs kt sh bat cmd ps1 css vue toml gradle jsp".split(separator: " ").map(String.init))
     /// 超过这个大小的文件不在应用内预览（需要先整个下载）。
     static let maxPreviewBytes = 30 * 1024 * 1024

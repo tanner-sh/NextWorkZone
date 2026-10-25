@@ -1,34 +1,27 @@
 import Foundation
 import NWZCore
 
-/// 过渡桥只推送当前 Swift 状态，不允许 Rust 读取旧配置或凭据。
-public protocol LegacySettingsBridge: Sendable {
-    func setConfiguration(_ config: AppConfig) throws
-    func setSecrets(_ secrets: [String: String]) throws
-}
-
 public actor SettingsService {
     public nonisolated let paths: AppPaths
     public nonisolated let configuration: ConfigurationStore
     private let store: CredentialsStore
     private var credentials: [String: String]
-    private let bridge: (any LegacySettingsBridge)?
     private let injectedClient: HTTPClient?
     private var cachedClient: HTTPClient?
     private var clientProxy: String?
 
-    public init(paths: AppPaths, configuration: ConfigurationStore, bridge: (any LegacySettingsBridge)? = nil, client: HTTPClient? = nil) throws {
-        self.paths = paths; self.configuration = configuration; self.bridge = bridge; injectedClient = client
+    public init(paths: AppPaths, configuration: ConfigurationStore, client: HTTPClient? = nil) throws {
+        self.paths = paths; self.configuration = configuration; injectedClient = client
         store = paths.credentialsStore
         credentials = try store.load()
-        try bridge?.setConfiguration(configuration.snapshot())
-        try bridge?.setSecrets(credentials)
     }
 
     public func updateConfiguration(_ change: @Sendable (inout AppConfig) throws -> Void) throws {
         try configuration.update(change)
-        try bridge?.setConfiguration(configuration.snapshot())
     }
+
+    /// 网页登录的账号或密码（登录窗口自动填写用）。
+    public func secret(_ kind: Secret, for service: Service) -> String? { credentials[kind.key(for: service)] }
 
     public func getSettings() -> Settings {
         let config = configuration.snapshot()
@@ -79,8 +72,6 @@ public actor SettingsService {
             throw error
         }
         credentials = secrets
-        try bridge?.setConfiguration(next)
-        try bridge?.setSecrets(secrets)
         return getSettings()
     }
 
@@ -89,7 +80,6 @@ public actor SettingsService {
         next.removeValue(forKey: Secret.token.key(for: service))
         try store.save(next)
         credentials = next
-        try bridge?.setSecrets(next)
         return getSettings()
     }
 
@@ -103,7 +93,6 @@ public actor SettingsService {
         for (service, token) in tokens { next[Secret.token.key(for: service)] = token }
         if next != credentials { try store.save(next) }
         credentials = next
-        try bridge?.setSecrets(next)
         return Service.allCases.filter { tokens[$0] != nil }
     }
 

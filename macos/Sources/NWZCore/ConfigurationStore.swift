@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-/// 同步保存入口也供过渡期平台回调使用，避免 Rust 设置写回另一份配置。
+/// 应用配置（config.json）：读取时取内存中的快照，修改时先写入文件再替换快照，各服务看到的始终是同一份配置。
 public final class ConfigurationStore: Sendable {
     public let path: URL
     private let value: Mutex<AppConfig>

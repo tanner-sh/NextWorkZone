@@ -57,6 +57,7 @@ public actor IssueIndex {
             for value in values { try db.execute("INSERT OR REPLACE INTO issues (key,project,project_name,updated_ms,resolved,summary_lc,description_lc,comments_lc,participants,data) VALUES (?,?,?,?,?,?,?,?,?,?)", value) }
         }
     }
+    public func isEmpty() async throws -> Bool { try await database.query("SELECT 1 AS found FROM issues LIMIT 1").isEmpty }
     public func stats() async throws -> (count: Int, projects: [IndexProject], lastSync: String?) {
         let projects = try await database.query("SELECT project,MAX(project_name) AS name,COUNT(*) AS n FROM issues GROUP BY project ORDER BY n DESC").map { IndexProject(key: $0["project"]?.string ?? "", name: $0["name"]?.string ?? "", count: Int($0["n"]?.integer ?? 0)) }
         let lastSync = try await database.query("SELECT value FROM meta WHERE key = 'last_sync'").first?["value"]?.string

@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - 图片
 
-/// 系统内的图片（图标、头像、附件缩略图等）：需要认证时经由 Rust 应用层取回，结果缓存在内存中。
+/// 系统内的图片（图标、头像、附件缩略图等）：需要认证时经由 `API.asset` 带上凭据取回，结果缓存在内存中。
 @MainActor
 final class ImageCache {
     static let shared = ImageCache()

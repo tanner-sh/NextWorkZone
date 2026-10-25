@@ -8,7 +8,7 @@ import NWZCore
 import NWZServices
 import NWZWorkspace
 
-// 与 Rust 应用层命令的参数、结果一一对应（字段名为 camelCase）。与 src/api.ts 中的类型相同。
+// 界面使用的模型：大多直接使用业务模块中的类型。
 
 typealias Service = NWZCore.Service
 
@@ -20,10 +20,7 @@ typealias WebAccountInput = NWZServices.WebAccountInput
 typealias SettingsInput = NWZServices.SettingsInput
 typealias ConnectionInfo = NWZCore.ConnectionInfo
 
-/// 访问附件、图片等网页路径的方式：Token 即可 / 已网页登录 / 需要网页登录。
-enum WebAccess: String, Codable, Hashable {
-    case token, session, loginRequired
-}
+typealias WebAccess = NWZServices.WebAccess
 
 // MARK: - Jira
 
@@ -366,30 +363,11 @@ typealias WikiPageVersionInfo = NWZWiki.WikiPageVersionInfo
 
 typealias WikiHit = NWZWiki.WikiHit
 
-struct SearchResults: Codable, Hashable {
-    var issues: [IssueHit]
-    var issuesSource: String?
-    var projects: [Project]
-    var mergeRequests: [MergeRequest]
-    var pages: [WikiHit]
-    var workspace: [WorkspaceHit]
-    var clips: [ClipItem]
-    var errors: [String]
-}
+typealias SearchResults = NWZServices.SearchResults
 
-struct SearchOptions: Codable, Hashable {
-    /// local / remote
-    var phase: String?
-    var limit: Int?
-}
+typealias SearchOptions = NWZServices.SearchOptions
 
-/// 打开登录窗口所需的信息。
-struct WebLoginInfo: Codable, Hashable {
-    var url: String
-    var baseUrl: String
-    var title: String
-    var autofill: String?
-}
+typealias WebLoginInfo = NWZServices.WebLoginInfo
 
 /// 空结果（命令返回 `null` 或不关心结果）。
 struct Nothing: Decodable {

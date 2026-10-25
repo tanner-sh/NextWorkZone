@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 编辑、创建、流转界面共用的字段表单：按字段类型生成控件，并把表单取值转换为 Jira REST API 的格式。
-/// 与 src/pages/jira/fieldForm.tsx 相同；取值的形式见 Rust `meta` 模块说明。
+/// 字段元数据（editmeta / createmeta）的读取见 NWZJira 的 `Fields.swift`。
 typealias FieldValues = [String: JSONValue]
 
 /// 搜索用户、问题时需要的上下文：编辑时是当前问题，创建时是所选项目。

@@ -18,15 +18,12 @@ struct APIError: LocalizedError {
 /// 可以显示给用户的错误信息。
 func errorMessage(_ error: Error) -> String {
     if let e = error as? APIError { return e.message }
-    if let e = error as? CoreError, case .Failed(let message) = e { return message }
     return error.localizedDescription
 }
 
-/// 界面的类型化入口；已迁移领域直接调用 Swift 服务，其余领域暂时使用过渡桥。
+/// 界面的类型化入口：各方法直接调用 Swift 服务。
 final class API: @unchecked Sendable {
     nonisolated(unsafe) static var shared: API!
-
-    let core: Core
 
     let settings: SettingsService
     let jira: JiraService
@@ -34,17 +31,17 @@ final class API: @unchecked Sendable {
     let gitlab: GitLabService
     let weekly: WeeklyService
     let clipboard: ClipboardService
+    let sessions: WebSessionService
     let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, gitlab: GitLabService, clipboard: ClipboardService, workspace: Task<WorkspaceService, Error>) {
-        self.core = core
+    init(settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, gitlab: GitLabService, clipboard: ClipboardService, sessions: WebSessionService, workspace: Task<WorkspaceService, Error>) {
         self.settings = settings
         self.jira = jira
-        self.wiki = wiki; self.weekly = weekly; self.gitlab = gitlab; self.clipboard = clipboard
+        self.wiki = wiki; self.weekly = weekly; self.gitlab = gitlab; self.clipboard = clipboard; self.sessions = sessions
         self.workspace = workspace
     }
 
-    /// 调用命令，返回原始 JSON 文本。
+    /// 按命令名调用只读命令，返回 JSON（调试通道使用，命令名与原来的应用层命令相同）。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
         if GitLabDebug.commands.contains(cmd) || ["gl_cached_projects", "issue_code_refs", "code_related_issues"].contains(cmd) { return try await gitlab.readOnly(cmd, arguments: args) }
         if WikiService.readOnlyCommands.contains(cmd) { return try await wiki.readOnly(cmd, arguments: args) }
@@ -77,34 +74,15 @@ final class API: @unchecked Sendable {
         }
         if WorkspaceService.readOnlyCommands.contains(cmd) { return try await workspace.value.readOnly(cmd, arguments: args) }
         if ClipboardService.readOnlyCommands.contains(cmd) { return try await clipboard.readOnly(cmd, arguments: args) }
-        let object = JSONValue.object(args)
-        let text = String(decoding: try JSONEncoder().encode(object), as: UTF8.self)
-        do {
-            let result = try await core.call(cmd: cmd, args: text)
-            return Data(result.utf8)
-        } catch let e as CoreError {
-            if case .Failed(let message) = e { throw APIError(message: message) }
-            throw e
-        }
+        if cmd == "global_search" { return try JSONEncoder().encode(await globalSearch(args["query"]?.string ?? "", options: args["options"]?.decode(SearchOptions.self))) }
+        if cmd == "web_access_status" { return try JSONEncoder().encode(await webAccessStatus()) }
+        throw APIError(message: "未知命令 \(cmd)")
     }
 
-    func call<T: Decodable>(_ cmd: String, _ args: [String: JSONValue] = [:], as type: T.Type = T.self) async throws -> T {
-        let data = try await raw(cmd, args)
-        do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            #if DEBUG
-            debugLog("解码 \(cmd) 的结果失败：\(error)")
-            #endif
-            throw APIError(message: "无法读取 \(cmd) 的结果：\(error)")
-        }
-    }
-
-    func run(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws {
-        _ = try await raw(cmd, args)
-    }
-
-    /// 读取图片等资源，路径格式见 crates/app/src/asset.rs。
+    /// 读取图片等资源（各页面的图片加载都使用它）：
+    /// - `ws/<图片 id>`：工作空间里的图片；
+    /// - `clip/<thumb|image|icon>/<id>`：剪贴板历史中的图片和来源应用图标；
+    /// - `<jira|confluence|gitlab>/<编码后的路径或完整地址>`：带上对应系统的凭据去取回内容，只允许访问已配置系统的地址。
     func asset(_ path: String) async throws -> (Data, String?) {
         if path.hasPrefix("confluence/") { return try await wiki.attachments.fetch(service: .confluence, url: String(path.dropFirst(11)).removingPercentEncoding ?? String(path.dropFirst(11))) }
         if path.hasPrefix("gitlab/") { return try await gitlab.attachments.fetch(service: .gitlab, url: String(path.dropFirst(7)).removingPercentEncoding ?? String(path.dropFirst(7))) }
@@ -122,19 +100,13 @@ final class API: @unchecked Sendable {
             guard let data = try? Data(contentsOf: url) else { throw APIError(message: "图片已丢失") }
             return (data, "image/png")
         }
-        do {
-            let a = try await core.asset(path: path)
-            return (a.data, a.contentType)
-        } catch let e as CoreError {
-            if case .Failed(let message) = e { throw APIError(message: message) }
-            throw e
-        }
+        throw APIError(message: "无效的图片地址")
     }
 
     // MARK: 设置
 
     func getSettings() async throws -> Settings { await settings.getSettings() }
-    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); await gitlab.configurationChanged(); return result }
+    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); await gitlab.configurationChanged(); await sessions.configurationChanged(); return result }
     func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
     func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
     func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
@@ -336,23 +308,15 @@ final class API: @unchecked Sendable {
     // MARK: 搜索与网页登录
 
     func globalSearch(_ query: String, options: SearchOptions? = nil) async throws -> SearchResults {
-        var results: SearchResults = try await call("global_search", ["query": .string(query), "options": json(options)])
-        // 剪贴板历史已在 Swift 中，本机这一步由这里补上
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if options?.phase != "remote", !text.isEmpty {
-            results.clips = (try? await clipboard.list(ClipQuery(text: text, limit: min(max(options?.limit ?? 8, 1), 100)))) ?? []
-        }
-        return results
+        await SearchService(settings: settings, workspace: try await workspace.value.store, jira: jira, wiki: wiki, gitlab: gitlab, clipboard: clipboard.store).search(query, options: options)
     }
-    func webAccessStatus() async throws -> [String: WebAccess] { try await call("web_access_status") }
-    func webLoginInfo(_ service: Service) async throws -> WebLoginInfo { try await call("web_login_info", ["service": .string(service.rawValue)]) }
-    func webLoginFinish(_ service: Service, url: String, cookie: String) async throws -> Bool {
-        try await call("web_login_finish", ["service": .string(service.rawValue), "url": .string(url), "cookie": .string(cookie)])
-    }
-    func webLogout(_ service: Service) async throws { try await run("web_logout", ["service": .string(service.rawValue)]) }
+    func webAccessStatus() async throws -> [String: WebAccess] { await sessions.accessStatus() }
+    func webLoginInfo(_ service: Service) async throws -> WebLoginInfo { try await sessions.loginInfo(service) }
+    func webLoginFinish(_ service: Service, url: String, cookie: String) async throws -> Bool { try await sessions.loginFinish(service, url: url, cookie: cookie) }
+    func webLogout(_ service: Service) async throws { await sessions.logout(service) }
 }
 
-/// Rust 发出的事件名称。
+/// 服务发出的事件名称。
 enum AppEvent {
     /// 其他设备的修改合并进来、待办有变化。
     static let workspaceSynced = "workspace-synced"
@@ -366,32 +330,20 @@ enum AppEvent {
     static let webSession = "web-session"
 }
 
-/// 只有过渡桥保留 JSON，界面与 Swift 服务之间不再进行设置模型的编解码。
-private struct RustSettingsBridge: LegacySettingsBridge {
-    let core: Core
-    func setConfiguration(_ config: AppConfig) throws {
-        try core.bridgeSetConfig(json: String(decoding: JSONEncoder().encode(config), as: UTF8.self))
-    }
-    func setSecrets(_ secrets: [String: String]) throws {
-        try core.bridgeSetSecrets(json: String(decoding: JSONEncoder().encode(secrets), as: UTF8.self))
-    }
-}
-
 extension API {
-    static func make(paths: AppPaths, legacyPaths: CorePaths) throws -> API {
+    static func make(paths: AppPaths) throws -> API {
         try paths.createDirectories()
         let configuration = try ConfigurationStore(path: paths.config)
-        let host = AppHost(configuration: configuration)
-        let core = try Core(paths: legacyPaths, host: host)
-        let settings = try SettingsService(paths: paths, configuration: configuration, bridge: RustSettingsBridge(core: core))
-        let bridge = RustRemoteBridge(core: core)
-        let wiki = try WikiService(settings: settings, host: host, web: bridge)
-        let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: wiki)
-        let gitlab = GitLabService(settings: settings, jira: jira, host: host, web: bridge)
+        let host = AppHost()
+        let settings = try SettingsService(paths: paths, configuration: configuration)
+        let sessions = WebSessionService(settings: settings, host: host)
+        let wiki = try WikiService(settings: settings, host: host, web: sessions)
+        let jira = try JiraService(settings: settings, host: host, web: sessions, wikiActivity: wiki)
+        let gitlab = GitLabService(settings: settings, jira: jira, host: host, web: sessions)
         let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: gitlab)
         let clipboard = ClipboardService(store: try ClipboardStore(directory: paths.data.appendingPathComponent("clipboard", isDirectory: true)), system: MacClipboard(), settings: settings, host: host, issues: jira.index)
         clipboard.start()
-        Task { await jira.start() }
+        Task { await jira.start(); await sessions.start() }
         let workspace = Task {
             let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
             let service = WorkspaceService(store: store, settings: settings, host: host, remote: RemoteWorkspaceSources(jira: jira, wiki: wiki, gitlab: gitlab))
@@ -399,20 +351,6 @@ extension API {
             await service.start()
             return service
         }
-        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, gitlab: gitlab, clipboard: clipboard, workspace: workspace)
-    }
-}
-
-private struct RustRemoteBridge: WebResourceSource {
-    let core: Core
-    func fetch(service: Service, url: String) async throws -> (Data, String?) {
-        do {
-            let result = try await core.asset(path: service.rawValue + "/" + (url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url))
-            return (result.data, result.contentType)
-        } catch {
-            let message = errorMessage(error)
-            if message.contains("需要先网页登录") { throw NWZError.sessionRequired(service) }
-            throw error
-        }
+        return API(settings: settings, jira: jira, wiki: wiki, weekly: weekly, gitlab: gitlab, clipboard: clipboard, sessions: sessions, workspace: workspace)
     }
 }

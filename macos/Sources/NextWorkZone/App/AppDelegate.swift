@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let paths = AppPaths.current()
-            API.shared = try API.make(paths: paths, legacyPaths: Self.legacyPaths(paths))
+            API.shared = try API.make(paths: paths)
         } catch {
             let alert = NSAlert()
             alert.messageText = "启动 NextWorkZone 失败"
@@ -36,8 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         let workspace = API.shared?.workspace
-        let jira = API.shared?.jira, wiki = API.shared?.wiki
-        Task { await jira?.stop(); await wiki?.stop(); if let service = try? await workspace?.value { await service.stop() } }
+        let jira = API.shared?.jira, wiki = API.shared?.wiki, sessions = API.shared?.sessions
+        API.shared?.clipboard.stop()
+        Task { await jira?.stop(); await wiki?.stop(); await sessions?.stop(); if let service = try? await workspace?.value { await service.stop() } }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -46,21 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-
-    /// 只有尚未移植的 Rust 业务库暂留原目录，配置、凭据及调试通道使用新目录。
-    private static func legacyPaths(_ paths: AppPaths) -> CorePaths {
-        let fm = FileManager.default
-        var data = paths.home.appendingPathComponent("Library/Application Support/com.nextworkzone.desktop").path
-        var cache = paths.home.appendingPathComponent("Library/Caches/com.nextworkzone.desktop").path
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["NWZ_DATA_DIR"]?.isEmpty == false {
-            data = paths.data.appendingPathComponent("legacy").path
-            cache = paths.cache.appendingPathComponent("legacy").path
-        }
-        #endif
-        let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? paths.home.appendingPathComponent("Downloads").path
-        return CorePaths(configDir: paths.data.path, dataDir: data, cacheDir: cache, homeDir: paths.home.path, downloadDir: downloads)
-    }
 
     // MARK: 托盘（菜单栏图标）
 
@@ -136,24 +122,9 @@ final class ClosureMenuItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
-/// Rust 应用层需要的平台能力。回调可能来自任意线程。
-final class AppHost: NativeHost, NWZCore.AppHost, @unchecked Sendable {
-    private let configuration: ConfigurationStore
-    init(configuration: ConfigurationStore) { self.configuration = configuration }
-
-    func persistConfig(json: String) -> String? {
-        do {
-            let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
-            try configuration.replace(config)
-            return nil
-        } catch { return errorMessage(error) }
-    }
-
+/// 业务服务需要的平台能力：事件、通知、打开文件、全局快捷键、剪贴板面板。回调可能来自任意线程。
+final class AppHost: NWZCore.AppHost, @unchecked Sendable {
     func emit(_ event: ServiceEvent) { Events.post(event) }
-
-    func emit(event: String, payload: String) {
-        Events.post(event, payload: payload)
-    }
 
     func notify(title: String, body: String) {
         Notifier.send(title, body)
