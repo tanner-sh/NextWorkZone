@@ -1,62 +1,22 @@
 import Foundation
+import NWZCore
+import NWZServices
 
 // 与 Rust 应用层命令的参数、结果一一对应（字段名为 camelCase）。与 src/api.ts 中的类型相同。
 
-enum Service: String, Codable, CaseIterable, Hashable, Sendable {
-    case jira, confluence, gitlab
-
-    var label: String {
-        switch self {
-        case .jira: "Jira"
-        case .confluence: "Wiki"
-        case .gitlab: "GitLab"
-        }
-    }
-}
+typealias Service = NWZCore.Service
 
 // MARK: - 设置
 
-struct ServiceSettings: Codable, Hashable {
-    var service: Service
-    var label: String
-    var baseUrl: String
-    var hasToken: Bool
-    var supportsWebLogin: Bool
-    var webUsername: String
-    var hasWebPassword: Bool
-}
-
-struct Settings: Codable, Hashable {
-    var proxy: String
-    var services: [ServiceSettings]
-    var weeklyPageId: String
-    var weeklyPersonName: String
-}
-
-struct WebAccountInput: Codable, Hashable {
-    var username: String
-    var password: String
-}
-
-struct SettingsInput: Codable {
-    var proxy: String
-    var baseUrls: [String: String]
-    var tokens: [String: String]
-    var weeklyPage: String
-    var weeklyPersonName: String
-    var webAccounts: [String: WebAccountInput]
-}
+typealias ServiceSettings = NWZServices.ServiceSettings
+typealias Settings = NWZServices.Settings
+typealias WebAccountInput = NWZServices.WebAccountInput
+typealias SettingsInput = NWZServices.SettingsInput
+typealias ConnectionInfo = NWZCore.ConnectionInfo
 
 /// 访问附件、图片等网页路径的方式：Token 即可 / 已网页登录 / 需要网页登录。
 enum WebAccess: String, Codable, Hashable {
     case token, session, loginRequired
-}
-
-struct ConnectionInfo: Codable, Hashable {
-    var service: Service
-    var username: String
-    var displayName: String
-    var serverVersion: String?
 }
 
 // MARK: - Jira

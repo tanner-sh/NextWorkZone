@@ -1,13 +1,15 @@
 #if DEBUG
 import AppKit
 import Network
+import NWZCore
+import NWZServices
 
 /// 本机测试通道（只在开发构建中启动），用于自动化验证界面：切换页面、打开目标、读取当前状态。
 ///
 /// 只监听 127.0.0.1:17891，请求需携带令牌（启动时写入缓存目录下的 `devbridge-swift.token`）：
 ///
 /// ```sh
-/// curl -s -H "x-token: $(cat ~/Library/Caches/com.nextworkzone.desktop/devbridge-swift.token)" \
+/// curl -s -H "x-token: $(cat ~/Library/Caches/NextWorkZone-dev/devbridge-swift.token)" \
 ///      'http://127.0.0.1:17891/nav?page=jira&issueKey=ABC-1'
 /// ```
 ///
@@ -29,9 +31,9 @@ enum DevBridge {
 
     static func start() {
         let token = String(UInt64.random(in: 0...UInt64.max), radix: 16)
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("com.nextworkzone.desktop")
+        let dir = API.shared.settings.paths.cache
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? token.write(to: dir.appendingPathComponent("devbridge-swift.token"), atomically: true, encoding: .utf8)
+        try? PrivateFile.write(Data(token.utf8), to: dir.appendingPathComponent("devbridge-swift.token"))
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: 17891)
         guard let listener = try? NWListener(using: params) else { return }
@@ -72,7 +74,7 @@ enum DevBridge {
         }
         let line = head.components(separatedBy: "\r\n").first ?? ""
         // /call?cmd=<命令>&args=<JSON>，或 POST /call 正文 {"cmd":…,"args":{…}}：直接调用应用层命令（只读测试用）
-        if head.lowercased().contains("x-token: \(token)"), line.contains(" /call") {
+        if head.components(separatedBy: "\r\n").contains(where: { $0.lowercased() == "x-token: \(token)" }), line.contains(" /call") {
             let target = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
             var q = Dictionary((URLComponents(string: "http://x" + target)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
             if line.hasPrefix("POST"), let obj = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any] {
@@ -81,7 +83,10 @@ enum DevBridge {
             }
             Task { @MainActor in
                 do {
-                    send(try await API.shared.core.call(cmd: q["cmd"] ?? "", args: q["args"] ?? "{}"))
+                    let command = q["cmd"] ?? ""
+                    guard ReadOnlyCommands.names.contains(command) else { throw APIError(message: "调试通道只允许只读命令") }
+                    let args = try JSONDecoder().decode([String: JSONValue].self, from: Data((q["args"] ?? "{}").utf8))
+                    send(String(decoding: try await API.shared.raw(command, args), as: UTF8.self))
                 } catch {
                     send("{\"error\":\(String(reflecting: errorMessage(error)))}")
                 }

@@ -1,9 +1,15 @@
 import Combine
 import Foundation
 import SwiftUI
+import NWZCore
 
 /// 应用层发出的事件（见 [`AppEvent`]），以及界面内部的通知，经 NotificationCenter 分发到主线程。
 enum Events {
+    static func post(_ event: ServiceEvent) {
+        let data = try? JSONEncoder().encode(event.payload)
+        post(event.name, payload: data.map { String(decoding: $0, as: UTF8.self) } ?? "null")
+    }
+
     static func name(_ event: String) -> Notification.Name { Notification.Name("nwz." + event) }
 
     /// 发出事件；`payload` 为 JSON 文本。

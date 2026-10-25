@@ -6,10 +6,13 @@
 # 3. 用 SwiftPM 编译界面（命令行工具即可，不需要 Xcode）；
 # 4. 组装 .app 并签名。
 set -euo pipefail
-cd "${0:A:h}"
 ROOT="${0:A:h:h}"
+cd "${0:A:h}"
 MODE="${1:-debug}"
 export PATH="$HOME/.cargo/bin:$PATH"
+SDK="${NWZ_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk}"
+export SDKROOT="$SDK"
+export MACOSX_DEPLOYMENT_TARGET=26.0
 
 if [[ "$MODE" == "release" ]]; then
   cargo build --manifest-path "$ROOT/Cargo.toml" -p nextworkzone-ffi --release
@@ -35,7 +38,6 @@ if [[ ! -f "$GEN/stamp" || "$RUST_DIR/libnextworkzone_ffi.dylib" -nt "$GEN/stamp
 fi
 
 # 命令行工具自带的 macOS 27 SDK 中 SwiftUI 的宏插件只随 Xcode 提供，因此用 26 的 SDK 编译（最低支持 26）
-SDK="${NWZ_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk}"
 SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build --build-system native --sdk "$SDK" "${SWIFT_FLAGS[@]}"
 BIN="$(SDKROOT="$SDK" NWZ_RUST_LIB_DIR="$RUST_DIR" swift build --build-system native --sdk "$SDK" "${SWIFT_FLAGS[@]}" --show-bin-path)/NextWorkZone"
 
@@ -45,7 +47,7 @@ cp "$BIN" "$APP/Contents/MacOS/NextWorkZone"
 if [[ "$MODE" == "release" ]]; then
   BUNDLE_ID="com.nextworkzone.desktop"
 else
-  # 开发版用不同的标识，可以和已安装的正式版同时运行（数据目录相同）
+  # 开发版使用独立标识和新的开发数据目录，可以和正式版同时运行
   BUNDLE_ID="com.nextworkzone.desktop.dev"
 fi
 sed -e "s/__BUNDLE_ID__/$BUNDLE_ID/" Resources/Info.plist > "$APP/Contents/Info.plist"

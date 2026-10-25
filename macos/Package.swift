@@ -14,12 +14,13 @@ let package = Package(
         .systemLibrary(name: "CSQLite"),
         .systemLibrary(name: "CLibXML2"),
         .target(name: "NWZCore", dependencies: ["CSQLite"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .testTarget(name: "NWZTests", dependencies: ["NWZCore", "CLibXML2"], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
+        .target(name: "NWZServices", dependencies: ["NWZCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "NWZTests", dependencies: ["NWZCore", "NWZServices", "CLibXML2"], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
         // UniFFI 生成的 C 头文件（由 build.sh 放入 include/）
         .target(name: "CoreFFI", path: "Sources/CoreFFI"),
         .executableTarget(
             name: "NextWorkZone",
-            dependencies: ["CoreFFI", "NWZCore"],
+            dependencies: ["CoreFFI", "NWZCore", "NWZServices"],
             path: "Sources/NextWorkZone",
             swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("BareSlashRegexLiterals")],
             linkerSettings: [

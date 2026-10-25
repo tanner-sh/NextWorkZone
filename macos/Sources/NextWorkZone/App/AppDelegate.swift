@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
+import NWZCore
 
-/// 应用入口：载入 Rust 应用层，创建主窗口、菜单、托盘和全局快捷键。
+/// 应用入口：组装业务服务，创建主窗口、菜单、托盘和全局快捷键。
 /// 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从托盘或程序坞图标重新打开，⌘Q 或托盘菜单“退出”才退出。
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,7 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
-            API.shared = API(core: try Core(paths: Self.paths(), host: AppHost()))
+            let paths = AppPaths.current()
+            API.shared = try API.make(paths: paths, legacyPaths: Self.legacyPaths(paths))
         } catch {
             let alert = NSAlert()
             alert.messageText = "启动 NextWorkZone 失败"
@@ -39,26 +41,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// 与 Tauri 版相同的目录，切换时数据无需迁移。
-    private static func paths() -> CorePaths {
+    /// 只有尚未移植的 Rust 业务库暂留原目录，配置、凭据及调试通道使用新目录。
+    private static func legacyPaths(_ paths: AppPaths) -> CorePaths {
         let fm = FileManager.default
-        let id = "com.nextworkzone.desktop"
-        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(id).path
-        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent(id).path
-        let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory() + "/Downloads"
+        var data = paths.home.appendingPathComponent("Library/Application Support/com.nextworkzone.desktop").path
+        var cache = paths.home.appendingPathComponent("Library/Caches/com.nextworkzone.desktop").path
         #if DEBUG
-        // 开发测试：指定独立的数据目录，不动真实数据
-        if let dir = ProcessInfo.processInfo.environment["NWZ_DATA_DIR"], !dir.isEmpty {
-            return CorePaths(configDir: dir, dataDir: dir, cacheDir: dir + "/cache", homeDir: NSHomeDirectory(), downloadDir: downloads, fileCredentials: true)
+        if ProcessInfo.processInfo.environment["NWZ_DATA_DIR"]?.isEmpty == false {
+            data = paths.data.appendingPathComponent("legacy").path
+            cache = paths.cache.appendingPathComponent("legacy").path
         }
         #endif
-        #if DEBUG
-        // 开发版每次编译签名都会变，钥匙串会反复要求授权，因此改用本地私有文件（与 Tauri 开发版相同）
-        let fileCredentials = true
-        #else
-        let fileCredentials = false
-        #endif
-        return CorePaths(configDir: support, dataDir: support, cacheDir: caches, homeDir: NSHomeDirectory(), downloadDir: downloads, fileCredentials: fileCredentials)
+        let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? paths.home.appendingPathComponent("Downloads").path
+        return CorePaths(configDir: paths.data.path, dataDir: data, cacheDir: cache, homeDir: paths.home.path, downloadDir: downloads)
     }
 
     // MARK: 托盘（菜单栏图标）
@@ -136,7 +131,20 @@ final class ClosureMenuItem: NSMenuItem {
 }
 
 /// Rust 应用层需要的平台能力。回调可能来自任意线程。
-final class AppHost: NativeHost, @unchecked Sendable {
+final class AppHost: NativeHost, NWZCore.AppHost, @unchecked Sendable {
+    private let configuration: ConfigurationStore
+    init(configuration: ConfigurationStore) { self.configuration = configuration }
+
+    func persistConfig(json: String) -> String? {
+        do {
+            let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+            try configuration.replace(config)
+            return nil
+        } catch { return errorMessage(error) }
+    }
+
+    func emit(_ event: ServiceEvent) { Events.post(event) }
+
     func emit(event: String, payload: String) {
         Events.post(event, payload: payload)
     }
@@ -146,7 +154,7 @@ final class AppHost: NativeHost, @unchecked Sendable {
     }
 
     func openPath(path: String) -> String? {
-        let ok = DispatchQueue.main.sync { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+        let ok = onMain { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
         return ok ? nil : "无法打开 \(path)"
     }
 

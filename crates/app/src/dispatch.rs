@@ -26,11 +26,6 @@ fn json(value: impl Serialize) -> Result<Value> {
 /// 执行命令 `cmd`。
 pub async fn dispatch(state: &Arc<AppState>, cmd: &str, args: Value) -> Result<Value> {
     match cmd {
-        "get_settings" => json(settings::get_settings(state).await?),
-        "save_settings" => json(settings::save_settings(state, arg(&args, "input")?).await?),
-        "clear_token" => json(settings::clear_token(state, arg(&args, "service")?).await?),
-        "import_tokens_env" => json(settings::import_tokens_env(state).await?),
-        "test_connection" => json(settings::test_connection(state, arg(&args, "service")?).await?),
         "jira_cached_search" => json(jira::jira_cached_search(state, arg(&args, "jql")?, arg(&args, "fields")?).await?),
         "jira_search" => json(jira::jira_search(state, arg(&args, "jql")?, arg(&args, "startAt")?, arg(&args, "maxResults")?, arg(&args, "fields")?).await?),
         "jira_fields" => json(jira::jira_fields(state, arg(&args, "refresh")?).await?),

@@ -39,11 +39,17 @@ pub fn key(service: Service, kind: Secret) -> String {
 pub enum Store {
     Keychain,
     File(PathBuf),
+    Memory(std::sync::RwLock<HashMap<String, String>>),
 }
 
 impl Store {
+    pub fn memory() -> Self { Self::Memory(std::sync::RwLock::new(HashMap::new())) }
+
+    pub fn is_memory(&self) -> bool { matches!(self, Self::Memory(_)) }
+
     pub fn load(&self) -> Result<HashMap<String, String>> {
         let text = match self {
+            Store::Memory(values) => return Ok(values.read().unwrap().clone()),
             Store::Keychain => match Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?.get_password() {
                 Ok(text) => text,
                 Err(keyring::Error::NoEntry) => return Ok(HashMap::new()),
@@ -61,6 +67,7 @@ impl Store {
     pub fn save(&self, secrets: &HashMap<String, String>) -> Result<()> {
         let text = serde_json::to_string(secrets)?;
         match self {
+            Store::Memory(values) => *values.write().unwrap() = secrets.clone(),
             Store::Keychain => Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?.set_password(&text)?,
             Store::File(path) => write_private(path, &text)?,
         }

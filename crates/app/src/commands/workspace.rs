@@ -325,7 +325,7 @@ async fn sync_now(state: &AppState) -> Result<Option<SyncReport>> {
         return Ok(None);
     }
     // 同步文件夹在 iCloud 等位置时，加上子目录，避免与其他文件混在一起
-    let dir = PathBuf::from(dir).join("NextWorkZone");
+    let dir = PathBuf::from(dir).join("NextWorkZone").join("v2");
     let result = run(&state.workspace, move |ws| ws.sync(&dir)).await;
     *LAST_SYNC.lock().unwrap() = Some(result.as_ref().map(Clone::clone).map_err(ToString::to_string));
     let report = result?;

@@ -3,7 +3,8 @@
 //!
 //! 所有异步调用都在这里自己的 tokio 运行时中执行，Swift 端只是等待结果。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use nextworkzone_app::{AppState, Host, Paths, Shortcut};
@@ -37,6 +38,8 @@ fn failed(message: impl ToString) -> CoreError {
 pub trait NativeHost: Send + Sync {
     /// 事件载荷为 JSON 文本。
     fn emit(&self, event: String, payload: String);
+    /// 未移植的设置变更由 Swift 保存，失败时不更新 Rust 内存。
+    fn persist_config(&self, json: String) -> Option<String>;
     fn notify(&self, title: String, body: String);
     /// 打开失败时返回原因。
     fn open_path(&self, path: String) -> Option<String>;
@@ -57,6 +60,13 @@ fn shortcut_name(action: Shortcut) -> String {
 struct HostAdapter(Arc<dyn NativeHost>);
 
 impl Host for HostAdapter {
+    fn persist_config(&self, config: &nextworkzone_core::AppConfig) -> nextworkzone_core::Result<()> {
+        match self.0.persist_config(serde_json::to_string(config)?) {
+            Some(message) => Err(nextworkzone_core::Error::Other(message)),
+            None => Ok(()),
+        }
+    }
+
     fn emit(&self, event: &str, payload: Value) {
         self.0.emit(event.to_string(), payload.to_string());
     }
@@ -92,7 +102,7 @@ impl Host for HostAdapter {
     }
 }
 
-/// 应用使用的本机目录（与 Tauri 版相同，切换时数据无需迁移）。
+/// 配置目录属于 Swift，数据目录暂时只供尚未移植的业务库使用。
 #[derive(uniffi::Record)]
 pub struct CorePaths {
     pub config_dir: String,
@@ -100,8 +110,6 @@ pub struct CorePaths {
     pub cache_dir: String,
     pub home_dir: String,
     pub download_dir: String,
-    /// 为真时凭据保存在配置目录下的私有文件中（开发版每次编译签名都会变，钥匙串会反复要求授权）。
-    pub file_credentials: bool,
 }
 
 #[derive(uniffi::Record)]
@@ -129,6 +137,7 @@ pub struct ClipTarget {
 #[derive(uniffi::Object)]
 pub struct Core {
     state: Arc<AppState>,
+    background_started: AtomicBool,
 }
 
 #[uniffi::export]
@@ -136,11 +145,7 @@ impl Core {
     /// 载入配置和本机数据，并启动后台同步、剪贴板记录。
     #[uniffi::constructor]
     pub fn new(paths: CorePaths, host: Arc<dyn NativeHost>) -> Result<Arc<Self>, CoreError> {
-        let store = if paths.file_credentials {
-            Store::File(PathBuf::from(&paths.config_dir).join("dev-credentials.json"))
-        } else {
-            Store::Keychain
-        };
+        let store = Store::memory();
         let paths = Paths {
             config_dir: paths.config_dir.into(),
             data_dir: paths.data_dir.into(),
@@ -150,8 +155,23 @@ impl Core {
         };
         let _guard = RUNTIME.enter();
         let state = Arc::new(AppState::load(paths, store, Arc::new(HostAdapter(host)))?);
-        nextworkzone_app::start_background(&state).map_err(failed)?;
-        Ok(Arc::new(Self { state }))
+        Ok(Arc::new(Self { state, background_started: AtomicBool::new(false) }))
+    }
+
+    /// 配置已由 Swift 落盘，这里只更新内存及代理客户端。
+    pub fn bridge_set_config(&self, json: String) -> Result<(), CoreError> {
+        self.state.bridge_set_config(serde_json::from_str(&json).map_err(failed)?)?;
+        Ok(())
+    }
+
+    /// 启动时先收齐新配置与凭据，再启动后台任务，避免读取旧设置或抢跑请求。
+    pub fn bridge_set_secrets(&self, json: String) -> Result<(), CoreError> {
+        self.state.bridge_set_secrets(serde_json::from_str(&json).map_err(failed)?)?;
+        if !self.background_started.swap(true, Ordering::SeqCst) {
+            let _guard = RUNTIME.enter();
+            nextworkzone_app::start_background(&self.state).map_err(failed)?;
+        }
+        Ok(())
     }
 
     /// 调用命令：`args` 为 JSON 对象（参数名为 camelCase），返回 JSON 文本。

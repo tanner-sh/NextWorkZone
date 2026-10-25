@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use nextworkzone_confluence::ConfluenceClient;
 use nextworkzone_confluence::index::WikiIndex;
@@ -47,6 +48,7 @@ pub struct AppState {
     /// 本机 Wiki 库与页面的查看记录。
     pub wiki_index: Arc<WikiIndex>,
     store: Store,
+    bridge_initialized: AtomicBool,
     inner: RwLock<Inner>,
     /// 当前 Jira 用户名，按“地址 + 令牌”缓存，切换账号后自动失效。
     jira_user: RwLock<Option<(String, String)>>,
@@ -71,7 +73,7 @@ pub struct ServiceContext {
 impl AppState {
     pub fn load(paths: Paths, store: Store, host: Arc<dyn Host>) -> Result<Self> {
         let config_path = paths.config_dir.join("config.json");
-        let config = AppConfig::load(&config_path)?;
+        let config = if store.is_memory() { AppConfig::default() } else { AppConfig::load(&config_path)? };
         let http = http::build_client(config.proxy.as_deref())?;
         let data_dir = paths.data_dir.clone();
         Ok(Self {
@@ -84,6 +86,7 @@ impl AppState {
             issue_index: Arc::new(IssueIndex::open(&data_dir.join("jira-index.db"))?),
             wiki_index: Arc::new(WikiIndex::open(&data_dir.join("wiki-index.db"))?),
             store,
+            bridge_initialized: AtomicBool::new(false),
             inner: RwLock::new(Inner { config, http, secrets: None }),
             jira_user: RwLock::new(None),
             wiki_user: RwLock::new(None),
@@ -103,14 +106,52 @@ impl AppState {
         self.inner.read().unwrap().http.clone()
     }
 
-    /// 保存配置；代理变化时重建 HTTP 客户端。
+    /// 保存配置；原生宿主统一落盘，尚未移植的设置也不会写回旧目录。
     pub fn update_config(&self, config: AppConfig) -> Result<()> {
-        config.save(&self.config_path)?;
-        let mut inner = self.inner.write().unwrap();
-        if inner.config.proxy != config.proxy {
-            inner.http = http::build_client(config.proxy.as_deref())?;
+        self.replace_config(config, true)
+    }
+
+    /// Swift 已经保存的配置仅推入内存，避免循环写回宿主。
+    pub fn bridge_set_config(&self, config: AppConfig) -> Result<()> {
+        let previous = self.config();
+        self.replace_config(config.clone(), false)?;
+        self.update_secrets(|values| {
+            for service in Service::ALL {
+                if self.bridge_initialized.load(Ordering::SeqCst) && previous.endpoint(service).base_url != config.endpoint(service).base_url {
+                    values.remove(&secrets::key(service, Secret::Session));
+                }
+            }
+        })
+    }
+
+    fn replace_config(&self, config: AppConfig, persist: bool) -> Result<()> {
+        let client = if self.config().proxy != config.proxy { Some(http::build_client(config.proxy.as_deref())?) } else { None };
+        if persist {
+            if self.store.is_memory() { self.host.persist_config(&config)?; }
+            else { config.save(&self.config_path)?; }
         }
+        let mut inner = self.inner.write().unwrap();
+        if let Some(client) = client { inner.http = client; }
         inner.config = config;
+        Ok(())
+    }
+
+    /// 令牌和网页登录账号由 Swift 管理；会话仍由 Rust 保留，换账号时使其失效。
+    pub fn bridge_set_secrets(&self, next: HashMap<String, String>) -> Result<()> {
+        let initialized = self.bridge_initialized.load(Ordering::SeqCst);
+        self.update_secrets(|values| {
+            for service in Service::ALL {
+                let changed = [Secret::Token, Secret::WebUsername, Secret::WebPassword].into_iter()
+                    .any(|kind| {
+                        let key = secrets::key(service, kind);
+                        values.get(&key) != next.get(&key)
+                    });
+                if initialized && changed { values.remove(&secrets::key(service, Secret::Session)); }
+            }
+            values.retain(|key, _| key.ends_with("-session"));
+            values.extend(next.into_iter().filter(|(key, _)| !key.ends_with("-session")));
+        })?;
+        self.bridge_initialized.store(true, Ordering::SeqCst);
         Ok(())
     }
 
@@ -119,7 +160,12 @@ impl AppState {
         if let Some(secrets) = &self.inner.read().unwrap().secrets {
             return Ok(secrets.clone());
         }
-        let loaded = self.store.load()?;
+        let mut loaded = self.store.load()?;
+        if self.store.is_memory() {
+            // 这里只读新配置目录里的会话文件，不读取旧版凭据；P6 随会话实现一起移植。
+            let sessions = Store::File(self.paths.config_dir.join("web-sessions.json")).load()?;
+            loaded.extend(sessions.into_iter().filter(|(key, _)| key.ends_with("-session")));
+        }
         let mut inner = self.inner.write().unwrap();
         Ok(inner.secrets.get_or_insert(loaded).clone())
     }
@@ -128,6 +174,11 @@ impl AppState {
         let mut secrets = self.secrets()?;
         change(&mut secrets);
         self.store.save(&secrets)?;
+        if self.store.is_memory() {
+            let sessions = secrets.iter().filter(|(key, _)| key.ends_with("-session"))
+                .map(|(key, value)| (key.clone(), value.clone())).collect();
+            Store::File(self.paths.config_dir.join("web-sessions.json")).save(&sessions)?;
+        }
         self.inner.write().unwrap().secrets = Some(secrets);
         Ok(())
     }
@@ -243,5 +294,90 @@ impl AppState {
         } else {
             Err(Error::InvalidUrl(path_or_url.to_string()))
         }
+    }
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use crate::host::Shortcut;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct TestHost { saved: Mutex<Option<AppConfig>> }
+    impl Host for TestHost {
+        fn persist_config(&self, config: &AppConfig) -> Result<()> { *self.saved.lock().unwrap() = Some(config.clone()); Ok(()) }
+        fn emit(&self, _: &str, _: serde_json::Value) {}
+        fn notify(&self, _: &str, _: &str) {}
+        fn open_path(&self, _: &Path) -> Result<()> { Ok(()) }
+        fn set_shortcut(&self, _: Shortcut, _: &str) -> Result<()> { Ok(()) }
+        fn shortcut_error(&self, _: Shortcut) -> Option<String> { None }
+        fn hide_clipboard_panel(&self, _: bool) {}
+        fn clipboard_paused(&self, _: bool) {}
+    }
+
+    struct Temporary(PathBuf);
+    impl Temporary {
+        fn new() -> Self {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let dir = std::env::temp_dir().join(format!("nwz-bridge-{}-{stamp}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+        fn state(&self, host: Arc<TestHost>) -> AppState {
+            AppState::load(Paths { config_dir: self.0.clone(), data_dir: self.0.join("legacy"), cache_dir: self.0.join("cache"), home_dir: self.0.clone(), download_dir: self.0.clone() }, Store::memory(), host).unwrap()
+        }
+    }
+    impl Drop for Temporary { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+
+    #[test]
+    fn managed_state_never_loads_old_configuration_or_credentials() {
+        let temp = Temporary::new();
+        std::fs::write(temp.0.join("config.json"), "invalid legacy config").unwrap();
+        std::fs::write(temp.0.join("dev-credentials.json"), "invalid legacy credentials").unwrap();
+        let state = temp.state(Arc::new(TestHost::default()));
+        assert!(state.config().jira.base_url.is_empty());
+        assert_eq!(state.secret(Service::Jira, Secret::Token).unwrap(), None);
+        let mut config = AppConfig::default();
+        config.jira.base_url = "https://jira.example.com".into();
+        state.bridge_set_config(config).unwrap();
+        assert_eq!(std::fs::read_to_string(temp.0.join("config.json")).unwrap(), "invalid legacy config");
+    }
+
+    #[test]
+    fn remaining_settings_are_saved_by_the_swift_host() {
+        let temp = Temporary::new();
+        let host = Arc::new(TestHost::default());
+        let state = temp.state(host.clone());
+        let mut config = AppConfig::default();
+        config.workspace.sync_dir = "/tmp/shared".into();
+        state.update_config(config).unwrap();
+        assert_eq!(host.saved.lock().unwrap().as_ref().unwrap().workspace.sync_dir, "/tmp/shared");
+        assert!(!temp.0.join("config.json").exists());
+    }
+
+    #[test]
+    fn sessions_survive_restart_and_clear_when_account_changes() {
+        let temp = Temporary::new();
+        let mut config = AppConfig::default();
+        config.jira.base_url = "https://jira.example.com".into();
+        let secrets = HashMap::from([("jira".to_string(), "sample-token".to_string())]);
+        {
+            let state = temp.state(Arc::new(TestHost::default()));
+            state.bridge_set_config(config.clone()).unwrap();
+            state.bridge_set_secrets(secrets.clone()).unwrap();
+            state.set_secret(Service::Jira, Secret::Session, "session=sample").unwrap();
+        }
+        let state = temp.state(Arc::new(TestHost::default()));
+        state.bridge_set_config(config).unwrap();
+        state.bridge_set_secrets(secrets.clone()).unwrap();
+        assert_eq!(state.secret(Service::Jira, Secret::Session).unwrap().as_deref(), Some("session=sample"));
+        state.bridge_set_secrets(secrets).unwrap();
+        assert_eq!(state.secret(Service::Jira, Secret::Session).unwrap().as_deref(), Some("session=sample"));
+        let text = std::fs::read_to_string(temp.0.join("web-sessions.json")).unwrap();
+        assert!(!text.contains("sample-token"));
+        state.bridge_set_secrets(HashMap::new()).unwrap();
+        assert_eq!(state.secret(Service::Jira, Secret::Session).unwrap(), None);
     }
 }

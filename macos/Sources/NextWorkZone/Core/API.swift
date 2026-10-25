@@ -1,4 +1,6 @@
 import Foundation
+import NWZCore
+import NWZServices
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -13,18 +15,26 @@ func errorMessage(_ error: Error) -> String {
     return error.localizedDescription
 }
 
-/// Rust 应用层的类型化封装。界面只通过这里与应用层交互；命令与 Tauri 前端（src/api.ts）相同。
+/// 界面的类型化入口；已迁移领域直接调用 Swift 服务，其余领域暂时使用过渡桥。
 final class API: @unchecked Sendable {
     nonisolated(unsafe) static var shared: API!
 
     let core: Core
 
-    init(core: Core) {
+    let settings: SettingsService
+
+    init(core: Core, settings: SettingsService) {
         self.core = core
+        self.settings = settings
     }
 
     /// 调用命令，返回原始 JSON 文本。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
+        if cmd == "get_settings" { return try JSONEncoder().encode(await settings.getSettings()) }
+        if cmd == "test_connection" {
+            guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
+            return try JSONEncoder().encode(await settings.testConnection(service))
+        }
         let object = JSONValue.object(args)
         let text = String(decoding: try JSONEncoder().encode(object), as: UTF8.self)
         do {
@@ -65,11 +75,11 @@ final class API: @unchecked Sendable {
 
     // MARK: 设置
 
-    func getSettings() async throws -> Settings { try await call("get_settings") }
-    func saveSettings(_ input: SettingsInput) async throws -> Settings { try await call("save_settings", ["input": json(input)]) }
-    func clearToken(_ service: Service) async throws -> Settings { try await call("clear_token", ["service": .string(service.rawValue)]) }
-    func importTokensEnv() async throws -> [Service] { try await call("import_tokens_env") }
-    func testConnection(_ service: Service) async throws -> ConnectionInfo { try await call("test_connection", ["service": .string(service.rawValue)]) }
+    func getSettings() async throws -> Settings { await settings.getSettings() }
+    func saveSettings(_ input: SettingsInput) async throws -> Settings { try await settings.saveSettings(input) }
+    func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
+    func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
+    func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
 
     // MARK: Jira
 
@@ -336,4 +346,25 @@ enum AppEvent {
     static let jiraIndex = "jira-index-changed"
     /// 网页会话状态变化，载荷为服务名。
     static let webSession = "web-session"
+}
+
+/// 只有过渡桥保留 JSON，界面与 Swift 服务之间不再进行设置模型的编解码。
+private struct RustSettingsBridge: LegacySettingsBridge {
+    let core: Core
+    func setConfiguration(_ config: AppConfig) throws {
+        try core.bridgeSetConfig(json: String(decoding: JSONEncoder().encode(config), as: UTF8.self))
+    }
+    func setSecrets(_ secrets: [String: String]) throws {
+        try core.bridgeSetSecrets(json: String(decoding: JSONEncoder().encode(secrets), as: UTF8.self))
+    }
+}
+
+extension API {
+    static func make(paths: AppPaths, legacyPaths: CorePaths) throws -> API {
+        try paths.createDirectories()
+        let configuration = try ConfigurationStore(path: paths.config)
+        let core = try Core(paths: legacyPaths, host: AppHost(configuration: configuration))
+        let settings = try SettingsService(paths: paths, configuration: configuration, bridge: RustSettingsBridge(core: core))
+        return API(core: core, settings: settings)
+    }
 }

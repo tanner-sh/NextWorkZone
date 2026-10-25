@@ -22,6 +22,11 @@ impl Shortcut {
 }
 
 pub trait Host: Send + Sync + 'static {
+    /// 过渡期未移植的设置也交给 Swift 保存；其他宿主仍使用原来的文件存储。
+    fn persist_config(&self, _config: &nextworkzone_core::AppConfig) -> Result<()> {
+        Err(nextworkzone_core::Error::Other("宿主不支持保存 Swift 配置".into()))
+    }
+
     /// 把事件发给界面（所有窗口）。
     fn emit(&self, event: &str, payload: Value);
 
