@@ -130,7 +130,7 @@ struct MergeRequestView: View {
         guard let mr else { return }
         if event == "close" && !Confirm.ask("确定关闭合并请求 !\(mr.iid) 吗？") { return }
         run {
-            updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: ["stateEvent": .string(event)]))
+            updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: MrUpdate(stateEvent: event)))
             toast(event == "close" ? "已关闭" : "已重新打开")
         }
     }
@@ -143,7 +143,7 @@ struct MergeRequestView: View {
             specs.append(.action(mr.draft ? "标记为就绪" : "标记为草稿") {
                 run {
                     let title = mr.draft ? mr.title.replacing(Self.draftPrefix, with: "") : "Draft: \(mr.title)"
-                    updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: ["title": .string(title)]))
+                    updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: MrUpdate(title: title)))
                     toast(mr.draft ? "已标记为就绪" : "已标记为草稿")
                 }
             })
@@ -650,10 +650,10 @@ private struct EditMrSheet: View {
             Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
             Button(submitting ? "保存中…" : "保存") {
                 submitting = true
-                var update: [String: JSONValue] = [:]
-                if title != mr.title { update["title"] = .string(title) }
-                if description != mr.description { update["description"] = .string(description) }
-                if target != mr.targetBranch { update["targetBranch"] = .string(target) }
+                var update = MrUpdate()
+                if title != mr.title { update.title = title }
+                if description != mr.description { update.description = description }
+                if target != mr.targetBranch { update.targetBranch = target }
                 Task {
                     do {
                         onSaved(try await API.shared.glMrUpdate(String(mr.projectId), iid: mr.iid, update: update))
@@ -814,10 +814,7 @@ struct NewMergeRequestSheet: View {
         error = nil
         Task {
             do {
-                let mr = try await API.shared.glMrCreate(String(project.id), mr: [
-                    "sourceBranch": .string(source), "targetBranch": .string(target), "title": .string(title.trimmingCharacters(in: .whitespaces)),
-                    "description": .string(description), "removeSourceBranch": .bool(removeSource), "squash": .bool(squash),
-                ])
+                let mr = try await API.shared.glMrCreate(String(project.id), mr: NewMergeRequest(sourceBranch: source, targetBranch: target, title: title.trimmingCharacters(in: .whitespaces), description: description, removeSourceBranch: removeSource, squash: squash))
                 onCreated(mr)
                 dismiss()
             } catch {

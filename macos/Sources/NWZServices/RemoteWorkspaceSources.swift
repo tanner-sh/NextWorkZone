@@ -3,14 +3,15 @@ import NWZCore
 import NWZJira
 import NWZWiki
 
-/// 每迁入一个远端领域，就在这里替换相应来源；本机收件箱状态始终由工作空间管理。
-public struct JiraWorkspaceSources: WorkspaceRemoteSources {
+/// 汇总远端工作记录；本机收件箱状态始终由工作空间管理。
+public struct RemoteWorkspaceSources: WorkspaceRemoteSources {
     let wiki: WikiService
     let jira: JiraService
-    let legacy: any WorkspaceRemoteSources
-    public init(jira: JiraService, wiki: WikiService, legacy: any WorkspaceRemoteSources) { self.jira = jira; self.wiki = wiki; self.legacy = legacy }
+    let gitlab: GitLabService
+    public init(jira: JiraService, wiki: WikiService, gitlab: GitLabService) { self.jira = jira; self.wiki = wiki; self.gitlab = gitlab }
     public func inboxSources() async throws -> InboxView {
-        var result = (try? await legacy.inboxSources()) ?? InboxView(items: [], snoozed: [], notes: [])
+        var result = InboxView(items: [], snoozed: [], notes: [])
+        do { result.items = try await gitlab.inboxItems() } catch { result.notes.append("合并请求：" + error.localizedDescription) }
         let feed = try await jira.activity()
         let actionKinds: Set<String> = ["mention", "assigned", "comment", "status", "created", "share", "task"]
         var groups: [String: InboxItem] = [:]
@@ -31,7 +32,8 @@ public struct JiraWorkspaceSources: WorkspaceRemoteSources {
         result.items.sort { $0.at > $1.at }; return result
     }
     public func workEvents(day: String) async throws -> WorkLog {
-        var result = try await legacy.workEvents(day: day)
+        var result = WorkLog(day: day)
+        do { result.events = try await gitlab.workEvents(day: day) } catch { result.notes.append("GitLab：" + error.localizedDescription) }
         let format = DateFormatter(); format.locale = Locale(identifier: "en_US_POSIX"); format.dateFormat = "yyyy-MM-dd"; format.isLenient = false
         guard let start = format.date(from: day), format.string(from: start) == day, let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { throw NWZError.other("日期无效") }
         if let client = try? await wiki.client() {

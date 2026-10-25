@@ -1,4 +1,5 @@
 import NWZWiki
+import NWZGitLab
 import NWZJira
 import NWZPreview
 import Foundation
@@ -148,225 +149,49 @@ typealias WeeklySaveInput = NWZWiki.WeeklySaveInput
 
 // MARK: - GitLab
 
-struct Project: Codable, Hashable, Identifiable {
-    var id: Int
-    var name: String
-    var pathWithNamespace: String
-    var description: String?
-    var defaultBranch: String?
-    var webUrl: String
-    var lastActivityAt: String
-    var removeSourceBranchAfterMerge: Bool?
-    var squashOption: String?
-}
+typealias Project = NWZGitLab.Project
 
-struct Commit: Codable, Hashable, Identifiable {
-    var id: String
-    var shortId: String
-    var title: String
-    var message: String
-    var authorName: String
-    var authoredDate: String
-    var webUrl: String?
-}
+typealias Commit = NWZGitLab.Commit
 
-struct CodeRefSource: Codable, Hashable {
-    /// description / comment / mrSearch / commitSearch
-    var kind: String
-    var author: String?
-    var at: String?
-    var commentId: String?
-}
+typealias CodeRefSource = NWZGitLab.CodeRefSource
 
-struct CodeRef: Codable, Hashable {
-    /// mr / branch / commit / external
-    var kind: String
-    var url: String
-    var projectId: Int?
-    var projectPath: String
-    var projectName: String
-    var branch: String?
-    var sha: String?
-    var iid: Int?
-    var title: String
-    var state: String?
-    var pipeline: String?
-    var author: String?
-    var at: String?
-    var commits: [Commit]
-    var unavailable: String?
-    var sources: [CodeRefSource]
-}
+typealias CodeRef = NWZGitLab.CodeRef
 
-struct IssueText: Codable, Hashable {
-    /// description / comment
-    var source: String
-    var commentId: String?
-    var author: String?
-    var at: String?
-    var html: String
-}
+typealias IssueText = NWZGitLab.IssueText
 
-struct CodeTarget: Codable, Hashable {
-    var projectPath: String
-    var branch: String?
-    var sha: String?
-    var iid: Int?
-    var text: String
-}
+typealias CodeTarget = NWZGitLab.CodeTarget
 
-struct Branch: Codable, Hashable, Identifiable {
-    var name: String
-    var `default`: Bool
-    var protected: Bool
-    var merged: Bool
-    var commit: Commit
-    var id: String { name }
-}
+typealias Branch = NWZGitLab.Branch
 
-struct TreeEntry: Codable, Hashable, Identifiable {
-    var name: String
-    var path: String
-    /// tree / blob / commit
-    var kind: String
-    var id: String { path }
-}
+typealias TreeEntry = NWZGitLab.TreeEntry
 
-struct FileContent: Codable, Hashable {
-    var path: String
-    var size: Int
-    var text: String?
-    var imageDataUrl: String?
-    var tooLarge: Bool
-    var binary: Bool
-}
+typealias FileContent = NWZGitLab.FileContent
 
-struct FileDiff: Codable, Hashable, Identifiable {
-    var oldPath: String
-    var newPath: String
-    var diff: String
-    var newFile: Bool
-    var deletedFile: Bool
-    var renamedFile: Bool
-    var id: String { oldPath + "→" + newPath }
-}
+typealias FileDiff = NWZGitLab.FileDiff
 
-struct CommitDetail: Codable, Hashable {
-    var commit: Commit
-    var diffs: [FileDiff]
-}
+typealias CommitDetail = NWZGitLab.CommitDetail
 
-struct Comparison: Codable, Hashable {
-    var commits: [Commit]
-    var diffs: [FileDiff]
-}
+typealias Comparison = NWZGitLab.Comparison
 
-struct MrChanges: Codable, Hashable {
-    var diffs: [FileDiff]
-    var overflow: Bool
-}
+typealias MrChanges = NWZGitLab.MrChanges
 
-struct GlUser: Codable, Hashable, Identifiable {
-    var id: Int
-    var username: String
-    var name: String
-}
+typealias GlUser = NWZGitLab.GlUser
 
-struct DiffRefs: Codable, Hashable {
-    var baseSha: String
-    var headSha: String
-    var startSha: String
-}
+typealias DiffRefs = NWZGitLab.DiffRefs
 
-struct Pipeline: Codable, Hashable {
-    var id: Int
-    var status: String
-    var webUrl: String?
-}
+typealias Pipeline = NWZGitLab.Pipeline
 
-struct MergeRequest: Codable, Hashable, Identifiable {
-    var id: Int
-    var iid: Int
-    var projectId: Int
-    var title: String
-    var description: String
-    /// opened / merged / closed / locked
-    var state: String
-    var draft: Bool
-    var author: GlUser
-    var assignees: [GlUser]
-    var reviewers: [GlUser]
-    var sourceBranch: String
-    var targetBranch: String
-    var sourceProjectId: Int?
-    var createdAt: String
-    var updatedAt: String
-    var mergedAt: String?
-    var mergedBy: GlUser?
-    var closedAt: String?
-    var closedBy: GlUser?
-    var mergeStatus: String
-    var hasConflicts: Bool
-    var userNotesCount: Int
-    var upvotes: Int
-    var labels: [String]
-    var webUrl: String
-    var reference: String
-    var changesCount: String?
-    var sha: String?
-    var diffRefs: DiffRefs?
-    var headPipeline: Pipeline?
-    var squash: Bool
-    var forceRemoveSourceBranch: Bool?
-    var blockingDiscussionsResolved: Bool
-    var mergeError: String?
-    var mergeWhenPipelineSucceeds: Bool
-    var canMerge: Bool
-}
+typealias MergeRequest = NWZGitLab.MergeRequest
 
-struct NotePosition: Codable, Hashable {
-    var baseSha: String
-    var startSha: String
-    var headSha: String
-    var oldPath: String
-    var newPath: String
-    var oldLine: Int?
-    var newLine: Int?
-}
+typealias NotePosition = NWZGitLab.NotePosition
 
-struct MrNote: Codable, Hashable, Identifiable {
-    var id: Int
-    var body: String
-    var author: GlUser
-    var createdAt: String
-    var updatedAt: String?
-    var system: Bool
-    var resolvable: Bool
-    var resolved: Bool
-    var resolvedBy: GlUser?
-    var position: NotePosition?
-}
+typealias MrNote = NWZGitLab.MrNote
 
-struct Discussion: Codable, Hashable, Identifiable {
-    var id: String
-    var individualNote: Bool
-    var notes: [MrNote]
-}
+typealias Discussion = NWZGitLab.Discussion
 
-struct Approvals: Codable, Hashable {
-    var approved: Bool
-    var userHasApproved: Bool
-    var userCanApprove: Bool
-    var approvedBy: [GlUser]
-}
+typealias Approvals = NWZGitLab.Approvals
 
-struct MrQuery: Codable, Hashable {
-    /// opened / merged / closed / all
-    var state: String?
-    var search: String?
-    var sourceBranch: String?
-    var page: Int?
-}
+typealias MrQuery = NWZGitLab.MrQuery
 
 // MARK: - 工作空间
 
@@ -653,3 +478,9 @@ extension DocInput {
         .init(id: id, kind: kind, title: title, content: content, parentId: parentId, tags: tags ?? [], pinned: pinned ?? false, sourceSystem: sourceSystem, sourceKey: sourceKey, sourceUrl: sourceUrl)
     }
 }
+
+typealias MergeOptions = NWZGitLab.MergeOptions
+
+typealias MrUpdate = NWZGitLab.MrUpdate
+
+typealias NewMergeRequest = NWZGitLab.NewMergeRequest

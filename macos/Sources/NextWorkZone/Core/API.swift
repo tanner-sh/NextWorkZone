@@ -5,6 +5,7 @@ import NWZRich
 import NWZWorkspace
 import NWZPreview
 import NWZWiki
+import NWZGitLab
 import NWZJira
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
@@ -29,19 +30,21 @@ final class API: @unchecked Sendable {
     let settings: SettingsService
     let jira: JiraService
     let wiki: WikiService
+    let gitlab: GitLabService
     let weekly: WeeklyService
     let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, workspace: Task<WorkspaceService, Error>) {
+    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, gitlab: GitLabService, workspace: Task<WorkspaceService, Error>) {
         self.core = core
         self.settings = settings
         self.jira = jira
-        self.wiki = wiki; self.weekly = weekly
+        self.wiki = wiki; self.weekly = weekly; self.gitlab = gitlab
         self.workspace = workspace
     }
 
     /// 调用命令，返回原始 JSON 文本。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
+        if GitLabDebug.commands.contains(cmd) || ["gl_cached_projects", "issue_code_refs", "code_related_issues"].contains(cmd) { return try await gitlab.readOnly(cmd, arguments: args) }
         if WikiService.readOnlyCommands.contains(cmd) { return try await wiki.readOnly(cmd, arguments: args) }
         if cmd == "weekly_load" { return try await JSONEncoder().encode(weekly.load(section: args["section"]?.string)) }
         if cmd == "weekly_draft" { return try await JSONEncoder().encode(weekly.draft(section: args["section"]?.string, workspace: workspace.value.store)) }
@@ -101,6 +104,7 @@ final class API: @unchecked Sendable {
     /// 读取图片等资源，路径格式见 crates/app/src/asset.rs。
     func asset(_ path: String) async throws -> (Data, String?) {
         if path.hasPrefix("confluence/") { return try await wiki.attachments.fetch(service: .confluence, url: String(path.dropFirst(11)).removingPercentEncoding ?? String(path.dropFirst(11))) }
+        if path.hasPrefix("gitlab/") { return try await gitlab.attachments.fetch(service: .gitlab, url: String(path.dropFirst(7)).removingPercentEncoding ?? String(path.dropFirst(7))) }
         if path.hasPrefix("jira/") { return try await jira.attachments.fetch(service: .jira, url: String(path.dropFirst(5)).removingPercentEncoding ?? String(path.dropFirst(5))) }
         if path.hasPrefix("ws/") {
             guard let asset = try await workspace.value.store.asset(String(path.dropFirst(3))) else { throw APIError(message: "图片尚未同步或不存在") }
@@ -118,7 +122,7 @@ final class API: @unchecked Sendable {
     // MARK: 设置
 
     func getSettings() async throws -> Settings { await settings.getSettings() }
-    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); return result }
+    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); await gitlab.configurationChanged(); return result }
     func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
     func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
     func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
@@ -189,48 +193,34 @@ final class API: @unchecked Sendable {
 
     // MARK: GitLab
 
-    func glCachedProjects() async throws -> [Project]? { try await call("gl_cached_projects") }
-    func glProjects(search: String? = nil) async throws -> [Project] { try await call("gl_projects", ["search": json(search)]) }
-    func glProject(_ id: Int) async throws -> Project { try await call("gl_project", ["id": json(id)]) }
-    func glBranches(_ project: Int) async throws -> [Branch] { try await call("gl_branches", ["project": json(project)]) }
-    func glTree(_ project: Int, ref: String, path: String) async throws -> [TreeEntry] { try await call("gl_tree", ["project": json(project), "gitRef": .string(ref), "path": .string(path)]) }
-    func glFile(_ project: Int, ref: String, path: String) async throws -> FileContent { try await call("gl_file", ["project": json(project), "gitRef": .string(ref), "path": .string(path)]) }
-    func glCommits(_ project: Int, ref: String, path: String?, page: Int) async throws -> [Commit] {
-        try await call("gl_commits", ["project": json(project), "gitRef": .string(ref), "path": json(path), "page": json(page)])
-    }
-    func glCommit(_ project: Int, sha: String) async throws -> CommitDetail { try await call("gl_commit", ["project": json(project), "sha": .string(sha)]) }
-    func glCompare(_ project: Int, from: String, to: String) async throws -> Comparison { try await call("gl_compare", ["project": json(project), "from": .string(from), "to": .string(to)]) }
-    func issueCodeRefs(_ key: String, texts: [IssueText]) async throws -> [CodeRef] { try await call("issue_code_refs", ["key": .string(key), "texts": json(texts)]) }
-    func codeRelatedIssues(_ target: CodeTarget) async throws -> [IssueHit] { try await call("code_related_issues", ["target": json(target)]) }
-    func glMe() async throws -> GlUser { try await call("gl_me") }
-    func glMergeRequests(scope: String, query: MrQuery) async throws -> [MergeRequest] { try await call("gl_merge_requests", ["scope": .string(scope), "query": json(query)]) }
-    func glProjectMergeRequests(_ project: String, query: MrQuery) async throws -> [MergeRequest] { try await call("gl_project_merge_requests", ["project": .string(project), "query": json(query)]) }
-    func glMergeRequest(_ project: String, iid: Int) async throws -> MergeRequest { try await call("gl_merge_request", ["project": .string(project), "iid": json(iid)]) }
-    func glMrChanges(_ project: String, iid: Int) async throws -> MrChanges { try await call("gl_mr_changes", ["project": .string(project), "iid": json(iid)]) }
-    func glMrCommits(_ project: String, iid: Int) async throws -> [Commit] { try await call("gl_mr_commits", ["project": .string(project), "iid": json(iid)]) }
-    func glMrDiscussions(_ project: String, iid: Int) async throws -> [Discussion] { try await call("gl_mr_discussions", ["project": .string(project), "iid": json(iid)]) }
-    func glMrApprovals(_ project: String, iid: Int) async throws -> Approvals { try await call("gl_mr_approvals", ["project": .string(project), "iid": json(iid)]) }
-    func glMrAddNote(_ project: String, iid: Int, body: String, position: NotePosition? = nil) async throws -> Discussion {
-        try await call("gl_mr_add_note", ["project": .string(project), "iid": json(iid), "body": .string(body), "position": json(position)])
-    }
-    func glMrReply(_ project: String, iid: Int, discussion: String, body: String) async throws -> MrNote {
-        try await call("gl_mr_reply", ["project": .string(project), "iid": json(iid), "discussion": .string(discussion), "body": .string(body)])
-    }
-    func glMrEditNote(_ project: String, iid: Int, note: Int, body: String) async throws -> MrNote {
-        try await call("gl_mr_edit_note", ["project": .string(project), "iid": json(iid), "note": json(note), "body": .string(body)])
-    }
-    func glMrDeleteNote(_ project: String, iid: Int, note: Int) async throws { try await run("gl_mr_delete_note", ["project": .string(project), "iid": json(iid), "note": json(note)]) }
-    func glMrResolve(_ project: String, iid: Int, discussion: String, resolved: Bool) async throws -> Discussion {
-        try await call("gl_mr_resolve", ["project": .string(project), "iid": json(iid), "discussion": .string(discussion), "resolved": .bool(resolved)])
-    }
-    func glMrApprove(_ project: String, iid: Int, approve: Bool) async throws -> Approvals { try await call("gl_mr_approve", ["project": .string(project), "iid": json(iid), "approve": .bool(approve)]) }
-    func glMrMerge(_ project: String, iid: Int, squash: Bool, removeSourceBranch: Bool, sha: String?) async throws -> MergeRequest {
-        try await call("gl_mr_merge", ["project": .string(project), "iid": json(iid), "options": ["squash": .bool(squash), "removeSourceBranch": .bool(removeSourceBranch), "sha": json(sha)]])
-    }
-    func glMrUpdate(_ project: String, iid: Int, update: [String: JSONValue]) async throws -> MergeRequest {
-        try await call("gl_mr_update", ["project": .string(project), "iid": json(iid), "update": .object(update)])
-    }
-    func glMrCreate(_ project: String, mr: [String: JSONValue]) async throws -> MergeRequest { try await call("gl_mr_create", ["project": .string(project), "mr": .object(mr)]) }
+    func glCachedProjects() async throws -> [Project]? { try await gitlab.cachedProjects() }
+    func glProjects(search: String? = nil) async throws -> [Project] { try await gitlab.projects(search: search) }
+    func glProject(_ id: Int) async throws -> Project { try await gitlab.client().project(id) }
+    func glBranches(_ project: Int) async throws -> [Branch] { try await gitlab.client().branches(project) }
+    func glTree(_ project: Int, ref: String, path: String) async throws -> [TreeEntry] { try await gitlab.client().tree(project, ref: ref, path: path) }
+    func glFile(_ project: Int, ref: String, path: String) async throws -> FileContent { try await gitlab.client().file(project, ref: ref, path: path) }
+    func glCommits(_ project: Int, ref: String, path: String?, page: Int) async throws -> [Commit] { try await gitlab.client().commits(project, ref: ref, path: path, page: page) }
+    func glCommit(_ project: Int, sha: String) async throws -> CommitDetail { try await gitlab.client().commit(project, sha: sha) }
+    func glCompare(_ project: Int, from: String, to: String) async throws -> Comparison { try await gitlab.client().compare(project, from: from, to: to) }
+    func issueCodeRefs(_ key: String, texts: [IssueText]) async throws -> [CodeRef] { await gitlab.issueCodeRefs(key, texts: texts) }
+    func codeRelatedIssues(_ target: CodeTarget) async throws -> [IssueHit] { try await gitlab.relatedIssues(target) }
+    func glMe() async throws -> GlUser { try await gitlab.client().currentUser() }
+    func glMergeRequests(scope: String, query: MrQuery) async throws -> [MergeRequest] { guard let scope = NWZGitLab.MrScope(rawValue: scope) else { throw APIError(message: "无法识别的合并请求范围") }; return try await gitlab.client().mergeRequests(scope: scope, query: query) }
+    func glProjectMergeRequests(_ project: String, query: MrQuery) async throws -> [MergeRequest] { try await gitlab.client().projectMergeRequests(project, query: query) }
+    func glMergeRequest(_ project: String, iid: Int) async throws -> MergeRequest { try await gitlab.client().mergeRequest(project, iid: iid) }
+    func glMrChanges(_ project: String, iid: Int) async throws -> MrChanges { try await gitlab.client().mrChanges(project, iid: iid) }
+    func glMrCommits(_ project: String, iid: Int) async throws -> [Commit] { try await gitlab.client().mrCommits(project, iid: iid) }
+    func glMrDiscussions(_ project: String, iid: Int) async throws -> [Discussion] { try await gitlab.client().mrDiscussions(project, iid: iid) }
+    func glMrApprovals(_ project: String, iid: Int) async throws -> Approvals { try await gitlab.client().mrApprovals(project, iid: iid) }
+    func glMrAddNote(_ project: String, iid: Int, body: String, position: NotePosition? = nil) async throws -> Discussion { try await gitlab.client().mrAddNote(project, iid: iid, body: body, position: position) }
+    func glMrReply(_ project: String, iid: Int, discussion: String, body: String) async throws -> MrNote { try await gitlab.client().mrReply(project, iid: iid, discussion: discussion, body: body) }
+    func glMrEditNote(_ project: String, iid: Int, note: Int, body: String) async throws -> MrNote { try await gitlab.client().mrEditNote(project, iid: iid, note: note, body: body) }
+    func glMrDeleteNote(_ project: String, iid: Int, note: Int) async throws { try await gitlab.client().mrDeleteNote(project, iid: iid, note: note) }
+    func glMrResolve(_ project: String, iid: Int, discussion: String, resolved: Bool) async throws -> Discussion { try await gitlab.client().mrResolve(project, iid: iid, discussion: discussion, resolved: resolved) }
+    func glMrApprove(_ project: String, iid: Int, approve: Bool) async throws -> Approvals { try await gitlab.client().mrApprove(project, iid: iid, approve: approve) }
+    func glMrMerge(_ project: String, iid: Int, squash: Bool, removeSourceBranch: Bool, sha: String?) async throws -> MergeRequest { try await gitlab.client().mrMerge(project, iid: iid, options: MergeOptions(squash: squash, removeSourceBranch: removeSourceBranch, sha: sha)) }
+    func glMrUpdate(_ project: String, iid: Int, update: MrUpdate) async throws -> MergeRequest { try await gitlab.client().mrUpdate(project, iid: iid, update: update) }
+    func glMrCreate(_ project: String, mr: NewMergeRequest) async throws -> MergeRequest { try await gitlab.client().mrCreate(project, input: mr) }
 
     // MARK: 工作空间
 
@@ -367,26 +357,22 @@ extension API {
         let bridge = RustRemoteBridge(core: core)
         let wiki = try WikiService(settings: settings, host: host, web: bridge)
         let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: wiki)
-        let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: bridge)
+        let gitlab = GitLabService(settings: settings, jira: jira, host: host, web: bridge)
+        let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: gitlab)
         Task { await jira.start() }
         let workspace = Task {
             let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
-            let service = WorkspaceService(store: store, settings: settings, host: host, remote: JiraWorkspaceSources(jira: jira, wiki: wiki, legacy: bridge))
+            let service = WorkspaceService(store: store, settings: settings, host: host, remote: RemoteWorkspaceSources(jira: jira, wiki: wiki, gitlab: gitlab))
             await wiki.bindWorkspace(store); await wiki.start()
             await service.start()
             return service
         }
-        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, workspace: workspace)
+        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, gitlab: gitlab, workspace: workspace)
     }
 }
 
-private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, WeeklyCodeSource {
+private struct RustRemoteBridge: WebResourceSource {
     let core: Core
-    private func read<T: Decodable>(_ command: String, _ arguments: [String: JSONValue] = [:]) async throws -> T {
-        let args = String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
-        let result = try await core.call(cmd: command, args: args)
-        return try JSONDecoder().decode(T.self, from: Data(result.utf8))
-    }
     func fetch(service: Service, url: String) async throws -> (Data, String?) {
         do {
             let result = try await core.asset(path: service.rawValue + "/" + (url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url))
@@ -396,12 +382,5 @@ private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, Week
             if message.contains("需要先网页登录") { throw NWZError.sessionRequired(service) }
             throw error
         }
-    }
-    func weeklyWork(from: String, to: String) async throws -> [WeeklyCodeWork] { try await read("bridge_weekly_gitlab", ["from": .string(from), "to": .string(to)]) }
-    func inboxSources() async throws -> InboxView { try await read("bridge_inbox_sources") }
-    func workEvents(day: String) async throws -> WorkLog { try await read("bridge_work_events", ["day": .string(day)]) }
-    func markActivityRead(_ ids: [String]) async throws {}
-    func setWikiTask(page: String, task: String, done: Bool) async throws {
-        throw NWZError.other("Wiki 任务由 Swift 服务处理")
     }
 }
