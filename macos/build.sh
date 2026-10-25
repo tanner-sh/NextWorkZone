@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 构建应用：./build.sh [debug|release]，产物为 macos/build/NextWorkZone.app。
+# 构建应用：./build.sh [debug|release]，产物为 macos/build.noindex/NextWorkZone.app。
 #
 # 用 SwiftPM 编译（命令行工具即可，不需要 Xcode），再组装 .app 并签名。
 set -euo pipefail
@@ -24,7 +24,8 @@ fi
 swift build --build-system native --sdk "$SDK" "${SWIFT_FLAGS[@]}" --product NextWorkZone
 BIN="$(swift build --build-system native --sdk "$SDK" "${SWIFT_FLAGS[@]}" --show-bin-path)/NextWorkZone"
 
-APP="$PWD/build/NextWorkZone.app"
+# 目录名以 .noindex 结尾：聚焦搜索不收录，构建出的应用不会出现在“应用程序”中，与安装的版本混在一起
+APP="$PWD/build.noindex/NextWorkZone.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/NextWorkZone"
 sed -e "s/__BUNDLE_ID__/$BUNDLE_ID/" Resources/Info.plist > "$APP/Contents/Info.plist"

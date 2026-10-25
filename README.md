@@ -10,8 +10,9 @@ macOS 原生应用：Swift 6 + SwiftUI（部分控件用 AppKit），支持 macO
 ## 开发
 
 ```sh
-macos/build.sh             # 开发版：macos/build/NextWorkZone.app
-macos/build.sh release     # 正式版
+macos/build.sh             # 开发版：macos/build.noindex/NextWorkZone.app
+macos/build.sh release     # 正式版（同一位置）
+ditto macos/build.noindex/NextWorkZone.app /Applications/NextWorkZone.app   # 安装正式版
 macos/test.sh              # 测试（swift-testing）
 ```
 
