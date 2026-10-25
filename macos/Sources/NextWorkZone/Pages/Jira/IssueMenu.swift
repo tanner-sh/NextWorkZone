@@ -4,6 +4,9 @@ import SwiftUI
 /// 问题列表、首页、问题详情、Wiki 和笔记中的问题链接等处共用，保证同一个问题在哪里右键都是同一份菜单。
 @MainActor @Observable
 final class IssueMenu {
+    /// 不属于某个页面的地方（富文本的右键菜单）使用的实例，对话框挂在主窗口上。
+    static let shared = IssueMenu()
+
     enum Target {
         /// 完整的列表项
         case summary(IssueSummary)

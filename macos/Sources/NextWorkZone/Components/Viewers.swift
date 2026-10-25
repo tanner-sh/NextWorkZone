@@ -185,8 +185,10 @@ private struct AttachmentBody: View {
     @State private var file: URL?
     @State private var preview: AttachmentPreview?
     @State private var error: String?
+    @State private var showSource = false
 
     private var ext: String { (attachment.filename as NSString).pathExtension.lowercased() }
+    private var isHTML: Bool { ext == "html" || ext == "htm" || attachment.mimeType == "text/html" }
     private var useConverted: Bool { AttachmentViewer.converted.contains(ext) || (attachment.mimeType.hasPrefix("text/") && ext != "html" && ext != "htm") }
 
     var body: some View {
@@ -200,9 +202,25 @@ private struct AttachmentBody: View {
                     Button("用系统应用打开") { AttachmentViewer.openExternal(attachment, service: service) }
                 }
             } else if let preview {
-                ConvertedPreview(preview: preview)
+                ConvertedPreview(preview: preview, filename: attachment.filename)
             } else if let file {
-                QuickLookView(url: file)
+                if isHTML {
+                    // 网页附件：默认显示渲染后的页面，可以切换为源码
+                    VStack(spacing: 0) {
+                        HStack {
+                            Spacer()
+                            Button(showSource ? "显示网页" : "查看源码", systemImage: showSource ? "globe" : "chevron.left.forwardslash.chevron.right") { showSource.toggle() }
+                        }
+                        .padding(8)
+                        if showSource {
+                            TextPreview(text: (try? String(contentsOf: file, encoding: .utf8)) ?? "", filename: attachment.filename)
+                        } else {
+                            QuickLookView(url: file)
+                        }
+                    }
+                } else {
+                    QuickLookView(url: file)
+                }
             } else {
                 LoadingView(label: "正在下载…")
             }
@@ -255,20 +273,14 @@ struct QuickLookView: NSViewRepresentable {
 /// 应用层转换后的预览：文本、表格、文档段落、压缩包内容。
 struct ConvertedPreview: View {
     var preview: AttachmentPreview
+    var filename: String
     @State private var sheet = 0
 
     var body: some View {
         switch preview {
         case .text(let text, let truncated, let encoding):
-            VStack(alignment: .leading, spacing: 0) {
-                if truncated || encoding.lowercased() != "utf-8" {
-                    Text([truncated ? "只显示了开头的一部分" : nil, encoding.lowercased() != "utf-8" ? "编码：\(encoding)" : nil].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).padding(8)
-                }
-                ScrollView([.vertical, .horizontal]) {
-                    Text(text).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+            let note = [truncated ? "文件较大，只显示了开头的一部分" : nil, encoding.lowercased() != "utf-8" ? "编码：\(encoding)" : nil].compactMap { $0 }.joined(separator: " · ")
+            TextPreview(text: text, filename: filename, note: note.isEmpty ? nil : note)
         case .sheet(let sheets):
             VStack(alignment: .leading, spacing: 0) {
                 if sheets.count > 1 {
@@ -331,6 +343,47 @@ struct ConvertedPreview: View {
             }
         case .unsupported(let reason):
             ContentUnavailableView("无法预览", systemImage: "doc.questionmark", description: Text(reason))
+        }
+    }
+}
+
+/// 文本附件：等宽显示、带行号，可以只看包含某段文字的行（查日志时常用）。
+/// 用 NSTextView 显示：几 MB 的文字放在 SwiftUI 的 Text 中排版要好几秒。
+struct TextPreview: View {
+    var text: String
+    var filename: String
+    var note: String? = nil
+    @State private var filter = ""
+    @State private var shown: (text: String, matches: Int)?
+
+    /// 只看匹配的行时最多显示的行数。
+    nonisolated static let maxLines = 5000
+
+    var body: some View {
+        let query = filter.trimmingCharacters(in: .whitespaces)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                TextField("只看包含这段文字的行，例如 ERROR、Exception", text: $filter).textFieldStyle(.roundedBorder).frame(maxWidth: 360)
+                if !query.isEmpty, let shown {
+                    Text(shown.matches > Self.maxLines ? "\(shown.matches) 行匹配，只显示前 \(Self.maxLines) 行" : "\(shown.matches) 行匹配").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(8)
+            CodeView(code: query.isEmpty ? text : shown?.text ?? "", path: filename)
+        }
+        .task(id: query) {
+            guard !query.isEmpty else { shown = nil; return }
+            // 输入时稍等再筛选，长文件逐行比较放到后台
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            let source = text
+            let result = await Task.detached(priority: .userInitiated) { () -> (String, Int) in
+                let lines = source.split(separator: "\n", omittingEmptySubsequences: false).filter { $0.localizedCaseInsensitiveContains(query) }
+                return (lines.prefix(Self.maxLines).joined(separator: "\n"), lines.count)
+            }.value
+            if !Task.isCancelled { shown = result }
         }
     }
 }

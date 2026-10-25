@@ -152,9 +152,12 @@ private struct NativeContextMenu: NSViewRepresentable {
         var specs: (() -> [MenuSpec])?
         var onOpen: (() -> Void)?
 
+        /// 查找右键位置下面的内容时为真：这期间所有菜单层都不拦截点击。
+        private static var passthrough = false
+
         /// 只接收右键（和按住 Control 的点击），其余事件交给下面的 SwiftUI 内容。
         override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent else { return nil }
+            guard !Self.passthrough, let event = NSApp.currentEvent else { return nil }
             let isRight = event.type == .rightMouseDown || event.type == .rightMouseUp || ((event.type == .leftMouseDown || event.type == .leftMouseUp) && event.modifierFlags.contains(.control))
             return isRight ? super.hitTest(point) : nil
         }
@@ -162,7 +165,19 @@ private struct NativeContextMenu: NSViewRepresentable {
         override func menu(for event: NSEvent) -> NSMenu? {
             guard let specs else { return nil }
             onOpen?()
-            return MenuBuilder.menu(specs())
+            return MenuBuilder.menu(Self.contentSpecs(event) + specs())
+        }
+
+        /// 右键位置在富文本上时，先列出选中的文字、链接、图片等的操作（见 RichContextMenu），再接这一层自己的菜单。
+        private static func contentSpecs(_ event: NSEvent) -> [MenuSpec] {
+            guard let content = event.window?.contentView else { return [] }
+            passthrough = true
+            defer { passthrough = false }
+            var view = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
+            while let v = view, !(v is RichNSTextView) { view = v.superview }
+            guard let textView = view as? RichNSTextView else { return [] }
+            let specs = RichContextMenu.specs(textView, at: textView.convert(event.locationInWindow, from: nil), service: textView.service)
+            return specs.isEmpty ? [] : specs + [.separator]
         }
 
         override func rightMouseDown(with event: NSEvent) {

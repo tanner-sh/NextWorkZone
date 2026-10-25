@@ -241,7 +241,7 @@ struct IssueView: View {
             LinksSection(issue: issue, menu: issueMenu, onChanged: apply)
             SimilarSection(issue: issue, menu: issueMenu)
             WikiPagesSection(issueKey: issue.key) { related["wiki"] = $0 }.id("wiki")
-            IssueCodeSection(issue: issue) { related["code"] = $0 }.id("code")
+            IssueCodeSection(issue: issue, onCount: { related["code"] = $0 }, onComment: { id in withAnimation { proxy.scrollTo("comment-\(id)", anchor: .center) } }).id("code")
             BacklinksSection(system: "jira", itemKey: issue.key, title: "工作空间", onCount: { related["workspace"] = $0 }) {
                 Button("添加待办", systemImage: "checkmark.square") {
                     Task {

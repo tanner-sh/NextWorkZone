@@ -15,6 +15,8 @@ extension NSAttributedString.Key {
     static let nwzColor = NSAttributedString.Key("nwzColor")
     /// 编辑时列表项开头的标记（制表符、项目符号或勾选框），不属于内容
     static let nwzPrefix = NSAttributedString.Key("nwzPrefix")
+    /// 只读显示时代码块的原文（右键“复制代码块”）
+    static let nwzCode = NSAttributedString.Key("nwzCode")
 }
 
 /// 文档模型 → NSAttributedString（TextKit 1 的 NSTextView 显示和编辑）。
@@ -140,7 +142,10 @@ struct RichRenderer {
             let attrs: [NSAttributedString.Key: Any] = [.font: codeFont, .foregroundColor: NSColor.labelColor]
             let info = editing ? RichEditor.BlockInfo(kind: .code(lang), path: frame.path) : nil
             let content = NSMutableAttributedString(string: text.replacingOccurrences(of: "\n", with: "\u{2028}"), attributes: attrs)
-            if !editing { CodeHighlight.apply(content, lang: lang, font: codeFont) }
+            if !editing {
+                CodeHighlight.apply(content, lang: lang, font: codeFont)
+                content.addAttribute(.nwzCode, value: text, range: NSRange(location: 0, length: content.length))
+            }
             paragraph(content, style, out, block: info)
         case .table(let rows):
             renderTable(rows, frame, out)
@@ -420,7 +425,8 @@ enum StatusPillColor {
 final class RemoteImageAttachment: NSTextAttachment {
     let info: RichImage
     let service: Service
-    private var loaded = false
+    /// 图片已取回（`image` 是原图，不再是占位）
+    private(set) var loaded = false
     /// 排版时的最大宽度
     var maxWidth: CGFloat = 600
 

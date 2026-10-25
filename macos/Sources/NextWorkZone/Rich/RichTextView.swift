@@ -57,6 +57,7 @@ struct RichTextView: NSViewRepresentable {
         textView.usesFindBar = scrolls
         textView.isIncrementalSearchingEnabled = scrolls
         context.coordinator.textView = textView
+        textView.service = service
         if scrolls {
             let scroll = NSScrollView()
             scroll.hasVerticalScroller = true
@@ -77,6 +78,7 @@ struct RichTextView: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         let c = context.coordinator
         c.parent = self
+        (c.textView as? RichNSTextView)?.service = service
         // 内容没变时比较几乎不花时间（数组共用存储时直接判定相等）；不要对整篇文档求哈希
         if c.renderedDoc != doc || c.renderedSession != model.sessionVersion || c.renderedBaseSize != baseSize {
             c.renderedDoc = doc
@@ -217,6 +219,13 @@ struct RichTextView: NSViewRepresentable {
 final class RichNSTextView: NSTextView {
     /// 小于这个宽度时不排版
     static let minLayoutWidth: CGFloat = 50
+    /// 内容所属的系统（右键菜单中打开链接、图片时使用）
+    var service: Service = .jira
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let specs = RichContextMenu.specs(self, at: convert(event.locationInWindow, from: nil), service: service)
+        return specs.isEmpty ? super.menu(for: event) : MenuBuilder.menu(specs)
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)

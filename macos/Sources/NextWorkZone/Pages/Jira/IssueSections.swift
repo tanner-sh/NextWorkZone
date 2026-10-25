@@ -412,6 +412,8 @@ struct AttachmentTile: View {
 struct IssueCodeSection: View {
     var issue: IssueDetail
     var onCount: (Int) -> Void
+    /// 线索来自某条评论时，点击跳到那条评论
+    var onComment: (String) -> Void = { _ in }
     @State private var refs: [CodeRef]?
 
     /// 结果缓存一段时间：在问题之间来回切换时不重复请求 GitLab。
@@ -432,7 +434,7 @@ struct IssueCodeSection: View {
             if let refs, !refs.isEmpty {
                 BlockSection(title: "代码", icon: "chevron.left.forwardslash.chevron.right", count: "\(refs.count)") {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(refs, id: \.url) { r in CodeRefItem(item: r, issueKey: issue.key) }
+                        ForEach(refs, id: \.url) { r in CodeRefItem(item: r, issueKey: issue.key, onComment: onComment) }
                     }
                 }
             } else if refs == nil && AppModel.shared.isReady(.gitlab) {
@@ -459,6 +461,7 @@ struct IssueCodeSection: View {
 private struct CodeRefItem: View {
     var item: CodeRef
     var issueKey: String
+    var onComment: (String) -> Void
     @State private var expanded = false
 
     private var target: NavTarget? {
@@ -495,7 +498,13 @@ private struct CodeRefItem: View {
                 if let t = target { AppModel.shared.navigate(t) } else if r.kind == "external" || r.unavailable != nil { Links.openInBrowser(r.url) }
             }
             .contextMenu(specs: { menu })
-            detail.font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
+            HStack(spacing: 4) {
+                if let first = item.sources.first, first.kind == "comment", let id = first.commentId {
+                    Button("来自 \(first.author ?? "某人") 的评论") { onComment(id) }.buttonStyle(.link).help("跳到这条评论")
+                }
+                detail
+            }
+            .font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
             if r.kind == "branch", !commits.isEmpty, let pid = r.projectId {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(commits) { c in
@@ -537,7 +546,10 @@ private struct CodeRefItem: View {
         if let first = r.sources.first {
             let more = r.sources.count > 1 ? " 等 \(r.sources.count) 处" : ""
             switch first.kind {
-            case "comment": parts.append("来自 \(first.author ?? "某人") 的评论\(first.at.map { " · \(Fmt.time($0))" } ?? "")\(more)")
+            // “来自某人的评论”本身是跳到评论的链接（见 body），这里只接上时间
+            case "comment":
+                let text = "\(first.at.map { Fmt.time($0) } ?? "")\(more)".trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty { parts.append(text) }
             case "description": parts.append("描述中的链接\(more)")
             case "mrSearch": parts.append("标题或描述含 \(issueKey)\(more)")
             default: parts.append("提交说明含 \(issueKey)\(more)")

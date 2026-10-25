@@ -100,6 +100,8 @@ struct RichEditorView: NSViewRepresentable {
     var onOpenIssue: ((String) -> Void)? = nil
     /// 粘贴、拖入图片（数据、类型、序号）：保存后返回要插入的图片
     var onImage: ((Data, String, Int) async throws -> RichImage)? = nil
+    /// 拖入的其他文件：返回要插入的内容（例如附件引用），nil 表示不接受
+    var onFile: ((URL) -> RichInline?)? = nil
     /// 输入 [[ 时（光标处的矩形，屏幕坐标）
     var onDocLinkTrigger: ((NSRect) -> Void)? = nil
     /// ⌘↩
@@ -888,20 +890,28 @@ final class EditorTextView: NSTextView {
         paste(sender)
     }
 
-    /// 剪贴板或拖入的图片：保存后插入。
+    /// 剪贴板或拖入的图片：保存后插入；其他文件交给 `onFile`（插入附件引用）。
     private func pasteImages(from pb: NSPasteboard) -> Bool {
         guard let onImage = coordinator?.parent.onImage else { return false }
         var images: [(Data, String)] = []
+        var handledFiles = false
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             for url in urls {
                 let ext = url.pathExtension.lowercased()
-                guard ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic"].contains(ext), let data = try? Data(contentsOf: url) else { continue }
+                guard ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic"].contains(ext), let data = try? Data(contentsOf: url) else {
+                    if let inline = coordinator?.parent.onFile?(url) {
+                        insertInline(inline, replacing: 0)
+                        insertText(" ", replacementRange: selectedRange())
+                        handledFiles = true
+                    }
+                    continue
+                }
                 images.append((data, ext == "jpg" || ext == "jpeg" ? "image/jpeg" : "image/\(ext)"))
             }
         } else if pb.string(forType: .string) == nil, let image = NSImage(pasteboard: pb), let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             images.append((png, "image/png"))
         }
-        guard !images.isEmpty else { return false }
+        guard !images.isEmpty else { return handledFiles }
         Task { @MainActor in
             for (i, (data, mime)) in images.enumerated() {
                 do {

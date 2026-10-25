@@ -53,6 +53,11 @@ struct JiraTextEditor: View {
                             onOpenLink: { Links.open($0) },
                             onOpenIssue: { AppModel.shared.navigate(NavTarget(.jira, issueKey: $0)) },
                             onImage: onImage == nil ? nil : { data, mime, index in try await pasteImage(data, mime: mime, index: index) },
+                            onFile: onImage == nil ? nil : { url in
+                                // 其他文件：插入附件引用，保存时一起上传
+                                onImage?(PendingImage(filename: url.lastPathComponent, path: url.path))
+                                return .attachment(url.lastPathComponent)
+                            },
                             submit: onSubmit,
                             onMention: mentionChanged,
                             onKey: mentionKey
@@ -62,7 +67,11 @@ struct JiraTextEditor: View {
                     }
                     if loading { ProgressView().controlSize(.small).padding(6) }
                 } else {
-                    MarkupTextView(text: $text, minHeight: minHeight, submit: onSubmit, onMention: mentionChanged, onKey: mentionKey, inserter: plainInserter)
+                    MarkupTextView(text: $text, minHeight: minHeight, submit: onSubmit, onMention: mentionChanged, onKey: mentionKey, inserter: plainInserter, onFiles: onImage == nil ? nil : { urls in
+                        // 拖入的文件：图片插入 !文件名!，其他插入 [^文件名]，保存时一起上传
+                        for url in urls { onImage?(PendingImage(filename: url.lastPathComponent, path: url.path)) }
+                        return urls.map { url in ["png", "jpg", "jpeg", "gif", "webp", "bmp"].contains(url.pathExtension.lowercased()) ? "!\(url.lastPathComponent)!" : "[^\(url.lastPathComponent)]" }.joined(separator: " ")
+                    })
                 }
             }
             .padding(6)
@@ -349,6 +358,8 @@ struct MarkupTextView: NSViewRepresentable {
     var onMention: (String?) -> Void
     var onKey: (NSEvent) -> Bool
     var inserter: Inserter
+    /// 拖入文件：返回要插入的标记文字
+    var onFiles: (([URL]) -> String)? = nil
 
     /// 让外部在光标处替换文字（选中提及的用户后）。
     @MainActor
@@ -389,6 +400,7 @@ struct MarkupTextView: NSViewRepresentable {
     func updateNSView(_ tv: KeyTextView, context: Context) {
         context.coordinator.parent = self
         tv.onKey = onKey
+        tv.onFiles = onFiles
         inserter.textView = tv
         if tv.string != text { tv.string = text }
     }
@@ -408,6 +420,18 @@ struct MarkupTextView: NSViewRepresentable {
 
     final class KeyTextView: NSTextView {
         var onKey: ((NSEvent) -> Bool)?
+        var onFiles: (([URL]) -> String)?
+
+        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            // 默认会插入文件路径；改为插入附件引用
+            if let onFiles, let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+                let point = convert(sender.draggingLocation, from: nil)
+                let index = characterIndexForInsertion(at: point)
+                insertText(" " + onFiles(urls) + " ", replacementRange: NSRange(location: index, length: 0))
+                return true
+            }
+            return super.performDragOperation(sender)
+        }
 
         override func keyDown(with event: NSEvent) {
             if onKey?(event) == true { return }
