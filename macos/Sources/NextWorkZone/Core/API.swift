@@ -4,6 +4,7 @@ import NWZServices
 import NWZRich
 import NWZWorkspace
 import NWZPreview
+import NWZWiki
 import NWZJira
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
@@ -27,17 +28,23 @@ final class API: @unchecked Sendable {
 
     let settings: SettingsService
     let jira: JiraService
+    let wiki: WikiService
+    let weekly: WeeklyService
     let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService, jira: JiraService, workspace: Task<WorkspaceService, Error>) {
+    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, workspace: Task<WorkspaceService, Error>) {
         self.core = core
         self.settings = settings
         self.jira = jira
+        self.wiki = wiki; self.weekly = weekly
         self.workspace = workspace
     }
 
     /// 调用命令，返回原始 JSON 文本。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
+        if WikiService.readOnlyCommands.contains(cmd) { return try await wiki.readOnly(cmd, arguments: args) }
+        if cmd == "weekly_load" { return try await JSONEncoder().encode(weekly.load(section: args["section"]?.string)) }
+        if cmd == "weekly_draft" { return try await JSONEncoder().encode(weekly.draft(section: args["section"]?.string, workspace: workspace.value.store)) }
         if JiraService.readOnlyCommands.contains(cmd) { return try await jira.readOnly(cmd, arguments: args) }
         if cmd == "get_settings" { return try JSONEncoder().encode(await settings.getSettings()) }
         if cmd == "test_connection" {
@@ -93,6 +100,7 @@ final class API: @unchecked Sendable {
 
     /// 读取图片等资源，路径格式见 crates/app/src/asset.rs。
     func asset(_ path: String) async throws -> (Data, String?) {
+        if path.hasPrefix("confluence/") { return try await wiki.attachments.fetch(service: .confluence, url: String(path.dropFirst(11)).removingPercentEncoding ?? String(path.dropFirst(11))) }
         if path.hasPrefix("jira/") { return try await jira.attachments.fetch(service: .jira, url: String(path.dropFirst(5)).removingPercentEncoding ?? String(path.dropFirst(5))) }
         if path.hasPrefix("ws/") {
             guard let asset = try await workspace.value.store.asset(String(path.dropFirst(3))) else { throw APIError(message: "图片尚未同步或不存在") }
@@ -110,7 +118,7 @@ final class API: @unchecked Sendable {
     // MARK: 设置
 
     func getSettings() async throws -> Settings { await settings.getSettings() }
-    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); return result }
+    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); return result }
     func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
     func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
     func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
@@ -174,10 +182,10 @@ final class API: @unchecked Sendable {
 
     // MARK: 周报
 
-    func weeklyLoad(section: String? = nil) async throws -> WeeklyView { try await call("weekly_load", ["section": json(section)]) }
-    func weeklySave(_ input: WeeklySaveInput) async throws -> SaveResult { try await call("weekly_save", ["input": json(input)]) }
-    func weeklyCreateWeek() async throws -> WeeklyView { try await call("weekly_create_week") }
-    func weeklyDraft(section: String?) async throws -> WeeklyDraft { try await call("weekly_draft", ["section": json(section)]) }
+    func weeklyLoad(section: String? = nil) async throws -> WeeklyView { try await weekly.load(section: section) }
+    func weeklySave(_ input: WeeklySaveInput) async throws -> SaveResult { try await weekly.save(input) }
+    func weeklyCreateWeek() async throws -> WeeklyView { try await weekly.createWeek() }
+    func weeklyDraft(section: String?) async throws -> WeeklyDraft { try await weekly.draft(section: section, workspace: workspace.value.store) }
 
     // MARK: GitLab
 
@@ -252,10 +260,8 @@ final class API: @unchecked Sendable {
     func wsInboxHandle(_ input: InboxHandleInput) async throws { try await workspace.value.handleInbox(input) }
     func wsInboxSnooze(_ id: String, title: String, until: Int64?) async throws { try await workspace.value.snoozeInbox(id, title: title, until: until) }
     func wsWorklog(_ day: String) async throws -> WorkLog { try await workspace.value.worklog(day) }
-    func wsWikiPage(_ page: String) async throws -> WsWikiPage { try await call("ws_wiki_page", ["page": .string(page)]) }
-    func wsPublishToWiki(docId: String?, mode: String, parent: String, title: String, storage: String, assets: [String]) async throws -> PublishResult {
-        try await call("ws_publish_to_wiki", ["docId": json(docId), "mode": .string(mode), "parent": .string(parent), "title": .string(title), "storage": .string(storage), "assets": json(assets)])
-    }
+    func wsWikiPage(_ page: String) async throws -> WsWikiPage { try await wiki.workspacePage(page) }
+    func wsPublishToWiki(docId: String?, mode: String, parent: String, title: String, storage: String, assets: [String]) async throws -> PublishResult { try await wiki.publish(docID: docId, mode: mode, parent: parent, title: title, storage: storage, assets: assets, workspace: workspace.value.store) }
     func toolsHidden() async throws -> [String] { try await workspace.value.toolsHidden() }
     func toolsSetHidden(_ hidden: [String]) async throws -> [String] { try await workspace.value.setToolsHidden(hidden) }
 
@@ -285,49 +291,35 @@ final class API: @unchecked Sendable {
 
     // MARK: Wiki
 
-    func wikiCachedSpaces() async throws -> [WikiSpace]? { try await call("wiki_cached_spaces") }
-    func wikiSpaces() async throws -> [WikiSpace] { try await call("wiki_spaces") }
-    func wikiSpaceRoots(_ space: String) async throws -> [WikiNode] { try await call("wiki_space_roots", ["space": .string(space)]) }
-    func wikiChildren(_ page: String) async throws -> [WikiNode] { try await call("wiki_children", ["page": .string(page)]) }
-    func wikiPage(_ page: String) async throws -> WikiPageDetail { try await call("wiki_page", ["page": .string(page)]) }
-    func wikiResolve(_ input: String) async throws -> String? { try await call("wiki_resolve", ["input": .string(input)]) }
-    func wikiAttachments(_ page: String) async throws -> [Attachment] { try await call("wiki_attachments", ["page": .string(page)]) }
-    func wikiRecent(limit: Int = 30) async throws -> [WikiRecent] { try await call("wiki_recent", ["limit": json(limit)]) }
-    func wikiVersions(_ page: String) async throws -> [WikiVersion] { try await call("wiki_versions", ["page": .string(page)]) }
-    func wikiDiff(_ page: String, from: Int, to: Int) async throws -> String { try await call("wiki_diff", ["page": .string(page), "from": json(from), "to": json(to)]) }
-    func wikiVersionHtml(_ page: String, version: Int) async throws -> String { try await call("wiki_version_html", ["page": .string(page), "version": json(version)]) }
-    func wikiPageVersion(_ page: String) async throws -> WikiPageVersionInfo { try await call("wiki_page_version", ["page": .string(page)]) }
-    func wikiComments(_ page: String) async throws -> [WikiComment] { try await call("wiki_comments", ["page": .string(page)]) }
-    func wikiAddComment(_ page: String, parent: String?, text: String) async throws -> [WikiComment] {
-        try await call("wiki_add_comment", ["page": .string(page), "parent": json(parent), "text": .string(text)])
-    }
-    func wikiSetTask(_ page: String, task: String, done: Bool) async throws { try await run("wiki_set_task", ["page": .string(page), "task": .string(task), "done": .bool(done)]) }
-    func wikiUsers(_ keys: [String]) async throws -> [String: String] { try await call("wiki_users", ["keys": json(keys)]) }
-    func wikiSearch(_ query: WikiQuery, server: Bool = false, start: Int = 0) async throws -> WikiSearchResult {
-        var q = query
-        if q.limit == nil { q.limit = 50 }
-        return try await call("wiki_search", ["query": json(q), "server": .bool(server), "start": json(start)])
-    }
-    func wikiIssuePages(_ key: String) async throws -> [WikiPageHit] { try await call("wiki_issue_pages", ["key": .string(key)]) }
-    func wikiEdit(_ page: String) async throws -> WikiEditSession { try await call("wiki_edit", ["page": .string(page)]) }
-    func wikiNewPage(space: String, template: String?, storage: String?) async throws -> WikiEditSession {
-        try await call("wiki_new_page", ["space": .string(space), "template": json(template), "storage": json(storage)])
-    }
-    func wikiTemplates(space: String?) async throws -> [WikiTemplate] { try await call("wiki_templates", ["space": json(space)]) }
-    func wikiPreviewSave(page: String?, xhtml: String, fragments: [String]) async throws -> WikiSavePreview {
-        try await call("wiki_preview_save", ["page": json(page), "xhtml": .string(xhtml), "fragments": json(fragments)])
-    }
-    func wikiSave(page: String, title: String, xhtml: String, fragments: [String], baseVersion: Int, minorEdit: Bool, message: String) async throws -> Int {
-        try await call("wiki_save", ["page": .string(page), "title": .string(title), "xhtml": .string(xhtml), "fragments": json(fragments), "baseVersion": json(baseVersion), "minorEdit": .bool(minorEdit), "message": .string(message)])
-    }
-    func wikiCreate(space: String, parent: String?, title: String, xhtml: String, fragments: [String]) async throws -> String {
-        try await call("wiki_create", ["space": .string(space), "parent": json(parent), "title": .string(title), "xhtml": .string(xhtml), "fragments": json(fragments)])
-    }
-    func wikiIndexStatus() async throws -> WikiIndexStatus { try await call("wiki_index_status") }
-    func wikiIndexSync() async throws { try await run("wiki_index_sync") }
-    func wikiIndexRebuild() async throws -> WikiIndexStatus { try await call("wiki_index_rebuild") }
-    func wikiToolsSettings() async throws -> WikiToolsSettings { try await call("wiki_tools_settings") }
-    func wikiSaveToolsSettings(_ settings: WikiToolsSettings) async throws -> WikiToolsSettings { try await call("wiki_save_tools_settings", ["settings": json(settings)]) }
+    func wikiCachedSpaces() async throws -> [WikiSpace]? { try await wiki.cachedSpaces() }
+    func wikiSpaces() async throws -> [WikiSpace] { try await wiki.spaces() }
+    func wikiSpaceRoots(_ space: String) async throws -> [WikiNode] { try await wiki.client().spaceRoots(space) }
+    func wikiChildren(_ page: String) async throws -> [WikiNode] { try await wiki.client().children(page) }
+    func wikiPage(_ page: String) async throws -> WikiPageDetail { try await wiki.page(page) }
+    func wikiResolve(_ input: String) async throws -> String? { try await wiki.client().resolvePage(input) }
+    func wikiAttachments(_ page: String) async throws -> [Attachment] { try await wiki.pageAttachments(page) }
+    func wikiRecent(limit: Int = 30) async throws -> [WikiRecent] { try await wiki.recent(limit: limit) }
+    func wikiVersions(_ page: String) async throws -> [WikiVersion] { try await wiki.client().versions(page) }
+    func wikiDiff(_ page: String, from: Int, to: Int) async throws -> String { try await wiki.diff(page, from: from, to: to) }
+    func wikiVersionHtml(_ page: String, version: Int) async throws -> String { try await wiki.client().versionHTML(page, version: version) }
+    func wikiPageVersion(_ page: String) async throws -> WikiPageVersionInfo { try await wiki.client().pageVersion(page) }
+    func wikiComments(_ page: String) async throws -> [WikiComment] { try await wiki.client().comments(page) }
+    func wikiAddComment(_ page: String, parent: String?, text: String) async throws -> [WikiComment] { try await wiki.addComment(page, parent: parent, text: text) }
+    func wikiSetTask(_ page: String, task: String, done: Bool) async throws { try await wiki.setTask(page, task: task, done: done) }
+    func wikiUsers(_ keys: [String]) async throws -> [String: String] { try await wiki.client().userNames(keys) }
+    func wikiSearch(_ query: WikiQuery, server: Bool = false, start: Int = 0) async throws -> WikiSearchResult { var q = query; if q.limit == nil { q.limit = 50 }; return try await wiki.search(q, server: server, start: start) }
+    func wikiIssuePages(_ key: String) async throws -> [WikiPageHit] { try await wiki.issuePages(key) }
+    func wikiEdit(_ page: String) async throws -> WikiEditSession { try await wiki.edit(page) }
+    func wikiNewPage(space: String, template: String?, storage: String?) async throws -> WikiEditSession { try await wiki.newPage(space: space, template: template, storage: storage) }
+    func wikiTemplates(space: String?) async throws -> [WikiTemplate] { try await wiki.client().templates(space: space) }
+    func wikiPreviewSave(page: String?, xhtml: String, fragments: [String]) async throws -> WikiSavePreview { try await wiki.previewSave(page: page, xhtml: xhtml, fragments: fragments) }
+    func wikiSave(page: String, title: String, xhtml: String, fragments: [String], baseVersion: Int, minorEdit: Bool, message: String) async throws -> Int { try await wiki.save(page: page, title: title, xhtml: xhtml, fragments: fragments, baseVersion: baseVersion, minorEdit: minorEdit, message: message) }
+    func wikiCreate(space: String, parent: String?, title: String, xhtml: String, fragments: [String]) async throws -> String { try await wiki.create(space: space, parent: parent, title: title, xhtml: xhtml, fragments: fragments) }
+    func wikiIndexStatus() async throws -> WikiIndexStatus { try await wiki.indexStatus() }
+    func wikiIndexSync() async throws { await wiki.requestIndexSync() }
+    func wikiIndexRebuild() async throws -> WikiIndexStatus { try await wiki.rebuildIndex() }
+    func wikiToolsSettings() async throws -> WikiToolsSettings { await wiki.toolsSettings() }
+    func wikiSaveToolsSettings(_ settings: WikiToolsSettings) async throws -> WikiToolsSettings { try await wiki.saveToolsSettings(settings) }
 
     // MARK: 搜索与网页登录
 
@@ -373,19 +365,22 @@ extension API {
         let core = try Core(paths: legacyPaths, host: host)
         let settings = try SettingsService(paths: paths, configuration: configuration, bridge: RustSettingsBridge(core: core))
         let bridge = RustRemoteBridge(core: core)
-        let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: bridge)
+        let wiki = try WikiService(settings: settings, host: host, web: bridge)
+        let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: wiki)
+        let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: bridge)
         Task { await jira.start() }
         let workspace = Task {
             let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
-            let service = WorkspaceService(store: store, settings: settings, host: host, remote: JiraWorkspaceSources(jira: jira, legacy: bridge))
+            let service = WorkspaceService(store: store, settings: settings, host: host, remote: JiraWorkspaceSources(jira: jira, wiki: wiki, legacy: bridge))
+            await wiki.bindWorkspace(store); await wiki.start()
             await service.start()
             return service
         }
-        return API(core: core, settings: settings, jira: jira, workspace: workspace)
+        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, workspace: workspace)
     }
 }
 
-private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, WikiActivitySource {
+private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, WeeklyCodeSource {
     let core: Core
     private func read<T: Decodable>(_ command: String, _ arguments: [String: JSONValue] = [:]) async throws -> T {
         let args = String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
@@ -402,11 +397,11 @@ private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, Wiki
             throw error
         }
     }
-    func events(since: Date, first: Bool) async throws -> [ActivityEvent] { try await read("bridge_wiki_activity", ["since":.string(since.ISO8601Format()), "first":.bool(first)]) }
+    func weeklyWork(from: String, to: String) async throws -> [WeeklyCodeWork] { try await read("bridge_weekly_gitlab", ["from": .string(from), "to": .string(to)]) }
     func inboxSources() async throws -> InboxView { try await read("bridge_inbox_sources") }
     func workEvents(day: String) async throws -> WorkLog { try await read("bridge_work_events", ["day": .string(day)]) }
     func markActivityRead(_ ids: [String]) async throws {}
     func setWikiTask(page: String, task: String, done: Bool) async throws {
-        let _: JSONValue = try await read("wiki_set_task", ["page": .string(page), "task": .string(task), "done": .bool(done)])
+        throw NWZError.other("Wiki 任务由 Swift 服务处理")
     }
 }

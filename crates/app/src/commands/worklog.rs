@@ -58,8 +58,7 @@ pub async fn bridge_work_events(state: &AppState, day: String) -> Result<WorkLog
     let mut events: Vec<WorkEvent> = Vec::new();
     let mut notes = Vec::new();
 
-    let (gitlab, wiki) = tokio::join!(gitlab_events(state, date), wiki_events(state, date));
-    for (label, result) in [("GitLab", gitlab), ("Wiki", wiki)] {
+    for (label, result) in [("GitLab", gitlab_events(state, date).await)] {
         match result {
             Ok(found) => events.extend(found.into_iter().filter(|e| within(e.at))),
             Err(e) => notes.push(format!("{label}：{e}")),
@@ -98,13 +97,4 @@ pub(crate) async fn project_names(gitlab: &nextworkzone_gitlab::GitlabClient, id
     }
     *PROJECT_NAMES.lock().unwrap() = Some(names.clone());
     names
-}
-
-async fn wiki_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEvent>> {
-    let Ok(confluence) = state.confluence() else { return Ok(Vec::new()) };
-    let found = confluence.my_work(&date.to_string(), &(date + Duration::days(1)).to_string()).await?;
-    Ok(found
-        .into_iter()
-        .filter_map(|w| Some(WorkEvent { at: ms_of(&w.at)?, system: "wiki", kind: w.kind, title: w.title, key: Some(w.page_id), detail: w.detail, project_id: None }))
-        .collect())
 }

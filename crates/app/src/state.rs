@@ -321,7 +321,9 @@ mod bridge_tests {
     impl Temporary {
         fn new() -> Self {
             let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-            let dir = std::env::temp_dir().join(format!("nwz-bridge-{}-{stamp}", std::process::id()));
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("nwz-bridge-{}-{stamp}-{serial}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)
         }

@@ -1,3 +1,4 @@
+import NWZWiki
 import NWZJira
 import NWZPreview
 import Foundation
@@ -125,83 +126,25 @@ typealias Viewed = NWZJira.Viewed
 
 // MARK: - 周报
 
-struct OutlineItem: Codable, Hashable {
-    var level: Int
-    var text: String
-}
+typealias OutlineItem = NWZWiki.OutlineItem
 
-struct SectionInfo: Codable, Hashable {
-    var title: String
-    var coversToday: Bool
-}
+typealias SectionInfo = NWZWiki.SectionInfo
 
-struct WeekEntry: Codable, Hashable {
-    var sectionTitle: String
-    var rowFound: Bool
-    var content: [OutlineItem]
-    var risk: [OutlineItem]
-    var contentRaw: String
-    var riskRaw: String
-    var lossy: Bool
-}
+typealias WeekEntry = NWZWiki.WeekEntry
 
-struct WeeklyView: Codable, Hashable {
-    var pageId: String
-    var pageTitle: String
-    var pageUrl: String
-    var version: Int
-    var modifiedBy: String
-    var modifiedAt: String
-    var personName: String
-    var sections: [SectionInfo]
-    var currentWeekTitle: String
-    var currentWeekExists: Bool
-    var entry: WeekEntry?
-}
+typealias WeeklyView = NWZWiki.WeeklyView
 
-struct SaveResult: Codable, Hashable {
-    var changed: Bool
-    var version: Int
-}
+typealias SaveResult = NWZWiki.SaveResult
 
-struct DraftItem: Codable, Hashable {
-    var text: String
-    var key: String?
-    var evidence: [String]
-    var lastWeek: String?
-}
+typealias DraftItem = NWZWiki.DraftItem
 
-struct DraftGroup: Codable, Hashable {
-    var title: String
-    /// jira / worklog / gitlab / wiki / todo / daily
-    var source: String
-    var items: [DraftItem]
-}
+typealias DraftGroup = NWZWiki.DraftGroup
 
-struct CarryOver: Codable, Hashable {
-    var group: String
-    var text: String
-    var progress: String?
-    var thisWeek: String?
-}
+typealias CarryOver = NWZWiki.CarryOver
 
-struct WeeklyDraft: Codable, Hashable {
-    var from: String
-    var to: String
-    var groups: [DraftGroup]
-    var carryOver: [CarryOver]
-    var lastWeekTitle: String?
-    var separator: String
-    var notes: [String]
-}
+typealias WeeklyDraft = NWZWiki.WeeklyDraft
 
-struct WeeklySaveInput: Codable, Hashable {
-    var section: String
-    var contentRaw: String
-    var riskRaw: String
-    var content: [OutlineItem]
-    var risk: [OutlineItem]
-}
+typealias WeeklySaveInput = NWZWiki.WeeklySaveInput
 
 // MARK: - GitLab
 
@@ -529,20 +472,9 @@ typealias JiraTodoSync = NWZWorkspace.JiraTodoSync
 
 typealias SavedAsset = NWZWorkspace.AssetMeta
 
-struct WsWikiPage: Codable, Hashable {
-    var id: String
-    var title: String
-    var spaceKey: String
-    var url: String
-    var html: String
-    var version: Int
-}
+typealias WsWikiPage = NWZServices.WsWikiPage
 
-struct PublishResult: Codable, Hashable {
-    var url: String
-    var updated: Bool
-    var doc: Doc?
-}
+typealias PublishResult = NWZServices.PublishResult
 
 // MARK: - 剪贴板
 
@@ -640,170 +572,45 @@ struct ClipText: Codable, Hashable {
 
 // MARK: - Wiki
 
-struct WikiSpace: Codable, Hashable, Identifiable {
-    var key: String
-    var name: String
-    var homepageId: String?
-    var description: String
-    var id: String { key }
-}
+typealias WikiSpace = NWZWiki.WikiSpace
 
-struct WikiNode: Codable, Hashable, Identifiable {
-    var id: String
-    var title: String
-    var hasChildren: Bool
-}
+typealias WikiNode = NWZWiki.WikiNode
 
-struct WikiAncestor: Codable, Hashable, Identifiable {
-    var id: String
-    var title: String
-}
+typealias WikiAncestor = NWZWiki.WikiAncestor
 
-struct WikiPageDetail: Codable, Hashable, Identifiable {
-    var id: String
-    /// page / blogpost
-    var kind: String
-    var title: String
-    var spaceKey: String
-    var spaceName: String
-    var version: Int
-    var modifiedBy: String
-    var modified: String
-    var versionMessage: String
-    var createdBy: String
-    var created: String
-    var ancestors: [WikiAncestor]
-    var labels: [String]
-    var html: String
-    var url: String
-    var canEdit: Bool
-}
+typealias WikiPageDetail = NWZWiki.WikiPageDetail
 
-struct WikiRecent: Codable, Hashable, Identifiable {
-    var id: String
-    var title: String
-    var space: String
-    var at: Int64
-    /// app / web
-    var source: String
-}
+typealias WikiRecent = NWZWiki.WikiRecent
 
-struct WikiVersion: Codable, Hashable, Identifiable {
-    var number: Int
-    var by: String
-    var when: String
-    var message: String
-    var minorEdit: Bool
-    var id: Int { number }
-}
+typealias WikiVersion = NWZWiki.WikiVersion
 
-struct WikiComment: Codable, Hashable, Identifiable {
-    var id: String
-    var author: String
-    var created: String
-    var html: String
-    var parentId: String?
-    var inlineText: String?
-    var version: Int
-}
+typealias WikiComment = NWZWiki.WikiComment
 
-struct WikiPageHit: Codable, Hashable, Identifiable {
-    var id: String
-    var kind: String
-    var title: String
-    var spaceKey: String
-    var spaceName: String
-    var ancestors: [WikiAncestor]
-    var authorName: String
-    var modified: String
-    var snippet: String
-}
+typealias WikiPageHit = NWZWiki.WikiPageHit
 
-struct WikiQuery: Codable, Hashable {
-    var text: String
-    var space: String?
-    var mine: Bool?
-    var days: Int?
-    var kind: String?
-    var limit: Int?
-}
+typealias WikiQuery = NWZWiki.WikiQuery
 
-struct WikiSearchResult: Codable, Hashable {
-    /// local / server
-    var source: String
-    var total: Int
-    var hits: [WikiPageHit]
-}
+typealias WikiSearchResult = NWZWiki.WikiSearchResult
 
-struct WikiTemplate: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var description: String
-    var spaceKey: String?
-}
+typealias WikiTemplate = NWZWiki.WikiTemplate
 
-struct WikiEditSession: Codable, Hashable {
-    var pageId: String?
-    var title: String
-    var spaceKey: String
-    var version: Int
-    var html: String
-    var fragments: [String]
-    var users: [String]
-}
+typealias WikiEditSession = NWZWiki.WikiEditSession
 
-struct WikiSavePreview: Codable, Hashable {
-    var storage: String
-    var diff: String
-    var changed: Bool
-}
+typealias WikiSavePreview = NWZWiki.WikiSavePreview
 
-struct WikiIndexSpace: Codable, Hashable, Identifiable {
-    var key: String
-    var name: String
-    var count: Int
-    var id: String { key }
-}
+typealias WikiIndexSpace = NWZWiki.WikiIndexSpace
 
-struct WikiIndexProgress: Codable, Hashable {
-    var done: Int
-    var total: Int
-}
+typealias WikiIndexProgress = NWZWiki.WikiIndexProgress
 
-struct WikiIndexStatus: Codable, Hashable {
-    var enabled: Bool
-    var count: Int
-    var spaces: [WikiIndexSpace]
-    var lastSync: String?
-    var running: Bool
-    var progress: WikiIndexProgress?
-    var error: String?
-}
+typealias WikiIndexStatus = NWZWiki.WikiIndexStatus
 
-struct WikiToolsSettings: Codable, Hashable {
-    var indexEnabled: Bool
-    var indexSpaces: [String]
-    var taskTodos: Bool
-    var activity: Bool
-    var mutedPages: [String]
-}
+typealias WikiToolsSettings = NWZWiki.WikiToolsSettings
 
-struct WikiPageVersionInfo: Codable, Hashable {
-    var title: String
-    var version: Int
-    var by: String
-    var when: String
-}
+typealias WikiPageVersionInfo = NWZWiki.WikiPageVersionInfo
 
 // MARK: - 全局搜索
 
-struct WikiHit: Codable, Hashable, Identifiable {
-    var id: String
-    var title: String
-    var space: String
-    var url: String
-    var excerpt: String
-}
+typealias WikiHit = NWZWiki.WikiHit
 
 struct SearchResults: Codable, Hashable {
     var issues: [IssueHit]

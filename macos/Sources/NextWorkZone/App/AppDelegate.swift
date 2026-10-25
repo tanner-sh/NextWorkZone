@@ -36,8 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         let workspace = API.shared?.workspace
-        let jira = API.shared?.jira
-        Task { await jira?.stop(); if let service = try? await workspace?.value { await service.stop() } }
+        let jira = API.shared?.jira, wiki = API.shared?.wiki
+        Task { await jira?.stop(); await wiki?.stop(); if let service = try? await workspace?.value { await service.stop() } }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

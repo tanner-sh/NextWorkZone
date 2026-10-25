@@ -1,12 +1,14 @@
 import Foundation
 import NWZCore
 import NWZJira
+import NWZWiki
 
 /// 每迁入一个远端领域，就在这里替换相应来源；本机收件箱状态始终由工作空间管理。
 public struct JiraWorkspaceSources: WorkspaceRemoteSources {
+    let wiki: WikiService
     let jira: JiraService
     let legacy: any WorkspaceRemoteSources
-    public init(jira: JiraService, legacy: any WorkspaceRemoteSources) { self.jira = jira; self.legacy = legacy }
+    public init(jira: JiraService, wiki: WikiService, legacy: any WorkspaceRemoteSources) { self.jira = jira; self.wiki = wiki; self.legacy = legacy }
     public func inboxSources() async throws -> InboxView {
         var result = (try? await legacy.inboxSources()) ?? InboxView(items: [], snoozed: [], notes: [])
         let feed = try await jira.activity()
@@ -30,18 +32,26 @@ public struct JiraWorkspaceSources: WorkspaceRemoteSources {
     }
     public func workEvents(day: String) async throws -> WorkLog {
         var result = try await legacy.workEvents(day: day)
-        guard let client = try? await jira.client() else { return result }
         let format = DateFormatter(); format.locale = Locale(identifier: "en_US_POSIX"); format.dateFormat = "yyyy-MM-dd"; format.isLenient = false
         guard let start = format.date(from: day), format.string(from: start) == day, let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { throw NWZError.other("日期无效") }
-        do {
+        if let client = try? await wiki.client() {
+            do {
+                let events = try await client.myWork(from: day, to: format.string(from: end))
+                result.events += events.compactMap { event in
+                    guard let at = WikiIndex.time(event.at), at >= start, at < end else { return nil }
+                    return WorkEvent(at: Int64(at.timeIntervalSince1970 * 1000), system: "wiki", kind: event.kind, title: event.title, key: event.pageId, detail: event.detail)
+                }
+            } catch { result.notes.append("Wiki：" + error.localizedDescription) }
+        }
+        if let client = try? await jira.client() { do {
             let actions = try await client.myActions(me: jira.me(), from: day, to: format.string(from: end), start: start, end: end)
             result.events += actions.compactMap { action in
                 guard let time = JiraActivity.time(action.at) else { return nil }
                 return WorkEvent(at: Int64(time.timeIntervalSince1970 * 1000), system: "jira", kind: action.kind, title: action.summary, key: action.key, detail: action.detail)
             }
-        } catch { result.notes.append("Jira：" + error.localizedDescription) }
+        } catch { result.notes.append("Jira：" + error.localizedDescription) } }
         result.events.sort { $0.at < $1.at }; return result
     }
     public func markActivityRead(_ ids: [String]) async throws { _ = try await jira.markActivityRead(ids) }
-    public func setWikiTask(page: String, task: String, done: Bool) async throws { try await legacy.setWikiTask(page: page, task: task, done: done) }
+    public func setWikiTask(page: String, task: String, done: Bool) async throws { try await wiki.setTask(page, task: task, done: done) }
 }

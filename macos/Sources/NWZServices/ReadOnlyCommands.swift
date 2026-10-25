@@ -20,7 +20,7 @@ public enum ReadOnlyCommands {
         gl_mr_changes gl_mr_commits gl_mr_discussions gl_mr_approvals
         global_search web_access_status
         ws_todos ws_docs ws_doc ws_full_docs ws_daily_days ws_tags ws_backlinks ws_search
-        ws_settings ws_inbox ws_worklog tools_hidden
+        ws_wiki_page ws_settings ws_inbox ws_worklog tools_hidden
         clip_list clip_text clip_pinboards clip_apps clip_issues clip_settings clip_ignore_candidates
         rich_from_html rich_from_markdown rich_to_markdown rich_to_wiki rich_to_xhtml
         rich_edit_load rich_edit_xhtml rich_html_to_markdown rich_markdown_to_storage
