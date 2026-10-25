@@ -206,12 +206,7 @@ struct GitlabPage: View {
             .labelsHidden()
             .controlSize(.small)
             HStack {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索标题，回车", text: $mrInput).textFieldStyle(.plain).onSubmit { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
-                }
-                .padding(6)
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                FilterField(prompt: "搜索标题，回车", text: $mrInput) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
                 Picker("", selection: $mrState) { ForEach(mrStates, id: \.0) { Text($0.1).tag($0.0) } }.labelsHidden().fixedSize().help("状态")
                 Button { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).disabled(mrList.loading).help("刷新")
@@ -232,12 +227,7 @@ struct GitlabPage: View {
     private var projectPane: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("筛选项目", text: $filter).textFieldStyle(.plain)
-                }
-                .padding(6)
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                FilterField(prompt: "筛选项目", text: $filter)
                 Button { Task { await loadProjects() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).disabled(loading).help("刷新")
             }
             if let projects { Text("\(projects.count) 个项目 · 收藏的项目置顶").font(.caption).foregroundStyle(.secondary) }

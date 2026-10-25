@@ -141,7 +141,7 @@ struct CommentBox: View {
                         return .handled
                     }
             }
-            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            .fieldBackground()
             if let error { ErrorBox(message: error) }
             if !text.isEmpty || onCancel != nil {
                 HStack {

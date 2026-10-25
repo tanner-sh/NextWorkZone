@@ -258,7 +258,7 @@ private struct Kpi: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+        .groupBackground()
         .contentShape(Rectangle())
         .onTapGesture { onClick?() }
         .help(onClick != nil ? "在问题列表中查看" : "")

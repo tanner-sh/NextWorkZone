@@ -304,7 +304,7 @@ private struct ClipDetail: View {
                         .font(.body.monospaced())
                         .scrollContentBackground(.hidden)
                         .padding(8)
-                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                        .groupBackground(radius: Theme.controlRadius)
                     HStack {
                         Button("取消") { draft = nil }
                         Button("保存") {
@@ -322,7 +322,7 @@ private struct ClipDetail: View {
                 ClipPreviewBody(item: item, text: text, issues: issues)
                     .padding(12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+                    .groupBackground()
             }
             if !actions.isEmpty {
                 Text("快捷操作").font(.headline)

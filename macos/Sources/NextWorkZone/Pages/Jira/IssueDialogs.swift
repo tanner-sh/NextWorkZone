@@ -154,7 +154,7 @@ struct CreateIssueSheet: View {
                                 Text((path as NSString).lastPathComponent)
                                 Button { files.removeAll { $0 == path } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule())
+                            .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
                             .help(path)
                         }
                         Button("选择文件", systemImage: "paperclip") {

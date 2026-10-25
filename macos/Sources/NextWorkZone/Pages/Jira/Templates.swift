@@ -185,7 +185,7 @@ struct ManageTemplatesSheet: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                 }
-                TextEditor(text: $body_).font(.body).frame(height: 64).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                TextEditor(text: $body_).font(.body).frame(height: 64).padding(4).fieldBackground()
                 if template.kind == "transition", let n = template.values?.count, n > 0 {
                     Text("另含 \(n) 个字段值（重新保存流转模板可更新）").font(.caption).foregroundStyle(.secondary)
                 }

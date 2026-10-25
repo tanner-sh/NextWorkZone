@@ -113,7 +113,7 @@ struct NoteEditor<Footer: View>: View {
                     Button { controller.toggleHeading(level) } label: {
                         Text("H\(level)").font(.system(size: 12, weight: .semibold))
                             .frame(width: 26, height: 24)
-                            .background(controller.heading == level ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .selectionBackground(controller.heading == level)
                     }
                     .help("标题 \(level)")
                 }
@@ -186,7 +186,7 @@ struct NoteEditor<Footer: View>: View {
         Button(action: action) {
             Image(systemName: icon)
                 .frame(width: 26, height: 24)
-                .background(active ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .selectionBackground(active)
         }
         .help(title)
         .disabled(disabled)
@@ -249,7 +249,7 @@ struct DocLinkPicker: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(i == index ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                .selectionBackground(i == index, radius: 5)
                 .rowTap { pick(i) }
             }
         }

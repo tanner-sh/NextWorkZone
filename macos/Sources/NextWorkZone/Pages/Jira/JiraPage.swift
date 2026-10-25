@@ -333,12 +333,7 @@ struct JiraPage: View {
                     }
             }
             HStack(spacing: 6) {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(issues.map { $0.isEmpty ? "筛选当前列表" : "筛选 \($0.count) 条" } ?? "筛选当前列表", text: $filter).textFieldStyle(.plain)
-                }
-                .padding(6)
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                FilterField(prompt: issues.map { $0.isEmpty ? "筛选当前列表" : "筛选 \($0.count) 条" } ?? "筛选当前列表", text: $filter)
                 Button { MenuBuilder.popUp(savedMenu()) } label: { Image(systemName: "bookmark") }.buttonStyle(.borderless).help("常用查询")
                 Button { MenuBuilder.popUp(viewMenu()) } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.borderless)
@@ -496,15 +491,7 @@ private struct SearchPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("关键词或问题键，回车搜索", text: Binding(get: { draft.text }, set: { change { $0.text = $1 }($0, true) }))
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .onSubmit { form = draft; onSearch(draft) }
-            }
-            .padding(6)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+            FilterField(prompt: "关键词或问题键，回车搜索", text: Binding(get: { draft.text }, set: { change { $0.text = $1 }($0, true) }), focus: $focused) { form = draft; onSearch(draft) }
             HStack {
                 Picker("", selection: Binding(get: { draft.project }, set: { change { $0.project = $1 }($0, false) })) {
                     Text("全部项目").tag("")
@@ -587,7 +574,7 @@ private struct FieldChooserSheet: View {
                             Text(f.name)
                             Button { selected.removeAll { $0.id == f.id } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule())
+                        .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
                     }
                 }
             }
@@ -637,7 +624,7 @@ private struct SaveQuerySheet: View {
             Text("保存当前查询").font(.headline)
             TextField("名称", text: $name).textFieldStyle(.roundedBorder).onSubmit(save)
             Text("JQL").font(.callout).foregroundStyle(.secondary)
-            Text(jql).font(.system(.callout, design: .monospaced)).textSelection(.enabled).padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            Text(jql).font(.system(.callout, design: .monospaced)).textSelection(.enabled).padding(8).frame(maxWidth: .infinity, alignment: .leading).fieldBackground()
             Text("保存在本机，点击工具栏的书签按钮即可使用。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

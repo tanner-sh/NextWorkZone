@@ -135,7 +135,7 @@ struct TodoPage: View {
                     .onSubmit(add)
             }
             .padding(8)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .fieldBackground()
             .padding(.horizontal, 12)
 
             if let syncNote {
@@ -145,7 +145,7 @@ struct TodoPage: View {
                     Button("关闭", systemImage: "xmark") { self.syncNote = nil }.labelStyle(.iconOnly).buttonStyle(.plain)
                 }
                 .padding(8)
-                .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .noticeBackground(.green)
                 .padding(.horizontal, 12)
             }
             if let error { ErrorBox(message: error) { Task { await load() } }.padding(.horizontal, 12) }
@@ -452,7 +452,7 @@ private struct TodoDetail: View {
                         .frame(minHeight: 140)
                         .scrollContentBackground(.hidden)
                         .padding(6)
-                        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                        .fieldBackground()
                 }
 
                 if let error { ErrorBox(message: error) }

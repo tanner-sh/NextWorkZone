@@ -166,7 +166,7 @@ struct ErrorBox: View {
             }
         }
         .padding(10)
-        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .noticeBackground(.red)
     }
 }
 
@@ -182,7 +182,7 @@ struct Notice: View {
         }
         .font(.callout)
         .padding(10)
-        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .noticeBackground(tint)
     }
 }
 
@@ -214,7 +214,7 @@ struct WebLoginHint: View {
             }
             .font(.callout)
             .padding(10)
-            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .noticeBackground(.orange)
         }
     }
 }

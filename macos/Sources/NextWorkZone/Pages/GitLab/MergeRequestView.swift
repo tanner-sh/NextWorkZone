@@ -185,9 +185,9 @@ struct MergeRequestView: View {
                 MrStatePill(state: mr.state)
                 Avatar(name: mr.author.name, size: 18)
                 Text("\(mr.author.name) 创建于 \(Fmt.time(mr.createdAt))")
-                Text(mr.sourceBranch).font(.caption.monospaced()).padding(.horizontal, 5).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4)).help("源分支")
+                Text(mr.sourceBranch).font(.caption.monospaced()).padding(.horizontal, 6).chipBackground().help("源分支")
                 Text("→")
-                Text(mr.targetBranch).font(.caption.monospaced()).padding(.horizontal, 5).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4)).help("目标分支")
+                Text(mr.targetBranch).font(.caption.monospaced()).padding(.horizontal, 6).chipBackground().help("目标分支")
                 Button { Pasteboard.copy(mr.sourceBranch); toast("已复制分支名") } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("复制源分支名")
             }
             .font(.callout)
@@ -389,7 +389,7 @@ private struct StatusPanel: View {
         .font(.callout)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+        .groupBackground()
     }
 }
 
@@ -454,7 +454,7 @@ private struct ThreadView: View {
             }
         }
         .padding(10)
-        .background(resolved ? Color.green.opacity(0.05) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+        .groupBackground(tint: resolved ? Color.green : nil)
     }
 
     private func resolve(_ resolved: Bool) {
@@ -544,7 +544,7 @@ private struct EditNoteBox: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $text).font(.body).frame(minHeight: 80).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            TextEditor(text: $text).font(.body).frame(minHeight: 80).padding(4).fieldBackground()
                 .onKeyPress(.escape) { onCancel(); return .handled }
             if let error { ErrorBox(message: error) }
             HStack {
@@ -643,7 +643,7 @@ private struct EditMrSheet: View {
             }
             .labelsHidden()
             Text("描述（Markdown）").font(.callout).foregroundStyle(.secondary)
-            TextEditor(text: $description).font(.body).frame(minHeight: 200).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            TextEditor(text: $description).font(.body).frame(minHeight: 200).padding(4).fieldBackground()
             if let error { ErrorBox(message: error) }
         } footer: {
             Spacer()
@@ -732,7 +732,7 @@ struct NewMergeRequestSheet: View {
             TextField("", text: Binding(get: { title }, set: { title = $0; titleTouched = true })).textFieldStyle(.roundedBorder)
             if let p = pattern, !(p.prefix.isEmpty && p.suffix.isEmpty), !titleTouched { Text("已按你最近的标题格式预填。").font(.caption).foregroundStyle(.secondary) }
             Text("描述（Markdown）").font(.callout).foregroundStyle(.secondary)
-            TextEditor(text: Binding(get: { description }, set: { description = $0; descTouched = true })).font(.body).frame(minHeight: 140).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            TextEditor(text: Binding(get: { description }, set: { description = $0; descTouched = true })).font(.body).frame(minHeight: 140).padding(4).fieldBackground()
             Toggle("合并后删除源分支", isOn: $removeSource).toggleStyle(.checkbox)
             if project.squashOption != "never" {
                 Toggle("合并时压缩为一个提交（squash）", isOn: $squash).toggleStyle(.checkbox).disabled(project.squashOption == "always")

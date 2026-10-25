@@ -163,6 +163,13 @@ enum DevBridge {
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return "{\"error\":\"snapshot\"}" }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        case "/toolbar":
+            // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）
+            let items = MainWindow.window?.toolbar?.items.map { item in
+                ["id": item.itemIdentifier.rawValue, "label": item.label, "hidden": item.isHidden ? "1" : "0"]
+            } ?? []
+            let title = MainWindow.window.map { ["title": $0.title, "subtitle": $0.subtitle] } ?? [:]
+            return String(data: (try? JSONSerialization.data(withJSONObject: ["items": items, "window": title])) ?? Data(), encoding: .utf8) ?? "{}"
         case "/editor":
             // 编辑器测试：focus / type&chars= / key&code=&mods=cmd,shift / op&name= / dump
             guard let window = NSApp.keyWindow ?? MainWindow.window, let tv = findEditor(window.contentView) else { return "{\"error\":\"no editor\"}" }

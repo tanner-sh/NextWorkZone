@@ -160,7 +160,7 @@ private struct LinkForm: View {
             }
         }
         .padding(12)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+        .groupBackground()
         .task {
             if let cached = Self.typesCache { types = cached; return }
             do {
@@ -383,7 +383,7 @@ struct AttachmentTile: View {
         let a = attachment
         VStack(alignment: .leading, spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4))
+                RoundedRectangle(cornerRadius: Theme.controlRadius).fill(Theme.fieldFill)
                 if let thumb = a.thumbnailUrl {
                     SysImage(service: service, src: thumb)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

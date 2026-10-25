@@ -502,7 +502,7 @@ struct ClipPanelView: View {
                     let meta = ClipKinds.of(k)
                     Button { model.setKind(list.kind == k ? nil : k) } label: {
                         Image(systemName: meta.icon).frame(width: 26, height: 22)
-                            .background(list.kind == k ? Color.accentColor.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .selectionBackground(list.kind == k)
                     }
                     .buttonStyle(.plain)
                     .help("只看\(meta.label)")

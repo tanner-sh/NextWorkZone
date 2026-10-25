@@ -214,7 +214,7 @@ struct IssueView: View {
                     Button("知道了") { self.notice = nil }
                 }
                 .padding(10)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .noticeBackground(.orange)
                 .padding(.bottom, 16)
             }
 
@@ -505,7 +505,7 @@ private struct ChangesSince: View {
                     }
                 }
                 .padding(12)
-                .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                .noticeBackground(.accentColor)
             }
         }
     }

@@ -138,7 +138,7 @@ struct WeeklyPage: View {
                         Button("按上周模板新建") { actionError = nil; confirmCreate = true }
                     }
                     .padding(10)
-                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .noticeBackground(.orange)
                 }
                 if let notice { Text(notice).foregroundStyle(.green) }
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -164,13 +164,13 @@ struct WeeklyPage: View {
                         OutlineEditor(items: $content, placeholder: "点击开始填写，例如：客户或产品名称")
                     }
                     .padding(16)
-                    .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+                    .groupBackground()
                     VStack(alignment: .leading, spacing: 10) {
                         Text("风险事项").font(.headline)
                         OutlineEditor(items: $risk, placeholder: "无风险可留空")
                     }
                     .padding(16)
-                    .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+                    .groupBackground()
                 }
             }
             .padding(28)
@@ -414,7 +414,7 @@ private struct DraftPanel: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
+        .groupBackground(radius: Theme.controlRadius)
         .help(help)
     }
 }

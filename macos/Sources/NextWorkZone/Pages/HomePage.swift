@@ -59,8 +59,7 @@ struct Card<Content: View, Actions: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .groupBackground()
     }
 }
 
@@ -452,7 +451,7 @@ struct ReportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("日报 · \(day)").font(.headline)
-            TextEditor(text: $text).font(.body).frame(minHeight: 320).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            TextEditor(text: $text).font(.body).frame(minHeight: 320).padding(4).fieldBackground()
             HStack {
                 Text("可以先修改再复制").font(.caption).foregroundStyle(.secondary)
                 Spacer()

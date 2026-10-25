@@ -144,7 +144,7 @@ private struct CommentItem: View {
                 if let error { ErrorBox(message: error) }
             }
             .padding(10)
-            .background(isNew ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+            .groupBackground(tint: isNew ? Color.accentColor : nil)
         }
         .contextMenu(specs: { editing == nil ? menu : [] })
     }
@@ -291,7 +291,7 @@ private struct WorklogForm: View {
                 }
             }
             Text("工作描述").font(.callout).foregroundStyle(.secondary)
-            TextEditor(text: $comment).frame(height: 54).padding(4).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            TextEditor(text: $comment).frame(height: 54).padding(4).fieldBackground()
             Text("时间单位：w 周、d 天、h 小时、m 分钟。剩余估算会自动扣减。").font(.caption).foregroundStyle(.secondary)
             if let error { ErrorBox(message: error) }
             HStack {
@@ -316,7 +316,7 @@ private struct WorklogForm: View {
             }
         }
         .padding(12)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+        .groupBackground()
         .onAppear {
             if let w = worklog {
                 started = Fmt.parse(w.started) ?? Date()
@@ -390,7 +390,7 @@ private struct StatusFlow: View {
                                 (Text(status + " ").foregroundStyle(.secondary) + Text(formatSpan(ms)))
                                     .font(.caption)
                                     .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(.quaternary.opacity(0.5), in: Capsule())
+                                    .chipBackground()
                             }
                         }
                     }

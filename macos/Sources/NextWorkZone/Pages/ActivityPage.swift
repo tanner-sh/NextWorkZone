@@ -168,7 +168,7 @@ struct ActivityPage: View {
             }
         }
         .padding(10)
-        .background(unread ? Color.accentColor.opacity(0.07) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+        .groupBackground(tint: unread ? Color.accentColor : nil)
         .overlay(alignment: .leading) { if unread { Capsule().fill(Color.accentColor).frame(width: 3).padding(.vertical, 8) } }
         .rowTap { open(group) }
         .contextMenu(specs: {

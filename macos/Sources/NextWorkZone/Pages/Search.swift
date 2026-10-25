@@ -232,7 +232,7 @@ struct CommandPalette: View {
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(index == active ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                    .selectionBackground(index == active, radius: Theme.controlRadius)
                                     .padding(.horizontal, 4)
                                     .contentShape(Rectangle())
                                     .onHover { if $0 { active = index } }
@@ -331,8 +331,9 @@ struct SearchPage: View {
                     if search.pending { ProgressView().controlSize(.small) } else { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }
                     TextField("输入至少两个字", text: $input).textFieldStyle(.plain).font(.title3).focused($focused)
                 }
-                .padding(10)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Theme.fieldFill, in: Capsule())
                 Picker("", selection: $scope) {
                     ForEach(Scope.allCases) { s in Text(search.results != nil ? "\(s.label) \(count(s))" : s.label).tag(s) }
                 }

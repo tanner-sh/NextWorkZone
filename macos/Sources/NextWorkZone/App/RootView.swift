@@ -113,7 +113,7 @@ struct Sidebar: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.quaternary.opacity(0.6), in: Capsule())
+                .background(Theme.fieldFill, in: Capsule())
             }
             .buttonStyle(.plain)
             .help("搜索问题、项目、文档，或跳转到页面")

@@ -44,7 +44,7 @@ struct SearchPicker<Item: Hashable>: View {
                         .font(.callout)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(.quaternary, in: Capsule())
+                        .chipBackground()
                     }
                 }
             }
@@ -110,7 +110,7 @@ struct SearchPicker<Item: Hashable>: View {
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
                                 .contentShape(Rectangle())
-                                .background(i == active ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                                .selectionBackground(i == active)
                             }
                             .buttonStyle(.plain)
                         }

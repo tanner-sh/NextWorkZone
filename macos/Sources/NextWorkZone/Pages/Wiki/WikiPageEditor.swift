@@ -231,7 +231,7 @@ struct WikiPageEditor: View {
                     }
                 }
                 .padding(10)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .noticeBackground(.orange)
             }
             if let error { ErrorBox(message: error) }
             toolbar
@@ -267,7 +267,7 @@ struct WikiPageEditor: View {
             ForEach(1...3, id: \.self) { level in
                 Button { controller.toggleHeading(level) } label: {
                     Text("H\(level)").font(.system(size: 12, weight: .semibold)).frame(width: 24, height: 22)
-                        .background(controller.heading == level ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                        .selectionBackground(controller.heading == level, radius: 5)
                 }
                 .help("\(level) 级标题")
             }
@@ -311,7 +311,7 @@ struct WikiPageEditor: View {
         Button(action: action) {
             Image(systemName: icon)
                 .frame(width: 24, height: 22)
-                .background(active ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                .selectionBackground(active, radius: 5)
         }
         .help(title)
     }

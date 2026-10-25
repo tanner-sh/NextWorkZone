@@ -149,7 +149,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                         Button { self.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
                     }
                     .padding(8)
-                    .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .noticeBackground(.green)
                 }
                 NoteEditor(
                     docId: doc.id,
@@ -304,7 +304,7 @@ struct WorkLogPanel: View {
             }
         }
         .padding(14)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+        .groupBackground()
         .task(id: day) { await load() }
         .sheet(item: Binding(get: { report.map { ReportText(text: $0) } }, set: { report = $0?.text })) { r in
             ReportSheet(day: day, text: r.text)

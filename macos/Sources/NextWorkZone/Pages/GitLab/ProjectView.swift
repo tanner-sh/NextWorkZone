@@ -229,7 +229,7 @@ private struct FileBody: View {
             Text("二进制文件（\(Fmt.size(file.size))），无法预览。").foregroundStyle(.secondary)
         } else {
             CodeView(code: file.text ?? "", path: file.path)
-                .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+                .groupBackground(radius: Theme.controlRadius)
         }
     }
 }
@@ -297,7 +297,7 @@ struct CommitDetailView: View {
                         .foregroundStyle(.secondary)
                         if d.commit.message.trimmingCharacters(in: .whitespacesAndNewlines) != d.commit.title.trimmingCharacters(in: .whitespacesAndNewlines) {
                             Text(d.commit.message.trimmingCharacters(in: .whitespacesAndNewlines)).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                                .padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                                .padding(10).frame(maxWidth: .infinity, alignment: .leading).groupBackground(radius: Theme.controlRadius)
                         }
                     }
                     if let projectPath { RelatedIssuesSection(target: CodeTarget(projectPath: projectPath, sha: d.commit.id, text: d.commit.message.isEmpty ? d.commit.title : d.commit.message)) }
@@ -326,12 +326,7 @@ private struct ProjectMrsTab: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Picker("", selection: $state) { ForEach(mrStates, id: \.0) { Text($0.1).tag($0.0) } }.pickerStyle(.segmented).labelsHidden().fixedSize()
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索标题、描述，回车", text: $input).textFieldStyle(.plain).onSubmit { search = input.trimmingCharacters(in: .whitespaces) }
-                }
-                .padding(6)
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                FilterField(prompt: "搜索标题、描述，回车", text: $input) { search = input.trimmingCharacters(in: .whitespaces) }
             }
             MrListBody(list: list, selected: nil, showProject: false, empty: "没有符合条件的合并请求") { onOpen($0.iid) } loadMore: {
                 Task { await list.loadMore(.project(String(projectId)), state: state, search: search) }

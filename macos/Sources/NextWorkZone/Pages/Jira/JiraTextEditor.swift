@@ -75,7 +75,7 @@ struct JiraTextEditor: View {
                 }
             }
             .padding(6)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+            .groupBackground(radius: Theme.controlRadius)
             if let mention { mentionList(mention) }
             if let warning { Text(warning).font(.caption).foregroundStyle(.orange) }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
@@ -267,7 +267,7 @@ struct JiraTextEditor: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(i == activeUser ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                .selectionBackground(i == activeUser, radius: 5)
                 .rowTap { pick(u) }
             }
         }
@@ -337,7 +337,7 @@ struct JiraTextEditor: View {
         Button(action: action) {
             Image(systemName: icon)
                 .frame(width: 24, height: 22)
-                .background(active ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                .selectionBackground(active, radius: 5)
         }
         .help(title)
     }

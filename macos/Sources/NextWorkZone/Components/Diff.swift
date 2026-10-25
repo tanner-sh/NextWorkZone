@@ -150,7 +150,7 @@ struct DiffListView: View {
                     }
                 }
                 .padding(10)
-                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                .groupBackground(radius: Theme.controlRadius)
                 ForEach(Array(diffs.enumerated()), id: \.offset) { i, d in
                     FileDiffView(diff: d, annotations: annotations).id("diff-\(i)")
                 }

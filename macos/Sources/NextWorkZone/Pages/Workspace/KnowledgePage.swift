@@ -368,7 +368,7 @@ private struct ClipStatus: View {
                 }
                 .font(.callout)
                 .padding(10)
-                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .noticeBackground(.blue)
                 .sheet(isPresented: $showDiff) {
                     VStack(alignment: .leading) {
                         Text("原页面的变化（第 \(clipped) 版 → 第 \(latest.version) 版）").font(.headline)
@@ -509,7 +509,7 @@ private struct PublishSheet: View {
                     if let conflict {
                         Text("这个 Wiki 页面在你上次发布后被修改过（现在是第 \(conflict.version) 版，最后由 \(conflict.by) 修改）。更新会覆盖这些修改；建议先到 Wiki 中查看历史版本。")
                             .padding(8)
-                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                            .noticeBackground(.orange)
                     }
                 } else {
                     Text("会在所选页面下新建一个子页面（其他人可见），不会修改已有页面。工作空间内部的文档链接发布后只保留文字。").font(.callout).foregroundStyle(.secondary)

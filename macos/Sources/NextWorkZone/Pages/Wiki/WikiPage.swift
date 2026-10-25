@@ -307,12 +307,9 @@ private struct SpaceTreeView: View {
     var body: some View {
         VStack(spacing: 6) {
             HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("筛选空间", text: $filter).textFieldStyle(.plain)
+                FilterField(prompt: "筛选空间", text: $filter)
                 Button { tree.loadSpaces() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("刷新")
             }
-            .padding(6)
-            .background(.quaternary.opacity(0.5), in: Capsule())
             .padding(.horizontal, 12)
             if let e = tree.error { ErrorBox(message: e) { tree.loadSpaces() }.padding(.horizontal, 12) }
             List(selection: Binding(get: { selected }, set: { id in if let id, !id.hasPrefix("space:"), !id.contains("#") { onOpen(id) } })) {
@@ -397,12 +394,7 @@ private struct WikiSearchPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    if loading { ProgressView().controlSize(.small) } else { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }
-                    TextField("搜索标题和正文", text: $text).textFieldStyle(.plain).focused($focused)
-                }
-                .padding(6)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+                FilterField(prompt: "搜索标题和正文", text: $text, loading: loading, focus: $focused)
                 HStack {
                     Picker("", selection: $space) {
                         Text("全部空间").tag("")
