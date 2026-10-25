@@ -2,6 +2,7 @@ import NWZWiki
 import NWZGitLab
 import NWZJira
 import NWZPreview
+import NWZClipboard
 import Foundation
 import NWZCore
 import NWZServices
@@ -303,97 +304,25 @@ typealias PublishResult = NWZServices.PublishResult
 
 // MARK: - 剪贴板
 
-struct ClipImage: Codable, Hashable {
-    var width: Int
-    var height: Int
-    var bytes: Int
-}
+typealias ClipImage = NWZClipboard.ClipImage
 
-struct ClipItem: Codable, Hashable, Identifiable {
-    var id: String
-    /// text / link / code / color / image / file
-    var kind: String
-    var text: String
-    var textLength: Int
-    var hasHtml: Bool
-    var title: String
-    var image: ClipImage?
-    var files: [String]
-    var appId: String?
-    var appName: String?
-    var appColor: String?
-    var appIcon: Bool
-    var createdAt: Int64
-    var copiedAt: Int64
-    var copyCount: Int
-    var pinboard: String?
-}
+typealias ClipItem = NWZClipboard.ClipItem
 
-struct ClipQuery: Codable, Hashable {
-    var text: String?
-    var kind: String?
-    var pinboard: String?
-    var app: String?
-    var before: Int64?
-    var limit: Int?
-}
+typealias ClipQuery = NWZClipboard.ClipQuery
 
-struct Pinboard: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var color: String
-    var sort: Double
-    var count: Int
-}
+typealias Pinboard = NWZClipboard.Pinboard
 
-struct IgnoredApp: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-}
+typealias IgnoredApp = NWZCore.IgnoredApp
 
-struct ClipboardConfig: Codable, Hashable {
-    var enabled: Bool
-    var shortcut: String
-    var autoPaste: Bool
-    var plainText: Bool
-    var keepDays: Int
-    var maxItems: Int
-    var saveImages: Bool
-    var maxImageMb: Int
-    var skipSecrets: Bool
-    var ignoredApps: [IgnoredApp]
-}
+typealias ClipboardConfig = NWZCore.ClipboardConfig
 
-struct ClipStats: Codable, Hashable {
-    var items: Int
-    var pinned: Int
-    var imageBytes: Int64
-}
+typealias ClipStats = NWZClipboard.ClipStats
 
-struct ClipSettings: Codable, Hashable {
-    var config: ClipboardConfig
-    var builtinIgnored: [IgnoredApp]
-    var stats: ClipStats
-    /// ready / needsPermission / unsupported
-    var pasteSupport: String
-    var pasteNote: String?
-    var pausedUntil: Int64?
-    var shortcutError: String?
-    var dataDir: String
-}
+typealias ClipSettings = NWZServices.ClipSettings
 
-struct ClipApp: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var color: String?
-    var icon: Bool
-    var count: Int
-}
+typealias ClipApp = NWZClipboard.ClipApp
 
-struct ClipText: Codable, Hashable {
-    var text: String
-    var html: String?
-}
+typealias ClipText = NWZClipboard.ClipText
 
 // MARK: - Wiki
 

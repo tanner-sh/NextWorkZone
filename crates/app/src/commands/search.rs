@@ -3,7 +3,6 @@
 //! 分两步：`local` 只查本机数据（工作空间、本机问题库、本机 Wiki 库、剪贴板），不经过网络；
 //! `remote` 查服务器（GitLab，以及本机库不可用时的 Jira、Wiki）。界面先显示本机结果，再补上服务器结果。
 
-use nextworkzone_clipboard::{ClipItem, ListQuery};
 use nextworkzone_confluence::SearchHit;
 use nextworkzone_confluence::index::WikiQuery;
 use nextworkzone_core::Result;
@@ -38,7 +37,8 @@ pub struct SearchResults {
     pages: Vec<SearchHit>,
     /// 本地的待办、笔记、知识库
     workspace: Vec<WorkspaceHit>,
-    clips: Vec<ClipItem>,
+    /// 剪贴板结果由 Swift 端补充，这里始终为空。
+    clips: Vec<serde_json::Value>,
     /// 某个系统搜索失败时的提示（未配置的系统直接跳过）。
     errors: Vec<String>,
 }
@@ -63,7 +63,7 @@ pub async fn global_search(state: &AppState, query: String, options: Option<Sear
 
     if local {
         // 四个库互不相关，同时查，用时取决于最慢的一个
-        let (workspace, issues, pages, clips) = tokio::join!(
+        let (workspace, issues, pages) = tokio::join!(
             async {
                 let ws = state.workspace.clone();
                 let q = query.clone();
@@ -78,11 +78,6 @@ pub async fn global_search(state: &AppState, query: String, options: Option<Sear
                 tokio::task::spawn_blocking(move || index.search(&q, "")).await.ok().and_then(|r| r.ok())
             },
             async { if wiki_local { search_wiki_local(state, &query, limit).await.and_then(|r| r.ok()) } else { None } },
-            async {
-                let store = state.clip.store.clone();
-                let q = ListQuery { text: query.clone(), limit: Some(limit), ..Default::default() };
-                tokio::task::spawn_blocking(move || store.list(&q)).await.ok().and_then(|r| r.ok())
-            },
         );
         if let Some(hits) = workspace {
             results.workspace = hits;
@@ -93,9 +88,6 @@ pub async fn global_search(state: &AppState, query: String, options: Option<Sear
         }
         if let Some(hits) = pages {
             results.pages = hits;
-        }
-        if let Some(items) = clips {
-            results.clips = items;
         }
     }
 

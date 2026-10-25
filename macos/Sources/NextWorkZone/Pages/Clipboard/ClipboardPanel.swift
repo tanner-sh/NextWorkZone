@@ -56,8 +56,8 @@ final class ClipboardPanel {
             hide(restore: true)
             return
         }
-        guard API.shared.core.clipboardEnabled(), let panel else { return }
-        let target = API.shared.core.clipCaptureTarget()
+        guard API.shared.clipboard.enabled, let panel else { return }
+        let target = API.shared.clipboard.captureTarget()
         place(panel)
         model.open(target: target)
         panel.orderFrontRegardless()
@@ -80,7 +80,7 @@ final class ClipboardPanel {
         panel.orderOut(nil)
         removeMonitor()
         model.closed()
-        guard restore, let target = API.shared.core.clipTarget() else { return }
+        guard restore, let target = API.shared.clipboard.target() else { return }
         if target.isSelf {
             // 从本应用打开的面板：回到主窗口
             if MainWindow.isVisible { MainWindow.show() }

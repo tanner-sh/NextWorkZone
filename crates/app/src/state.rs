@@ -14,7 +14,6 @@ use nextworkzone_jira::index::IssueIndex;
 use nextworkzone_workspace::Workspace;
 use serde::Serialize;
 
-use crate::clipboard::Clip;
 use crate::host::Host;
 
 /// 应用使用的本机目录。
@@ -39,7 +38,6 @@ pub struct AppState {
     /// 窗口、通知、快捷键等平台能力。
     pub host: Arc<dyn Host>,
     /// 剪贴板历史与后台记录。
-    pub clip: Clip,
     pub cache: Cache,
     /// 待办、笔记、知识库的本地数据。
     pub workspace: Arc<Workspace>,
@@ -77,7 +75,6 @@ impl AppState {
         let http = http::build_client(config.proxy.as_deref())?;
         let data_dir = paths.data_dir.clone();
         Ok(Self {
-            clip: Clip::open(&data_dir.join("clipboard"))?,
             cache: Cache::new(paths.cache_dir.clone()),
             paths,
             config_path,

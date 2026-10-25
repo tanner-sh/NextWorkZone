@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         _ = add("剪贴板…") { ClipboardPanel.shared.toggle() }
-        pauseItem = add("暂停记录剪贴板") { API.shared.core.clipTogglePaused() }
+        pauseItem = add("暂停记录剪贴板") { API.shared.clipboard.togglePaused() }
         menu.addItem(.separator())
         for (page, title) in [(PageID.home, "今天"), (.todos, "待办"), (.notes, "笔记"), (.jira, "Jira"), (.activity, "动态"), (.weekly, "周报"), (.wiki, "Wiki")] {
             _ = add(title) { AppModel.shared.navigate(page) }
@@ -114,8 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupShortcuts() {
         HotKeys.shared.setHandler("capture") { CaptureWindow.shared.toggle() }
         HotKeys.shared.setHandler("clipboard") { ClipboardPanel.shared.toggle() }
-        HotKeys.shared.initial("capture", API.shared.core.configuredShortcut(action: "capture"))
-        HotKeys.shared.initial("clipboard", API.shared.core.configuredShortcut(action: "clipboard"))
+        HotKeys.shared.initial("capture", API.shared.configuredShortcut("capture"))
+        HotKeys.shared.initial("clipboard", API.shared.configuredShortcut("clipboard"))
     }
 }
 

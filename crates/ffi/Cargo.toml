@@ -15,7 +15,6 @@ path = "src/bin/uniffi-bindgen.rs"
 [dependencies]
 nextworkzone-app.workspace = true
 nextworkzone-core.workspace = true
-nextworkzone-desktop.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 thiserror.workspace = true

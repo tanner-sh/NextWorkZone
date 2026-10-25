@@ -118,22 +118,6 @@ pub struct Asset {
     pub content_type: Option<String>,
 }
 
-/// 拖到其他应用的文件和预览图（PNG）。
-#[derive(uniffi::Record)]
-pub struct DragFiles {
-    pub paths: Vec<String>,
-    pub preview: Vec<u8>,
-}
-
-/// 打开剪贴板面板前位于前台的应用。
-#[derive(uniffi::Record)]
-pub struct ClipTarget {
-    pub name: String,
-    pub pid: Option<u32>,
-    /// 是否就是本应用。
-    pub is_self: bool,
-}
-
 #[derive(uniffi::Object)]
 pub struct Core {
     state: Arc<AppState>,
@@ -197,50 +181,5 @@ impl Core {
             })
             .await
             .map_err(failed)?
-    }
-
-    /// 打开剪贴板面板前调用：记下位于前台的应用，返回它的名称（本应用时为空）。
-    pub fn clip_capture_target(&self) -> Option<String> {
-        self.state.clip.capture_target()
-    }
-
-    /// 打开面板前位于前台的应用。
-    pub fn clip_target(&self) -> Option<ClipTarget> {
-        self.state.clip.target().map(|t| ClipTarget { is_self: t.pid == Some(std::process::id()), name: t.name, pid: t.pid })
-    }
-
-    /// 暂停或恢复记录（托盘菜单）。
-    pub fn clip_toggle_paused(&self) {
-        nextworkzone_app::clipboard::toggle_paused(&self.state);
-    }
-
-    pub fn clip_paused(&self) -> bool {
-        self.state.clip.paused().is_some()
-    }
-
-    /// 把图片、文件条目准备为可以拖到其他应用的文件。
-    pub fn clip_drag_files(&self, ids: Vec<String>, fallback_icon: Vec<u8>) -> Result<DragFiles, CoreError> {
-        let files = nextworkzone_app::clipboard::drag_files(&self.state.clip, &ids, &fallback_icon)?;
-        Ok(DragFiles { paths: files.paths.iter().map(|p| p.to_string_lossy().into_owned()).collect(), preview: files.preview })
-    }
-
-    /// 拖到其他应用后标记为刚刚使用。
-    pub fn clip_touch(&self, ids: Vec<String>) {
-        let _ = self.state.clip.store.touch(&ids);
-    }
-
-    /// 当前配置中的快捷键：`capture` / `clipboard`（关闭时为空）。
-    pub fn configured_shortcut(&self, action: String) -> String {
-        let config = self.state.config();
-        match action.as_str() {
-            "capture" => config.workspace.capture_shortcut,
-            "clipboard" if config.tools.clipboard.enabled => config.tools.clipboard.shortcut,
-            _ => String::new(),
-        }
-    }
-
-    /// 剪贴板工具是否开启。
-    pub fn clipboard_enabled(&self) -> bool {
-        self.state.config().tools.clipboard.enabled
     }
 }

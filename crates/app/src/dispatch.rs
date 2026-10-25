@@ -9,7 +9,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::clipboard;
 use crate::commands::*;
 use crate::state::AppState;
 
@@ -31,30 +30,6 @@ pub async fn dispatch(state: &Arc<AppState>, cmd: &str, args: Value) -> Result<V
         "web_login_info" => json(session::web_login_info(state, arg(&args, "service")?).await?),
         "web_login_finish" => json(session::web_login_finish(state, arg(&args, "service")?, arg(&args, "url")?, arg(&args, "cookie")?).await?),
         "web_logout" => json(session::web_logout(state, arg(&args, "service")?).await?),
-        "clip_paste" => json(clipboard::clip_paste(state, arg(&args, "ids")?, arg(&args, "plain")?, arg(&args, "edited")?).await?),
-        "clip_copy" => json(clipboard::clip_copy(state, arg(&args, "ids")?, arg(&args, "plain")?, arg(&args, "edited")?).await?),
-        "clip_list" => json(clipboard::clip_list(state, arg(&args, "query")?).await?),
-        "clip_text" => json(clipboard::clip_text(state, arg(&args, "id")?).await?),
-        "clip_delete" => json(clipboard::clip_delete(state, arg(&args, "ids")?).await?),
-        "clip_clear" => json(clipboard::clip_clear(state).await?),
-        "clip_set_pinboard" => json(clipboard::clip_set_pinboard(state, arg(&args, "ids")?, arg(&args, "pinboard")?).await?),
-        "clip_rename" => json(clipboard::clip_rename(state, arg(&args, "id")?, arg(&args, "title")?).await?),
-        "clip_update_text" => json(clipboard::clip_update_text(state, arg(&args, "id")?, arg(&args, "text")?).await?),
-        "clip_pinboards" => json(clipboard::clip_pinboards(state).await?),
-        "clip_save_pinboard" => json(clipboard::clip_save_pinboard(state, arg(&args, "id")?, arg(&args, "name")?, arg(&args, "color")?).await?),
-        "clip_delete_pinboard" => json(clipboard::clip_delete_pinboard(state, arg(&args, "id")?).await?),
-        "clip_order_pinboards" => json(clipboard::clip_order_pinboards(state, arg(&args, "ids")?).await?),
-        "clip_apps" => json(clipboard::clip_apps(state).await?),
-        "clip_issues" => json(clipboard::clip_issues(state, arg(&args, "keys")?).await?),
-        "clip_settings" => json(clipboard::clip_settings(state).await?),
-        "clip_save_settings" => json(clipboard::clip_save_settings(state, arg(&args, "config")?).await?),
-        "clip_pause" => json(clipboard::clip_pause(state, arg(&args, "minutes")?).await?),
-        "clip_request_permission" => {
-            let _: () = clipboard::clip_request_permission().await;
-            json(())
-        },
-        "clip_ignore_candidates" => json(clipboard::clip_ignore_candidates(state).await?),
-        "clip_touch" => json(clipboard::clip_touch(state, arg(&args, "ids")?).await?),
         _ => Err(Error::Other(format!("未知的命令：{cmd}"))),
     }
 }

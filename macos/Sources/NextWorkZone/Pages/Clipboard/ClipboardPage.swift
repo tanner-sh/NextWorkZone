@@ -359,9 +359,9 @@ struct ClipboardSettingsForm: View {
     @State private var message: String?
 
     static let defaultShortcut = "CommandOrControl+Alt+V"
-    static let keepDays = [(1, "1 天"), (7, "1 周"), (30, "1 个月"), (90, "3 个月"), (365, "1 年"), (0, "永久")]
-    static let maxItems = [500, 1000, 5000, 10000, 0]
-    static let maxImageMb = [10, 50, 200, 0]
+    static let keepDays: [(UInt32, String)] = [(1, "1 天"), (7, "1 周"), (30, "1 个月"), (90, "3 个月"), (365, "1 年"), (0, "永久")]
+    static let maxItems: [UInt32] = [500, 1000, 5000, 10000, 0]
+    static let maxImageMb: [UInt32] = [10, 50, 200, 0]
 
     var body: some View {
         Form {

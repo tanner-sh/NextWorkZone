@@ -7,6 +7,7 @@ import NWZPreview
 import NWZWiki
 import NWZGitLab
 import NWZJira
+import NWZClipboard
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -32,13 +33,14 @@ final class API: @unchecked Sendable {
     let wiki: WikiService
     let gitlab: GitLabService
     let weekly: WeeklyService
+    let clipboard: ClipboardService
     let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, gitlab: GitLabService, workspace: Task<WorkspaceService, Error>) {
+    init(core: Core, settings: SettingsService, jira: JiraService, wiki: WikiService, weekly: WeeklyService, gitlab: GitLabService, clipboard: ClipboardService, workspace: Task<WorkspaceService, Error>) {
         self.core = core
         self.settings = settings
         self.jira = jira
-        self.wiki = wiki; self.weekly = weekly; self.gitlab = gitlab
+        self.wiki = wiki; self.weekly = weekly; self.gitlab = gitlab; self.clipboard = clipboard
         self.workspace = workspace
     }
 
@@ -74,6 +76,7 @@ final class API: @unchecked Sendable {
             return try JSONEncoder().encode(Markdown.write(doc))
         }
         if WorkspaceService.readOnlyCommands.contains(cmd) { return try await workspace.value.readOnly(cmd, arguments: args) }
+        if ClipboardService.readOnlyCommands.contains(cmd) { return try await clipboard.readOnly(cmd, arguments: args) }
         let object = JSONValue.object(args)
         let text = String(decoding: try JSONEncoder().encode(object), as: UTF8.self)
         do {
@@ -109,6 +112,15 @@ final class API: @unchecked Sendable {
         if path.hasPrefix("ws/") {
             guard let asset = try await workspace.value.store.asset(String(path.dropFirst(3))) else { throw APIError(message: "图片尚未同步或不存在") }
             return (asset.data, asset.mime)
+        }
+        // clip/<thumb|image|icon>/<id>：剪贴板历史中的图片和来源应用图标
+        if path.hasPrefix("clip/") {
+            let parts = path.split(separator: "/", maxSplits: 2).map(String.init)
+            guard parts.count == 3 else { throw APIError(message: "无效的图片地址") }
+            let store = clipboard.store
+            let url = switch parts[1] { case "thumb": store.thumbURL(parts[2]); case "image": store.imageURL(parts[2]); default: store.iconURL(parts[2]) }
+            guard let data = try? Data(contentsOf: url) else { throw APIError(message: "图片已丢失") }
+            return (data, "image/png")
         }
         do {
             let a = try await core.asset(path: path)
@@ -257,27 +269,37 @@ final class API: @unchecked Sendable {
 
     // MARK: 剪贴板
 
-    func clipList(_ query: ClipQuery) async throws -> [ClipItem] { try await call("clip_list", ["query": json(query)]) }
-    func clipText(_ id: String) async throws -> ClipText { try await call("clip_text", ["id": .string(id)]) }
-    func clipPaste(_ ids: [String], plain: Bool? = nil, edited: String? = nil) async throws -> String { try await call("clip_paste", ["ids": json(ids), "plain": json(plain), "edited": json(edited)]) }
-    func clipCopy(_ ids: [String], plain: Bool? = nil, edited: String? = nil) async throws { try await run("clip_copy", ["ids": json(ids), "plain": json(plain), "edited": json(edited)]) }
-    func clipDelete(_ ids: [String]) async throws { try await run("clip_delete", ["ids": json(ids)]) }
-    func clipClear() async throws -> Int { try await call("clip_clear") }
-    func clipSetPinboard(_ ids: [String], pinboard: String?) async throws { try await run("clip_set_pinboard", ["ids": json(ids), "pinboard": json(pinboard)]) }
-    func clipRename(_ id: String, title: String) async throws -> ClipItem? { try await call("clip_rename", ["id": .string(id), "title": .string(title)]) }
-    func clipUpdateText(_ id: String, text: String) async throws -> ClipItem? { try await call("clip_update_text", ["id": .string(id), "text": .string(text)]) }
-    func clipPinboards() async throws -> [Pinboard] { try await call("clip_pinboards") }
-    func clipSavePinboard(id: String?, name: String, color: String) async throws -> Pinboard { try await call("clip_save_pinboard", ["id": json(id), "name": .string(name), "color": .string(color)]) }
-    func clipDeletePinboard(_ id: String) async throws { try await run("clip_delete_pinboard", ["id": .string(id)]) }
-    func clipOrderPinboards(_ ids: [String]) async throws { try await run("clip_order_pinboards", ["ids": json(ids)]) }
-    func clipApps() async throws -> [ClipApp] { try await call("clip_apps") }
-    func clipIssues(_ keys: [String]) async throws -> [IssueHit] { try await call("clip_issues", ["keys": json(keys)]) }
-    func clipSettings() async throws -> ClipSettings { try await call("clip_settings") }
-    func clipSaveSettings(_ config: ClipboardConfig) async throws -> ClipSettings { try await call("clip_save_settings", ["config": json(config)]) }
-    func clipPause(minutes: Int) async throws -> ClipSettings { try await call("clip_pause", ["minutes": json(minutes)]) }
-    func clipRequestPermission() async throws { try await run("clip_request_permission") }
-    func clipIgnoreCandidates() async throws -> [IgnoredApp] { try await call("clip_ignore_candidates") }
-    func clipTouch(_ ids: [String]) async throws { try await run("clip_touch", ["ids": json(ids)]) }
+    func clipList(_ query: ClipQuery) async throws -> [ClipItem] { try await clipboard.list(query) }
+    func clipText(_ id: String) async throws -> ClipText { try await clipboard.text(id) }
+    func clipPaste(_ ids: [String], plain: Bool? = nil, edited: String? = nil) async throws -> String { try await clipboard.paste(ids, plain: plain, edited: edited) }
+    func clipCopy(_ ids: [String], plain: Bool? = nil, edited: String? = nil) async throws { try await clipboard.copy(ids, plain: plain, edited: edited) }
+    func clipDelete(_ ids: [String]) async throws { try await clipboard.delete(ids) }
+    func clipClear() async throws -> Int { try await clipboard.clear() }
+    func clipSetPinboard(_ ids: [String], pinboard: String?) async throws { try await clipboard.setPinboard(ids, pinboard: pinboard) }
+    func clipRename(_ id: String, title: String) async throws -> ClipItem? { try await clipboard.rename(id, title: title) }
+    func clipUpdateText(_ id: String, text: String) async throws -> ClipItem? { try await clipboard.updateText(id, text: text) }
+    func clipPinboards() async throws -> [Pinboard] { try await clipboard.pinboards() }
+    func clipSavePinboard(id: String?, name: String, color: String) async throws -> Pinboard { try await clipboard.savePinboard(id: id, name: name, color: color) }
+    func clipDeletePinboard(_ id: String) async throws { try await clipboard.deletePinboard(id) }
+    func clipOrderPinboards(_ ids: [String]) async throws { try await clipboard.orderPinboards(ids) }
+    func clipApps() async throws -> [ClipApp] { try await clipboard.apps() }
+    func clipIssues(_ keys: [String]) async throws -> [IssueHit] { try await clipboard.issues(keys) }
+    func clipSettings() async throws -> ClipSettings { try await clipboard.settingsView() }
+    func clipSaveSettings(_ config: ClipboardConfig) async throws -> ClipSettings { try await clipboard.saveSettings(config) }
+    func clipPause(minutes: Int) async throws -> ClipSettings { try await clipboard.pause(minutes: minutes) }
+    func clipRequestPermission() async throws { clipboard.requestPermission() }
+    func clipIgnoreCandidates() async throws -> [IgnoredApp] { try await clipboard.ignoreCandidates() }
+    func clipTouch(_ ids: [String]) async throws { try await clipboard.touch(ids) }
+
+    /// 当前配置中的全局快捷键：`capture` / `clipboard`（剪贴板关闭时为空）。
+    func configuredShortcut(_ action: String) -> String {
+        let config = settings.configuration.snapshot()
+        switch action {
+        case "capture": return config.workspace.captureShortcut
+        case "clipboard": return config.tools.clipboard.enabled ? config.tools.clipboard.shortcut : ""
+        default: return ""
+        }
+    }
 
     // MARK: Wiki
 
@@ -313,7 +335,15 @@ final class API: @unchecked Sendable {
 
     // MARK: 搜索与网页登录
 
-    func globalSearch(_ query: String, options: SearchOptions? = nil) async throws -> SearchResults { try await call("global_search", ["query": .string(query), "options": json(options)]) }
+    func globalSearch(_ query: String, options: SearchOptions? = nil) async throws -> SearchResults {
+        var results: SearchResults = try await call("global_search", ["query": .string(query), "options": json(options)])
+        // 剪贴板历史已在 Swift 中，本机这一步由这里补上
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if options?.phase != "remote", !text.isEmpty {
+            results.clips = (try? await clipboard.list(ClipQuery(text: text, limit: min(max(options?.limit ?? 8, 1), 100)))) ?? []
+        }
+        return results
+    }
     func webAccessStatus() async throws -> [String: WebAccess] { try await call("web_access_status") }
     func webLoginInfo(_ service: Service) async throws -> WebLoginInfo { try await call("web_login_info", ["service": .string(service.rawValue)]) }
     func webLoginFinish(_ service: Service, url: String, cookie: String) async throws -> Bool {
@@ -359,6 +389,8 @@ extension API {
         let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: wiki)
         let gitlab = GitLabService(settings: settings, jira: jira, host: host, web: bridge)
         let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: gitlab)
+        let clipboard = ClipboardService(store: try ClipboardStore(directory: paths.data.appendingPathComponent("clipboard", isDirectory: true)), system: MacClipboard(), settings: settings, host: host, issues: jira.index)
+        clipboard.start()
         Task { await jira.start() }
         let workspace = Task {
             let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
@@ -367,7 +399,7 @@ extension API {
             await service.start()
             return service
         }
-        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, gitlab: gitlab, workspace: workspace)
+        return API(core: core, settings: settings, jira: jira, wiki: wiki, weekly: weekly, gitlab: gitlab, clipboard: clipboard, workspace: workspace)
     }
 }
 

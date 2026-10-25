@@ -482,7 +482,7 @@ enum ClipDrag {
     static func writers(_ items: [ClipItem]) throws -> (writers: [NSPasteboardWriting], image: NSImage)? {
         if items.contains(where: { !$0.textual }) {
             let icon = NSWorkspace.shared.icon(for: .data).tiffRepresentation ?? Data()
-            let files = try API.shared.core.clipDragFiles(ids: items.filter { !$0.textual }.map(\.id), fallbackIcon: icon)
+            let files = try API.shared.clipboard.dragFiles(items.filter { !$0.textual }, fallbackIcon: icon)
             let image = NSImage(data: files.preview) ?? NSWorkspace.shared.icon(for: .data)
             return (files.paths.map { URL(fileURLWithPath: $0) as NSURL }, image)
         }
@@ -608,7 +608,7 @@ struct ClipMouse: NSViewRepresentable {
 
         func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
             // 确实放到了别处时，标记为刚刚使用
-            if operation != [] { API.shared.core.clipTouch(ids: dragging.map(\.id)) }
+            if operation != [] { let ids = dragging.map(\.id); Task { try? await API.shared.clipTouch(ids) } }
             dragging = []
         }
     }

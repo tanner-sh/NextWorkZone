@@ -159,11 +159,12 @@ public struct ClipboardConfig: Codable, Hashable, Sendable {
     }
 }
 
-public struct IgnoredApp: Codable, Hashable, Sendable {
+public struct IgnoredApp: Codable, Hashable, Sendable, Identifiable {
     public var id: String = ""
     public var name: String = ""
 
     public init() {}
+    public init(id: String, name: String) { self.id = id; self.name = name }
 
     private enum CodingKeys: String, CodingKey { case id, name }
     public init(from decoder: any Decoder) throws {

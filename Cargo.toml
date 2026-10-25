@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "src-tauri"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,8 +12,6 @@ nextworkzone-jira = { path = "crates/jira" }
 nextworkzone-confluence = { path = "crates/confluence" }
 nextworkzone-gitlab = { path = "crates/gitlab" }
 nextworkzone-workspace = { path = "crates/workspace" }
-nextworkzone-clipboard = { path = "crates/clipboard" }
-nextworkzone-desktop = { path = "crates/desktop" }
 nextworkzone-app = { path = "crates/app" }
 
 base64 = "0.23"

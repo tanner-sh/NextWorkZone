@@ -2,7 +2,6 @@
 //!
 //! 路径格式（各端的图片加载都使用它）：
 //! - `ws/<图片 id>`：工作空间里的图片，直接从本地数据库读取；
-//! - `clip/<thumb|image|icon>/<id>`：剪贴板历史中的图片；
 //! - `<jira|confluence|gitlab>/<编码后的路径或完整地址>`：带上对应系统的凭据去取回内容。
 //!   只允许访问已配置系统的地址，避免凭据被发往其他主机。
 
@@ -27,19 +26,6 @@ pub async fn fetch(state: &AppState, path: &str) -> Result<(Vec<u8>, Option<Stri
             return found
                 .map(|(mime, data)| (data, Some(mime)))
                 .ok_or_else(|| Error::Other("图片尚未同步到本机".into()));
-        }
-        "clip" => {
-            let (kind, id) = target.split_once('/').ok_or_else(|| Error::InvalidUrl(path.to_string()))?;
-            let id = percent_decode_str(id).decode_utf8_lossy().into_owned();
-            let store = &state.clip.store;
-            let file = match kind {
-                "thumb" => store.thumb_path(&id),
-                "image" => store.image_path(&id),
-                "icon" => store.icon_path(&id),
-                _ => return Err(Error::InvalidUrl(path.to_string())),
-            };
-            let data = tokio::fs::read(file).await?;
-            return Ok((data, Some("image/png".into())));
         }
         "jira" => Service::Jira,
         "confluence" => Service::Confluence,
