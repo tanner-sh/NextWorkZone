@@ -131,6 +131,7 @@ public struct WikiClient: Sendable {
         try WikiStorage.validate(storage)
         let body: JSONValue = ["id": .string(id), "type": "page", "title": .string(title), "space": ["key": .string(space)], "version": ["number": .number(Double(version)), "minorEdit": .bool(minorEdit), "message": .string(message)], "body": ["storage": ["value": .string(storage), "representation": "storage"]]]
         do { _ = try await rest.response("PUT", Self.pagePath(id), body: body) }
+        catch NWZError.http(409, _) { throw NWZError.conflict("页面刚刚被他人更新，请刷新后重新编辑") }
         catch NWZError.conflict { throw NWZError.conflict("页面刚刚被他人更新，请刷新后重新编辑") }
         return version
     }

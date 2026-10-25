@@ -22,7 +22,7 @@ struct NWZTool {
             只读查询当前账号与版本；默认读取 NextWorkZone-dev 的配置和凭据。
             """
         if arguments.first?.hasPrefix("jira-") == true { return try await jira(arguments) }
-        if arguments.first?.hasPrefix("wiki-") == true { return try await wiki(arguments) }
+        if arguments.first?.hasPrefix("wiki-") == true || arguments.first == "weekly-load" { return try await wiki(arguments) }
         if arguments == ["--help"] || arguments == ["-h"] { print(usage); return 0 }
         guard arguments.first == "ping" else { throw NWZError.other(usage) }
         var paths = AppPaths(development: true)
@@ -98,6 +98,11 @@ struct NWZTool {
         let value = arguments.count > 1 ? arguments[1] : ""
         func output<T: Encodable>(_ value: T) throws { FileHandle.standardOutput.write(try JSONEncoder().encode(value)); FileHandle.standardOutput.write(Data([10])) }
         switch arguments[0] {
+        case "weekly-load":
+            let config = settings.configuration.snapshot().weekly
+            guard !config.pageId.isEmpty else { throw NWZError.other("请先在设置中填写周报页面地址") }
+            let name = try await client.resolvePersonName(config.personName)
+            try await output(client.weeklyLoad(page: config.pageId, name: name, section: value.isEmpty ? nil : value)); return 0
         case "wiki-spaces": try await output(client.spaces()); return 0
         case "wiki-page": try await output(client.pageDetail(value)); return 0
         case "wiki-children": try await output(client.children(value)); return 0
