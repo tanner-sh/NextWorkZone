@@ -1,3 +1,4 @@
+import NWZJira
 import NWZPreview
 import Foundation
 import NWZCore
@@ -23,419 +24,104 @@ enum WebAccess: String, Codable, Hashable {
 
 // MARK: - Jira
 
-struct JiraStatus: Codable, Hashable {
-    var name: String
-    /// new / indeterminate / done
-    var category: String
-}
+typealias JiraStatus = NWZJira.JiraStatus
 
-struct Named: Codable, Hashable {
-    var name: String
-    var iconUrl: String?
-}
+typealias Named = NWZJira.Named
 
-struct IssueSummary: Codable, Hashable, Identifiable {
-    var key: String
-    var summary: String
-    var status: JiraStatus
-    var issueType: Named
-    var priority: Named?
-    var project: Named
-    var assignee: String?
-    var assigneeName: String?
-    var reporter: String?
-    var reporterName: String?
-    var lastViewed: String?
-    var resolution: String?
-    var created: String
-    var updated: String
-    var dueDate: String?
-    var extra: [String: String]?
-    var id: String { key }
-}
+typealias IssueSummary = NWZJira.IssueSummary
 
-struct FieldInfo: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var custom: Bool
-    var kind: String
-}
+typealias FieldInfo = NWZJira.FieldInfo
 
-struct SearchResult: Codable, Hashable {
-    var total: Int
-    var issues: [IssueSummary]
-}
+typealias SearchResult = NWZJira.SearchResult
 
-struct DisplayField: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var text: String
-    var html: String?
-    var issueKey: String?
-    var hidden: Bool
-}
+typealias DisplayField = NWZJira.DisplayField
 
-struct IssueRef: Codable, Hashable, Identifiable {
-    var key: String
-    var summary: String
-    var status: JiraStatus?
-    var issueType: Named?
-    var id: String { key }
-}
+typealias IssueRef = NWZJira.IssueRef
 
-struct IssueLink: Codable, Hashable, Identifiable {
-    var id: String
-    var key: String
-    var summary: String
-    var status: JiraStatus?
-    var issueType: Named?
-    var relation: String
-}
+typealias IssueLink = NWZJira.IssueLink
 
-struct TimeTracking: Codable, Hashable {
-    var originalEstimate: String?
-    var remainingEstimate: String?
-    var timeSpent: String?
-    var originalEstimateSeconds: Int?
-    var remainingEstimateSeconds: Int?
-    var timeSpentSeconds: Int?
-}
+typealias TimeTracking = NWZJira.TimeTracking
 
-struct Attachment: Codable, Hashable, Identifiable {
-    var id: String
-    var filename: String
-    var size: Int
-    var mimeType: String
-    var contentUrl: String
-    var thumbnailUrl: String?
-    var author: String
-    var created: String
-}
+typealias Attachment = NWZJira.Attachment
 
-struct CommentVisibility: Codable, Hashable {
-    /// role / group
-    var type: String
-    var value: String
-}
+typealias CommentVisibility = NWZJira.CommentVisibility
 
-struct Comment: Codable, Hashable, Identifiable {
-    var id: String
-    var author: String
-    var authorName: String
-    var mine: Bool
-    var created: String
-    var updated: String
-    var body: String
-    var bodyHtml: String
-    var visibility: CommentVisibility?
-}
+typealias Comment = NWZJira.Comment
 
-struct CommentLevel: Codable, Hashable {
-    var visibility: CommentVisibility
-    var label: String
-}
+typealias CommentLevel = NWZJira.CommentLevel
 
-struct Watchers: Codable, Hashable {
-    var watching: Bool
-    var count: Int
-}
+typealias Watchers = NWZJira.Watchers
 
-struct BriefComment: Codable, Hashable {
-    var author: String
-    var authorName: String
-    var created: String
-    var body: String
-}
+typealias BriefComment = NWZJira.BriefComment
 
-struct HitSnippet: Codable, Hashable {
-    /// description / comment
-    var source: String
-    var author: String?
-    var text: String
-}
+typealias HitSnippet = NWZJira.HitSnippet
 
 /// 本机问题库的搜索结果、相似问题。
-struct IssueHit: Codable, Hashable, Identifiable {
-    var key: String
-    var summary: String
-    var status: JiraStatus
-    var issueType: Named
-    var priority: Named?
-    var project: Named
-    var assignee: String?
-    var assigneeName: String?
-    var reporter: String?
-    var reporterName: String?
-    var lastViewed: String?
-    var resolution: String?
-    var created: String
-    var updated: String
-    var dueDate: String?
-    var extra: [String: String]?
-    var resolved: String?
-    var commentCount: Int
-    var snippet: HitSnippet?
-    var lastComments: [BriefComment]
-    /// 代码关联的问题：key / link
-    var via: String?
-    var id: String { key }
+typealias IssueHit = NWZJira.IssueHit
 
-    var summaryValue: IssueSummary {
-        IssueSummary(key: key, summary: summary, status: status, issueType: issueType, priority: priority, project: project, assignee: assignee, assigneeName: assigneeName, reporter: reporter, reporterName: reporterName, lastViewed: lastViewed, resolution: resolution, created: created, updated: updated, dueDate: dueDate, extra: extra)
-    }
-}
+typealias SimilarIssues = NWZJira.SimilarIssues
 
-struct SimilarIssues: Codable, Hashable {
-    var jql: String?
-    /// local / jira
-    var source: String
-    var issues: [IssueHit]
-}
+typealias IndexQuery = NWZJira.IndexQuery
 
-struct IndexQuery: Codable, Hashable {
-    var text: String
-    var project: String
-    /// all / unresolved / resolved
-    var state: String
-    var mine: Bool
-    var limit: Int?
-}
+typealias IndexProject = NWZJira.IndexProject
 
-struct IndexProject: Codable, Hashable, Identifiable {
-    var key: String
-    var name: String
-    var count: Int
-    var id: String { key }
-}
+typealias IndexProgress = NWZJira.IndexProgress
 
-struct IndexProgress: Codable, Hashable {
-    var scope: String
-    var done: Int
-    var total: Int
-    var finished: Int
-    var scopes: Int
-}
+typealias IndexStatus = NWZJira.IndexStatus
 
-struct IndexStatus: Codable, Hashable {
-    var enabled: Bool
-    var count: Int
-    var projects: [IndexProject]
-    var lastSync: String?
-    var running: Bool
-    var progress: IndexProgress?
-    var error: String?
-}
+typealias JiraToolsSettings = NWZJira.JiraToolsSettings
 
-struct JiraToolsSettings: Codable, Hashable {
-    var indexEnabled: Bool
-    var indexJql: String
-    var indexDays: Int
-    var dueField: String
-    var dueSoonDays: Int
-    var staleDays: Int
-    var remind: Bool
-}
+typealias Reminder = NWZJira.Reminder
 
-struct Reminder: Codable, Hashable, Identifiable {
-    var key: String
-    var summary: String
-    var status: JiraStatus
-    var issueType: Named
-    var priority: Named?
-    var project: Named
-    var assignee: String?
-    var assigneeName: String?
-    var reporter: String?
-    var reporterName: String?
-    var lastViewed: String?
-    var resolution: String?
-    var created: String
-    var updated: String
-    var dueDate: String?
-    var extra: [String: String]?
-    /// overdue / today / soon / stale
-    var kind: String
-    var due: String?
-    var days: Int
-    var id: String { key }
-}
+typealias DueFieldRef = NWZJira.DueFieldRef
 
-struct DueFieldRef: Codable, Hashable {
-    var id: String
-    var name: String
-}
-
-struct Reminders: Codable, Hashable {
-    var dueField: DueFieldRef?
-    var items: [Reminder]
-    var dueDates: [String: String]
-    var remind: Bool
-}
+typealias Reminders = NWZJira.Reminders
 
 typealias ActivityEvent = NWZServices.ActivityEvent
 
-struct ActivityFeed: Codable, Hashable {
-    var events: [ActivityEvent]
-    var unread: Int
-    var lastCheck: String?
-}
+typealias ActivityFeed = NWZJira.ActivityFeed
 
-struct ActivityPoll: Codable, Hashable {
-    var feed: ActivityFeed
-    var fresh: [ActivityEvent]
-}
+typealias ActivityPoll = NWZJira.ActivityPoll
 
 typealias PreviewSheet = NWZPreview.PreviewSheet
 typealias ArchiveEntry = NWZPreview.ArchiveEntry
 typealias AttachmentPreview = NWZPreview.AttachmentPreview
 
-struct JiraFilter: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var jql: String
-}
+typealias JiraFilter = NWZJira.JiraFilter
 
-struct Priority: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var iconUrl: String?
-}
+typealias Priority = NWZJira.Priority
 
-struct IssueDetail: Codable, Hashable, Identifiable {
-    var id: String
-    var key: String
-    var summary: String
-    var status: JiraStatus
-    var issueType: Named
-    var priority: Named?
-    var project: Named
-    var assignee: String?
-    var assigneeName: String?
-    var reporter: String?
-    var reporterName: String?
-    var lastViewed: String?
-    var resolution: String?
-    var created: String
-    var updated: String
-    var dueDate: String?
-    var extra: [String: String]?
-    var descriptionHtml: String?
-    var fields: [DisplayField]
-    var timeTracking: TimeTracking?
-    var parent: IssueRef?
-    var subtasks: [IssueRef]
-    var links: [IssueLink]
-    var attachments: [Attachment]
-    var comments: [Comment]
+typealias IssueDetail = NWZJira.IssueDetail
 
-    var summaryValue: IssueSummary {
-        IssueSummary(key: key, summary: summary, status: status, issueType: issueType, priority: priority, project: project, assignee: assignee, assigneeName: assigneeName, reporter: reporter, reporterName: reporterName, lastViewed: lastViewed, resolution: resolution, created: created, updated: updated, dueDate: dueDate, extra: extra)
-    }
-}
+typealias FieldOption = NWZJira.FieldOption
 
-struct FieldOption: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var children: [FieldOption]?
-    var disabled: Bool
-}
+typealias UserRef = NWZJira.UserRef
 
-struct UserRef: Codable, Hashable, Identifiable {
-    var name: String
-    var displayName: String
-    var id: String { name }
-}
+typealias IssueChoice = NWZJira.IssueChoice
 
-struct IssueChoice: Codable, Hashable {
-    var key: String
-    var summary: String
-}
+typealias FieldMeta = NWZJira.FieldMeta
 
-struct FieldMeta: Codable, Hashable, Identifiable {
-    var key: String
-    var name: String
-    var required: Bool
-    /// text / textarea / number / date / datetime / select / multiselect / cascading / user / multiuser / labels / timetracking / epic / parent / unsupported
-    var kind: String
-    var options: [FieldOption]
-    var value: JSONValue?
-    var id: String { key }
-}
+typealias Transition = NWZJira.Transition
 
-struct Transition: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var to: JiraStatus
-    var fields: [FieldMeta]
-}
+typealias CreateIssueType = NWZJira.CreateIssueType
 
-struct CreateIssueType: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var iconUrl: String?
-    var subtask: Bool
-}
+typealias CreateProject = NWZJira.CreateProject
 
-struct CreateProject: Codable, Hashable, Identifiable {
-    var id: String
-    var key: String
-    var name: String
-    var issueTypes: [CreateIssueType]
-}
+typealias CreatedIssue = NWZJira.CreatedIssue
 
-struct CreatedIssue: Codable, Hashable {
-    var key: String
-    var attachmentError: String?
-}
+typealias LinkType = NWZJira.LinkType
 
-struct LinkType: Codable, Hashable, Identifiable {
-    var id: String
-    var name: String
-    var inward: String
-    var outward: String
-}
+typealias Worklog = NWZJira.Worklog
 
-struct Worklog: Codable, Hashable, Identifiable {
-    var id: String
-    var author: String
-    var mine: Bool
-    var started: String
-    var timeSpent: String
-    var timeSpentSeconds: Int
-    var comment: String
-}
+typealias WorklogInput = NWZJira.WorklogInput
 
-struct WorklogInput: Codable, Hashable {
-    var started: String
-    var timeSpent: String
-    var comment: String
-}
+typealias WorklogSum = NWZJira.WorklogSum
 
-struct WorklogSum: Codable, Hashable {
-    var key: String
-    var summary: String
-    var seconds: Int
-}
+typealias HistoryItem = NWZJira.HistoryItem
 
-struct HistoryItem: Codable, Hashable {
-    var fieldId: String
-    var field: String
-    var from: String?
-    var to: String?
-}
+typealias HistoryEntry = NWZJira.HistoryEntry
 
-struct HistoryEntry: Codable, Hashable, Identifiable {
-    var id: String
-    var author: String
-    var authorName: String
-    var created: String
-    var items: [HistoryItem]
-}
-
-struct Viewed: Codable, Hashable {
-    var viewed: [String: Int64]
-    var baseline: Int64
-}
+typealias Viewed = NWZJira.Viewed
 
 // MARK: - 周报
 

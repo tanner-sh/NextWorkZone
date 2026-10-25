@@ -5,7 +5,7 @@ import NWZCore
 import NWZWorkspace
 @testable import NWZServices
 
-private final class WorkspaceTestHost: AppHost, Sendable {
+final class WorkspaceTestHost: AppHost, Sendable {
     let events = Mutex<[ServiceEvent]>([])
     let shortcuts = Mutex<[String]>([])
     func emit(_ event: ServiceEvent) { events.withLock { $0.append(event) } }

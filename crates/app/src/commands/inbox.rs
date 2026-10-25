@@ -9,19 +9,16 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use chrono::{Local, TimeZone};
 use nextworkzone_core::Result;
 use nextworkzone_gitlab::{MergeRequest, MrQuery, MrScope};
 use nextworkzone_jira::ActivityEvent;
 use nextworkzone_workspace::InboxEntry;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::{activity, jira_tools};
 use crate::state::AppState;
 
 /// 收件箱有变化（提醒到时、其他窗口记下内容）时发给前端的事件。
 /// 需要处理的动态类型；字段修改、Wiki 页面修改、点赞等只在动态页中查看。
-const ACTION_KINDS: &[&str] = &["mention", "assigned", "comment", "status", "created", "share", "task"];
 /// 合并请求列表的缓存时间，收件箱计数会定期刷新，不必每次都请求 GitLab。
 const MR_CACHE: Duration = Duration::from_secs(120);
 
@@ -91,11 +88,6 @@ pub struct InboxView {
     notes: Vec<String>,
 }
 
-fn start_of_today() -> i64 {
-    let today = Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap_or_default();
-    Local.from_local_datetime(&today).single().map_or(0, |t| t.timestamp_millis())
-}
-
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
@@ -105,38 +97,7 @@ pub async fn bridge_inbox_sources(state: &AppState) -> Result<InboxView> {
     let mut items: Vec<InboxItem> = Vec::new();
     let mut notes = Vec::new();
 
-    // 动态按问题（页面）合并为一条
-    let handled = |id: &str| entries.get(id).and_then(|e| e.handled_at).unwrap_or(0);
-    let mut groups: BTreeMap<String, InboxItem> = BTreeMap::new();
-    for event in activity::stored_events(state) {
-        if event.read || !ACTION_KINDS.contains(&event.kind.as_str()) || event.issue_key.is_empty() {
-            continue;
-        }
-        let id = format!("activity:{}:{}", event.system, event.issue_key);
-        let at = activity::event_ms(&event);
-        if at <= handled(&id) {
-            continue;
-        }
-        let item = groups.entry(id.clone()).or_insert_with(|| {
-            let title = if event.system == "wiki" { event.issue_summary.clone() } else { format!("{} {}", event.issue_key, event.issue_summary) };
-            let mut item = InboxItem::new(id, "activity", title, at);
-            item.system = Some(event.system.clone());
-            item.key = Some(event.issue_key.clone());
-            item
-        });
-        item.at = item.at.max(at);
-        item.events.push(event);
-    }
-    for mut item in groups.into_values() {
-        item.events.sort_by_key(|e| std::cmp::Reverse(activity::event_ms(e)));
-        items.push(item);
-    }
-
-    let (due, mrs) = tokio::join!(due_items(&state, &entries), mr_items(&state, &entries));
-    match due {
-        Ok(found) => items.extend(found),
-        Err(e) => notes.push(format!("到期问题：{e}")),
-    }
+    let mrs = mr_items(&state, &entries).await;
     match mrs {
         Ok(found) => items.extend(found),
         Err(e) => notes.push(format!("合并请求：{e}")),
@@ -160,32 +121,6 @@ pub async fn bridge_inbox_sources(state: &AppState) -> Result<InboxView> {
 }
 
 /// 逾期或今天到期的问题；处理后当天不再出现，第二天仍未解决时再次出现。
-async fn due_items(state: &&AppState, entries: &BTreeMap<String, InboxEntry>) -> Result<Vec<InboxItem>> {
-    if state.jira().is_err() {
-        return Ok(Vec::new());
-    }
-    let today = start_of_today();
-    let reminders = jira_tools::jira_reminders(state).await?;
-    Ok(reminders
-        .items
-        .into_iter()
-        .filter(|r| r.kind == "overdue" || r.kind == "today")
-        .filter_map(|r| {
-            let id = format!("due:{}", r.issue.key);
-            if entries.get(&id).and_then(|e| e.handled_at).is_some_and(|at| at >= today) {
-                return None;
-            }
-            let mut item = InboxItem::new(id, "due", format!("{} {}", r.issue.key, r.issue.summary), today);
-            item.system = Some("jira".into());
-            item.key = Some(r.issue.key.clone());
-            item.due_kind = Some(r.kind.to_string());
-            item.due_days = Some(r.days);
-            item.detail = r.issue.status.name.clone();
-            Some(item)
-        })
-        .collect())
-}
-
 /// 请我审核、指派给我的未合并的合并请求（我自己发起的除外）；处理后有更新时再次出现。
 async fn mr_items(state: &&AppState, entries: &BTreeMap<String, InboxEntry>) -> Result<Vec<InboxItem>> {
     let Ok(gitlab) = state.gitlab() else { return Ok(Vec::new()) };

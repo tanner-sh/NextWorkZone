@@ -23,6 +23,7 @@ extension IssueIndex {
             while true {
                 try Task.checkCancellation()
                 let (total, issues) = try await client.indexPage(jql, startAt: start, maxResults: 100)
+                try Task.checkCancellation()
                 guard !issues.isEmpty else { break }
                 try await upsert(issues)
                 if let latest = issues.map({ $0.issue.updated }).max(by: { (JiraActivity.time($0) ?? .distantPast) < (JiraActivity.time($1) ?? .distantPast) }) { try await setCursor(id, cursor: latest) }

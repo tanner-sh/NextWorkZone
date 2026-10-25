@@ -7,7 +7,7 @@ public struct JiraClient: Sendable {
     public init(baseURL: String, token: String, http: HTTPClient) { rest = RESTClient(baseURL: baseURL, token: token, http: http) }
     public init(rest: RESTClient) { self.rest = rest }
     static let listFields = ["summary", "status", "issuetype", "priority", "project", "updated", "created", "duedate", "assignee", "reporter", "resolution", "lastViewed"]
-    static func issuePath(_ key: String) -> String { "/rest/api/2/issue/" + RESTClient.component(key) }
+    public static func issuePath(_ key: String) -> String { "/rest/api/2/issue/" + RESTClient.component(key) }
     public func get(_ path: String, query: [(String, String)] = []) async throws -> JSONDocument { try await rest.json("GET", path, query: query) }
     public func myUsername() async throws -> String { try await get("/rest/api/2/myself")["name"].text }
     public func search(_ jql: String, startAt: Int = 0, maxResults: Int = 100, fields: [String] = []) async throws -> SearchResult {

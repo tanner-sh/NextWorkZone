@@ -1,31 +1,8 @@
+import NWZJira
 import Foundation
 import NWZWorkspace
 
-public struct ActivityEvent: Codable, Hashable, Identifiable, Sendable {
-    public var id: String
-    public var issueKey: String
-    public var issueSummary: String
-    public var issueTypeIcon: String?
-    public var kind: String
-    public var actor: String
-    public var at: String
-    public var text: String
-    public var read: Bool
-    /// jira / wiki
-    public var system: String
-    public init(id: String = "", issueKey: String = "", issueSummary: String = "", issueTypeIcon: String? = nil, kind: String = "", actor: String = "", at: String = "", text: String = "", read: Bool = false, system: String = "") {
-        self.id = id
-        self.issueKey = issueKey
-        self.issueSummary = issueSummary
-        self.issueTypeIcon = issueTypeIcon
-        self.kind = kind
-        self.actor = actor
-        self.at = at
-        self.text = text
-        self.read = read
-        self.system = system
-    }
-}
+public typealias ActivityEvent = NWZJira.ActivityEvent
 
 public struct InboxMr: Codable, Hashable, Sendable {
     public var projectId: Int

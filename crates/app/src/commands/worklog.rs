@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, FixedOffset, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone};
 use nextworkzone_core::{Error, Result};
 use serde::Serialize;
 
@@ -58,8 +58,8 @@ pub async fn bridge_work_events(state: &AppState, day: String) -> Result<WorkLog
     let mut events: Vec<WorkEvent> = Vec::new();
     let mut notes = Vec::new();
 
-    let (jira, gitlab, wiki) = tokio::join!(jira_events(state, date), gitlab_events(state, date), wiki_events(state, date));
-    for (label, result) in [("Jira", jira), ("GitLab", gitlab), ("Wiki", wiki)] {
+    let (gitlab, wiki) = tokio::join!(gitlab_events(state, date), wiki_events(state, date));
+    for (label, result) in [("GitLab", gitlab), ("Wiki", wiki)] {
         match result {
             Ok(found) => events.extend(found.into_iter().filter(|e| within(e.at))),
             Err(e) => notes.push(format!("{label}：{e}")),
@@ -68,22 +68,6 @@ pub async fn bridge_work_events(state: &AppState, day: String) -> Result<WorkLog
 
     events.sort_by_key(|e| e.at);
     Ok(WorkLog { day, events, notes })
-}
-
-async fn jira_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEvent>> {
-    let Ok(jira) = state.jira() else { return Ok(Vec::new()) };
-    let me = state.jira_username().await?;
-    let zone = |d: NaiveDate| -> Result<DateTime<FixedOffset>> {
-        Ok(Local.timestamp_millis_opt(local_ms(d)?).single().ok_or_else(|| Error::Other("日期无效".into()))?.fixed_offset())
-    };
-    let next = date + Duration::days(1);
-    let actions = jira.my_actions(&me, &date.to_string(), &next.to_string(), zone(date)?, zone(next)?).await?;
-    Ok(actions
-        .into_iter()
-        .filter_map(|a| {
-            Some(WorkEvent { at: ms_of(&a.at)?, system: "jira", kind: a.kind, title: a.summary, key: Some(a.key), detail: a.detail, project_id: None })
-        })
-        .collect())
 }
 
 async fn gitlab_events(state: &AppState, date: NaiveDate) -> Result<Vec<WorkEvent>> {

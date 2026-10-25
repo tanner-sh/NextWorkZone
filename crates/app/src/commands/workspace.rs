@@ -1,33 +1,13 @@
 //! 尚未迁移的 Jira 和 Wiki 互通；工作台存储入口已迁入 Swift。
 use std::sync::Arc;
 use nextworkzone_core::{Error, Result};
-use nextworkzone_workspace::{AssignedIssue, Doc, JiraTodoSync, Workspace};
+use nextworkzone_workspace::{Doc, Workspace};
 use serde::Serialize;
 use crate::state::AppState;
 pub const SYNCED_EVENT: &str = "workspace-synced";
 async fn run<T: Send + 'static>(ws: &Arc<Workspace>, f: impl FnOnce(&Workspace) -> Result<T> + Send + 'static) -> Result<T> {
     let ws = ws.clone();
     tokio::task::spawn_blocking(move || f(&ws)).await.map_err(|e| Error::Other(e.to_string()))?
-}
-
-pub async fn ws_refresh_jira_todos(state: &AppState) -> Result<Option<JiraTodoSync>> {
-    if !state.config().workspace.jira_todos {
-        return Ok(None);
-    }
-    let result = state
-        .jira()?
-        .search("assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC", 0, 500)
-        .await?;
-    // 只拿到部分结果时不做“自动完成”，避免把没取到的问题误判为已解决
-    if result.issues.len() < result.total as usize {
-        return Err(Error::Other(format!("分配给我的问题有 {} 个，超过一次能获取的数量", result.total)));
-    }
-    let issues: Vec<AssignedIssue> = result
-        .issues
-        .into_iter()
-        .map(|i| AssignedIssue { key: i.key, summary: i.summary, due: i.due_date })
-        .collect();
-    run(&state.workspace, move |ws| ws.sync_jira_todos(&issues)).await.map(Some)
 }
 
 // ---------- 与 Wiki 互通 ----------

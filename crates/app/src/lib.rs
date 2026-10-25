@@ -18,7 +18,6 @@ pub use state::{AppState, Paths};
 /// 需要在 tokio 运行时中调用。
 pub fn start_background(state: &Arc<AppState>) -> std::io::Result<()> {
     tokio::spawn(commands::session::keep_alive_loop(state.clone()));
-    tokio::spawn(commands::jira_index::sync_loop(state.clone()));
     tokio::spawn(commands::wiki::sync_loop(state.clone()));
     clipboard::start(state.clone())
 }

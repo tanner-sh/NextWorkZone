@@ -4,6 +4,7 @@ import NWZServices
 import NWZRich
 import NWZWorkspace
 import NWZPreview
+import NWZJira
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -25,20 +26,19 @@ final class API: @unchecked Sendable {
     let core: Core
 
     let settings: SettingsService
+    let jira: JiraService
     let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService, workspace: Task<WorkspaceService, Error>) {
+    init(core: Core, settings: SettingsService, jira: JiraService, workspace: Task<WorkspaceService, Error>) {
         self.core = core
         self.settings = settings
+        self.jira = jira
         self.workspace = workspace
     }
 
     /// 调用命令，返回原始 JSON 文本。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
-        if cmd == "jira_preview_attachment" {
-            let service = Service(rawValue: args["service"]?.string ?? "jira") ?? .jira
-            return try JSONEncoder().encode(await jiraPreviewAttachment(url: args["url"]?.string ?? "", filename: args["filename"]?.string ?? "", mime: args["mime"]?.string ?? "", service: service))
-        }
+        if JiraService.readOnlyCommands.contains(cmd) { return try await jira.readOnly(cmd, arguments: args) }
         if cmd == "get_settings" { return try JSONEncoder().encode(await settings.getSettings()) }
         if cmd == "test_connection" {
             guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
@@ -85,6 +85,7 @@ final class API: @unchecked Sendable {
 
     /// 读取图片等资源，路径格式见 crates/app/src/asset.rs。
     func asset(_ path: String) async throws -> (Data, String?) {
+        if path.hasPrefix("jira/") { return try await jira.attachments.fetch(service: .jira, url: String(path.dropFirst(5)).removingPercentEncoding ?? String(path.dropFirst(5))) }
         if path.hasPrefix("ws/") {
             guard let asset = try await workspace.value.store.asset(String(path.dropFirst(3))) else { throw APIError(message: "图片尚未同步或不存在") }
             return (asset.data, asset.mime)
@@ -101,97 +102,67 @@ final class API: @unchecked Sendable {
     // MARK: 设置
 
     func getSettings() async throws -> Settings { await settings.getSettings() }
-    func saveSettings(_ input: SettingsInput) async throws -> Settings { try await settings.saveSettings(input) }
+    func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); return result }
     func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
     func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
     func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
 
     // MARK: Jira
 
-    func jiraCachedSearch(_ jql: String, fields: [String] = []) async throws -> SearchResult? {
-        try await call("jira_cached_search", ["jql": .string(jql), "fields": json(fields)])
-    }
-    func jiraSearch(_ jql: String, startAt: Int = 0, maxResults: Int = 100, fields: [String] = []) async throws -> SearchResult {
-        try await call("jira_search", ["jql": .string(jql), "startAt": json(startAt), "maxResults": json(maxResults), "fields": json(fields)])
-    }
-    func jiraFields(refresh: Bool = false) async throws -> [FieldInfo] { try await call("jira_fields", ["refresh": .bool(refresh)]) }
-    func jiraMyWorklogs(from: String, to: String) async throws -> [WorklogSum] { try await call("jira_my_worklogs", ["from": .string(from), "to": .string(to)]) }
-    func jiraIssue(_ key: String) async throws -> IssueDetail { try await call("jira_issue", ["key": .string(key)]) }
-    func jiraTransitions(_ key: String) async throws -> [Transition] { try await call("jira_transitions", ["key": .string(key)]) }
-    func jiraTransition(_ key: String, transitionId: String, fields: [String: JSONValue], comment: String?, visibility: CommentVisibility? = nil) async throws -> IssueDetail {
-        try await call("jira_transition", ["key": .string(key), "transitionId": .string(transitionId), "fields": .object(fields), "comment": json(comment), "visibility": json(visibility)])
-    }
-    func jiraAddComment(_ key: String, body: String, visibility: CommentVisibility? = nil) async throws -> Comment {
-        try await call("jira_add_comment", ["key": .string(key), "body": .string(body), "visibility": json(visibility)])
-    }
-    func jiraUpdateComment(_ key: String, id: String, body: String, visibility: CommentVisibility?) async throws -> Comment {
-        try await call("jira_update_comment", ["key": .string(key), "id": .string(id), "body": .string(body), "visibility": json(visibility)])
-    }
-    func jiraCommentLevels(_ key: String) async throws -> [CommentLevel] { try await call("jira_comment_levels", ["key": .string(key)]) }
-    func jiraDeleteComment(_ key: String, id: String) async throws { try await run("jira_delete_comment", ["key": .string(key), "id": .string(id)]) }
-    func jiraMe() async throws -> String { try await call("jira_me") }
-    func jiraAssign(_ key: String, assignee: String?) async throws -> IssueDetail { try await call("jira_assign", ["key": .string(key), "assignee": json(assignee)]) }
-    func jiraWatchers(_ key: String) async throws -> Watchers { try await call("jira_watchers", ["key": .string(key)]) }
-    func jiraSetWatching(_ key: String, watching: Bool) async throws -> Watchers { try await call("jira_set_watching", ["key": .string(key), "watching": .bool(watching)]) }
-    func jiraPriorities() async throws -> [Priority] { try await call("jira_priorities") }
-    func jiraSetPriority(_ key: String, priorityId: String) async throws -> IssueDetail { try await call("jira_set_priority", ["key": .string(key), "priorityId": .string(priorityId)]) }
-    func jiraActivity() async throws -> ActivityFeed { try await call("jira_activity") }
-    func jiraActivityPoll() async throws -> ActivityPoll { try await call("jira_activity_poll") }
-    func jiraActivityRead(_ ids: [String]?) async throws -> ActivityFeed { try await call("jira_activity_read", ["ids": json(ids)]) }
-    func jiraPreviewAttachment(url: String, filename: String, mime: String, service: Service = .jira) async throws -> AttachmentPreview {
-        let encoded = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url
-        let (data, _) = try await asset(service.rawValue + "/" + encoded)
-        return await Task.detached { Previewer.preview(filename: filename, mime: mime, data: data) }.value
-    }
-    func jiraFavouriteFilters() async throws -> [JiraFilter] { try await call("jira_favourite_filters") }
-    func jiraSimilarIssues(_ key: String, summary: String, resolvedOnly: Bool) async throws -> SimilarIssues {
-        try await call("jira_similar_issues", ["key": .string(key), "summary": .string(summary), "resolvedOnly": .bool(resolvedOnly)])
-    }
-    func jiraIndexStatus() async throws -> IndexStatus { try await call("jira_index_status") }
-    func jiraIndexSync() async throws { try await run("jira_index_sync") }
-    func jiraIndexRebuild() async throws -> IndexStatus { try await call("jira_index_rebuild") }
-    func jiraIndexSearch(_ query: IndexQuery) async throws -> [IssueHit] { try await call("jira_index_search", ["query": json(query)]) }
-    func jiraViewed(_ keys: [String]) async throws -> Viewed { try await call("jira_viewed", ["keys": json(keys)]) }
-    func jiraMarkViewed(_ key: String, updated: String?) async throws -> Int64? { try await call("jira_mark_viewed", ["key": .string(key), "updated": json(updated)]) }
-    func jiraToolsSettings() async throws -> JiraToolsSettings { try await call("jira_tools_settings") }
-    func jiraSaveToolsSettings(_ settings: JiraToolsSettings) async throws -> JiraToolsSettings { try await call("jira_save_tools_settings", ["settings": json(settings)]) }
-    func jiraReminders() async throws -> Reminders { try await call("jira_reminders") }
-    func jiraUploadAttachments(_ key: String, paths: [String]) async throws -> [Attachment] { try await call("jira_upload_attachments", ["key": .string(key), "paths": json(paths)]) }
-    func jiraOpenAttachment(url: String, filename: String, service: Service = .jira) async throws -> String {
-        try await call("jira_open_attachment", ["url": .string(url), "filename": .string(filename), "service": .string(service.rawValue)])
-    }
-    func jiraEditFields(_ key: String) async throws -> [FieldMeta] { try await call("jira_edit_fields", ["key": .string(key)]) }
-    func jiraUpdateIssue(_ key: String, fields: [String: JSONValue]) async throws -> IssueDetail { try await call("jira_update_issue", ["key": .string(key), "fields": .object(fields)]) }
-    func jiraCachedCreateProjects() async throws -> [CreateProject]? { try await call("jira_cached_create_projects") }
-    func jiraCreateProjects() async throws -> [CreateProject] { try await call("jira_create_projects") }
-    func jiraCreateFields(projectKey: String, issueTypeId: String) async throws -> [FieldMeta] {
-        try await call("jira_create_fields", ["projectKey": .string(projectKey), "issueTypeId": .string(issueTypeId)])
-    }
-    func jiraCreateIssue(fields: [String: JSONValue], attachments: [String]) async throws -> CreatedIssue {
-        try await call("jira_create_issue", ["fields": .object(fields), "attachments": json(attachments)])
-    }
-    func jiraFindUsers(_ query: String, field: String, issueKey: String?, projectKey: String?) async throws -> [UserRef] {
-        try await call("jira_find_users", ["query": .string(query), "field": .string(field), "issueKey": json(issueKey), "projectKey": json(projectKey)])
-    }
-    func jiraSuggestedAssignees(_ key: String) async throws -> [UserRef] { try await call("jira_suggested_assignees", ["key": .string(key)]) }
-    func jiraSuggestLabels(_ query: String) async throws -> [String] { try await call("jira_suggest_labels", ["query": .string(query)]) }
-    func jiraSearchEpics(_ query: String, projectKey: String) async throws -> [IssueRef] { try await call("jira_search_epics", ["query": .string(query), "projectKey": .string(projectKey)]) }
-    func jiraPickIssues(_ query: String, projectKey: String?, standardOnly: Bool) async throws -> [IssueSummary] {
-        try await call("jira_pick_issues", ["query": .string(query), "projectKey": json(projectKey), "standardOnly": .bool(standardOnly)])
-    }
-    func jiraLinkTypes() async throws -> [LinkType] { try await call("jira_link_types") }
-    func jiraAddLink(_ key: String, typeId: String, other: String, outward: Bool) async throws -> IssueDetail {
-        try await call("jira_add_link", ["key": .string(key), "typeId": .string(typeId), "other": .string(other), "outward": .bool(outward)])
-    }
-    func jiraDeleteLink(_ key: String, linkId: String) async throws -> IssueDetail { try await call("jira_delete_link", ["key": .string(key), "linkId": .string(linkId)]) }
-    func jiraWorklogs(_ key: String) async throws -> [Worklog] { try await call("jira_worklogs", ["key": .string(key)]) }
-    func jiraSaveWorklog(_ key: String, id: String?, input: WorklogInput) async throws -> [Worklog] {
-        try await call("jira_save_worklog", ["key": .string(key), "id": json(id), "input": json(input)])
-    }
-    func jiraDeleteWorklog(_ key: String, id: String) async throws -> [Worklog] { try await call("jira_delete_worklog", ["key": .string(key), "id": .string(id)]) }
-    func jiraHistory(_ key: String) async throws -> [HistoryEntry] { try await call("jira_history", ["key": .string(key)]) }
-    func jiraRenderWiki(_ markup: String, issueKey: String?) async throws -> String { try await call("jira_render_wiki", ["markup": .string(markup), "issueKey": json(issueKey)]) }
-    func jiraSavePastedImage(base64: String, filename: String) async throws -> String { try await call("jira_save_pasted_image", ["data": .string(base64), "filename": .string(filename)]) }
+    func jiraCachedSearch(_ jql: String, fields: [String] = []) async throws -> SearchResult? { try await jira.cachedSearch(jql, fields: fields) }
+    func jiraSearch(_ jql: String, startAt: Int = 0, maxResults: Int = 100, fields: [String] = []) async throws -> SearchResult { try await jira.search(jql, startAt: startAt, maxResults: maxResults, fields: fields) }
+    func jiraFields(refresh: Bool = false) async throws -> [FieldInfo] { try await jira.fields(refresh: refresh) }
+    func jiraMyWorklogs(from: String, to: String) async throws -> [WorklogSum] { try await jira.myWorklogs(from: from, to: to) }
+    func jiraIssue(_ key: String) async throws -> IssueDetail { try await jira.issue(key) }
+    func jiraTransitions(_ key: String) async throws -> [Transition] { try await jira.client().transitions(key) }
+    func jiraTransition(_ key: String, transitionId: String, fields: [String: JSONValue], comment: String?, visibility: CommentVisibility? = nil) async throws -> IssueDetail { try await jira.transition(key, transitionID: transitionId, fields: fields, comment: comment, visibility: visibility) }
+    func jiraAddComment(_ key: String, body: String, visibility: CommentVisibility? = nil) async throws -> Comment { try await jira.saveComment(key, body: body, visibility: visibility) }
+    func jiraUpdateComment(_ key: String, id: String, body: String, visibility: CommentVisibility?) async throws -> Comment { try await jira.saveComment(key, id: id, body: body, visibility: visibility) }
+    func jiraCommentLevels(_ key: String) async throws -> [CommentLevel] { try await jira.commentLevels(key) }
+    func jiraDeleteComment(_ key: String, id: String) async throws { try await jira.client().deleteComment(key, id: id) }
+    func jiraMe() async throws -> String { try await jira.me() }
+    func jiraAssign(_ key: String, assignee: String?) async throws -> IssueDetail { try await jira.assign(key, assignee: assignee) }
+    func jiraWatchers(_ key: String) async throws -> Watchers { try await jira.client().watchers(key) }
+    func jiraSetWatching(_ key: String, watching: Bool) async throws -> Watchers { try await jira.setWatching(key, watching: watching) }
+    func jiraPriorities() async throws -> [Priority] { try await jira.priorities() }
+    func jiraSetPriority(_ key: String, priorityId: String) async throws -> IssueDetail { try await jira.updateIssue(key, fields: ["priority": ["id": .string(priorityId)]]) }
+    func jiraActivity() async throws -> ActivityFeed { try await jira.activity() }
+    func jiraActivityPoll() async throws -> ActivityPoll { try await jira.pollActivity() }
+    func jiraActivityRead(_ ids: [String]?) async throws -> ActivityFeed { try await jira.markActivityRead(ids) }
+    func jiraPreviewAttachment(url: String, filename: String, mime: String, service: Service = .jira) async throws -> AttachmentPreview { try await jira.attachments.preview(service: service, url: url, filename: filename, mime: mime) }
+    func jiraFavouriteFilters() async throws -> [JiraFilter] { try await jira.client().favouriteFilters() }
+    func jiraSimilarIssues(_ key: String, summary: String, resolvedOnly: Bool) async throws -> SimilarIssues { try await jira.similarIssues(key: key, summary: summary, resolvedOnly: resolvedOnly) }
+    func jiraIndexStatus() async throws -> IndexStatus { try await jira.indexStatus() }
+    func jiraIndexSync() async throws { await jira.requestIndexSync() }
+    func jiraIndexRebuild() async throws -> IndexStatus { try await jira.rebuildIndex() }
+    func jiraIndexSearch(_ query: IndexQuery) async throws -> [IssueHit] { try await jira.searchIndex(query) }
+    func jiraViewed(_ keys: [String]) async throws -> Viewed { try await jira.index.viewed(keys) }
+    func jiraMarkViewed(_ key: String, updated: String?) async throws -> Int64? { try await jira.markViewed(key, updated: updated) }
+    func jiraToolsSettings() async throws -> JiraToolsSettings { await jira.toolsSettings() }
+    func jiraSaveToolsSettings(_ settings: JiraToolsSettings) async throws -> JiraToolsSettings { try await jira.saveToolsSettings(settings) }
+    func jiraReminders() async throws -> Reminders { try await jira.reminders() }
+    func jiraUploadAttachments(_ key: String, paths: [String]) async throws -> [Attachment] { try await jira.uploadAttachments(key, paths: paths) }
+    func jiraOpenAttachment(url: String, filename: String, service: Service = .jira) async throws -> String { try await jira.attachments.open(service: service, url: url, filename: filename) }
+    func jiraEditFields(_ key: String) async throws -> [FieldMeta] { try await jira.client().editFields(key) }
+    func jiraUpdateIssue(_ key: String, fields: [String: JSONValue]) async throws -> IssueDetail { try await jira.updateIssue(key, fields: fields) }
+    func jiraCachedCreateProjects() async throws -> [CreateProject]? { try await jira.cachedCreateProjects() }
+    func jiraCreateProjects() async throws -> [CreateProject] { try await jira.createProjects() }
+    func jiraCreateFields(projectKey: String, issueTypeId: String) async throws -> [FieldMeta] { try await jira.client().createFields(projectKey: projectKey, issueTypeID: issueTypeId) }
+    func jiraCreateIssue(fields: [String: JSONValue], attachments: [String]) async throws -> CreatedIssue { try await jira.createIssue(fields: fields, attachments: attachments) }
+    func jiraFindUsers(_ query: String, field: String, issueKey: String?, projectKey: String?) async throws -> [UserRef] { try await jira.client().findUsers(query, field: field, issueKey: issueKey, projectKey: projectKey) }
+    func jiraSuggestedAssignees(_ key: String) async throws -> [UserRef] { try await jira.suggestedAssignees(key) }
+    func jiraSuggestLabels(_ query: String) async throws -> [String] { try await jira.client().suggestLabels(query) }
+    func jiraSearchEpics(_ query: String, projectKey: String) async throws -> [IssueRef] { try await jira.client().searchEpics(query, projectKey: projectKey) }
+    func jiraPickIssues(_ query: String, projectKey: String?, standardOnly: Bool) async throws -> [IssueSummary] { try await jira.client().pickIssues(query, projectKey: projectKey, standardOnly: standardOnly) }
+    func jiraLinkTypes() async throws -> [LinkType] { try await jira.client().linkTypes() }
+    func jiraAddLink(_ key: String, typeId: String, other: String, outward: Bool) async throws -> IssueDetail { try await jira.addLink(key, typeID: typeId, other: other, outward: outward) }
+    func jiraDeleteLink(_ key: String, linkId: String) async throws -> IssueDetail { try await jira.deleteLink(key, linkID: linkId) }
+    func jiraWorklogs(_ key: String) async throws -> [Worklog] { try await jira.client().worklogs(key) }
+    func jiraSaveWorklog(_ key: String, id: String?, input: WorklogInput) async throws -> [Worklog] { try await jira.saveWorklog(key, id: id, input: input) }
+    func jiraDeleteWorklog(_ key: String, id: String) async throws -> [Worklog] { try await jira.deleteWorklog(key, id: id) }
+    func jiraHistory(_ key: String) async throws -> [HistoryEntry] { try await jira.client().history(key) }
+    func jiraRenderWiki(_ markup: String, issueKey: String?) async throws -> String { try await jira.client().renderWiki(markup, issueKey: issueKey) }
+    func jiraSavePastedImage(base64: String, filename: String) async throws -> String { try jira.attachments.savePastedImage(base64: base64, filename: filename) }
 
     // MARK: 周报
 
@@ -252,7 +223,7 @@ final class API: @unchecked Sendable {
     func wsSetTodoDone(_ id: String, done: Bool) async throws -> Todo { try await workspace.value.setTodoDone(id, done: done) }
     func wsMoveTodo(_ id: String, sort: Double) async throws { try await workspace.value.store.moveTodo(id, sort: sort) }
     func wsDeleteTodo(_ id: String) async throws { try await workspace.value.store.deleteTodo(id) }
-    func wsRefreshJiraTodos() async throws -> JiraTodoSync? { try await call("ws_refresh_jira_todos") }
+    func wsRefreshJiraTodos() async throws -> JiraTodoSync? { try await jira.refreshTodos(in: workspace.value.store) }
     func wsDocs(_ kind: DocKind) async throws -> [DocSummary] { try await workspace.value.store.docs(kind: kind) }
     func wsDoc(_ id: String) async throws -> Doc? { try await workspace.value.doc(id) }
     func wsFullDocs(_ kind: DocKind) async throws -> [Doc] { try await workspace.value.store.fullDocs(kind: kind) }
@@ -393,28 +364,40 @@ extension API {
         let host = AppHost(configuration: configuration)
         let core = try Core(paths: legacyPaths, host: host)
         let settings = try SettingsService(paths: paths, configuration: configuration, bridge: RustSettingsBridge(core: core))
+        let bridge = RustRemoteBridge(core: core)
+        let jira = try JiraService(settings: settings, host: host, web: bridge, wikiActivity: bridge)
+        Task { await jira.start() }
         let workspace = Task {
             let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
-            let service = WorkspaceService(store: store, settings: settings, host: host, remote: RustWorkspaceSources(core: core))
+            let service = WorkspaceService(store: store, settings: settings, host: host, remote: JiraWorkspaceSources(jira: jira, legacy: bridge))
             await service.start()
             return service
         }
-        return API(core: core, settings: settings, workspace: workspace)
+        return API(core: core, settings: settings, jira: jira, workspace: workspace)
     }
 }
 
-private struct RustWorkspaceSources: WorkspaceRemoteSources {
+private struct RustRemoteBridge: WorkspaceRemoteSources, WebResourceSource, WikiActivitySource {
     let core: Core
     private func read<T: Decodable>(_ command: String, _ arguments: [String: JSONValue] = [:]) async throws -> T {
         let args = String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
         let result = try await core.call(cmd: command, args: args)
         return try JSONDecoder().decode(T.self, from: Data(result.utf8))
     }
+    func fetch(service: Service, url: String) async throws -> (Data, String?) {
+        do {
+            let result = try await core.asset(path: service.rawValue + "/" + (url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url))
+            return (result.data, result.contentType)
+        } catch {
+            let message = errorMessage(error)
+            if message.contains("需要先网页登录") { throw NWZError.sessionRequired(service) }
+            throw error
+        }
+    }
+    func events(since: Date, first: Bool) async throws -> [ActivityEvent] { try await read("bridge_wiki_activity", ["since":.string(since.ISO8601Format()), "first":.bool(first)]) }
     func inboxSources() async throws -> InboxView { try await read("bridge_inbox_sources") }
     func workEvents(day: String) async throws -> WorkLog { try await read("bridge_work_events", ["day": .string(day)]) }
-    func markActivityRead(_ ids: [String]) async throws {
-        let _: JSONValue = try await read("jira_activity_read", ["ids": .from(ids)])
-    }
+    func markActivityRead(_ ids: [String]) async throws {}
     func setWikiTask(page: String, task: String, done: Bool) async throws {
         let _: JSONValue = try await read("wiki_set_task", ["page": .string(page), "task": .string(task), "done": .bool(done)])
     }
