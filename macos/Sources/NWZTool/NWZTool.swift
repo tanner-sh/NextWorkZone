@@ -22,7 +22,7 @@ struct NWZTool {
             只读查询当前账号与版本；默认读取 NextWorkZone-dev 的配置和凭据。
             """
         if arguments.first?.hasPrefix("jira-") == true { return try await jira(arguments) }
-        if arguments.first == "wiki-edit" || arguments.first == "wiki-roundtrip" { return try await wiki(arguments) }
+        if arguments.first?.hasPrefix("wiki-") == true { return try await wiki(arguments) }
         if arguments == ["--help"] || arguments == ["-h"] { print(usage); return 0 }
         guard arguments.first == "ping" else { throw NWZError.other(usage) }
         var paths = AppPaths(development: true)
@@ -90,10 +90,26 @@ struct NWZTool {
     }
 
     private static func wiki(_ arguments: [String]) async throws -> Int32 {
-        guard arguments.count == 2 else { throw NWZError.other("请指定页面 id") }
+        guard arguments.count <= 3 else { throw NWZError.other("Wiki 只读命令的参数过多") }
         let paths = AppPaths(development: true)
         let settings = try SettingsService(paths: paths, configuration: ConfigurationStore(path: paths.config))
         let rest = try await settings.restClient(.confluence)
+        let client = WikiClient(rest: rest)
+        let value = arguments.count > 1 ? arguments[1] : ""
+        func output<T: Encodable>(_ value: T) throws { FileHandle.standardOutput.write(try JSONEncoder().encode(value)); FileHandle.standardOutput.write(Data([10])) }
+        switch arguments[0] {
+        case "wiki-spaces": try await output(client.spaces()); return 0
+        case "wiki-page": try await output(client.pageDetail(value)); return 0
+        case "wiki-children": try await output(client.children(value)); return 0
+        case "wiki-attachments": try await output(client.attachments(value)); return 0
+        case "wiki-versions": try await output(client.versions(value)); return 0
+        case "wiki-comments": try await output(client.comments(value)); return 0
+        case "wiki-page-version": try await output(client.pageVersion(value)); return 0
+        case "wiki-search": try await output(client.cqlSearch(WikiQuery(text: value, kind: "page", limit: 25))); return 0
+        case "wiki-edit", "wiki-roundtrip": break
+        default: throw NWZError.other("未知的只读 Wiki 命令")
+        }
+        guard !value.isEmpty else { throw NWZError.other("请指定页面 id") }
         let raw = try await rest.json("GET", "/rest/api/content/" + RESTClient.component(arguments[1]), query: [("expand", "body.storage,version,space")])
         let source = raw["body"]["storage"]["value"].text
         let ed = try WikiEdit.toEditable(source)
