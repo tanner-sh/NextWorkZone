@@ -3,6 +3,7 @@ import NWZCore
 import NWZServices
 import NWZRich
 import NWZWorkspace
+import NWZPreview
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -34,6 +35,10 @@ final class API: @unchecked Sendable {
 
     /// 调用命令，返回原始 JSON 文本。
     func raw(_ cmd: String, _ args: [String: JSONValue] = [:]) async throws -> Data {
+        if cmd == "jira_preview_attachment" {
+            let service = Service(rawValue: args["service"]?.string ?? "jira") ?? .jira
+            return try JSONEncoder().encode(await jiraPreviewAttachment(url: args["url"]?.string ?? "", filename: args["filename"]?.string ?? "", mime: args["mime"]?.string ?? "", service: service))
+        }
         if cmd == "get_settings" { return try JSONEncoder().encode(await settings.getSettings()) }
         if cmd == "test_connection" {
             guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
@@ -134,7 +139,9 @@ final class API: @unchecked Sendable {
     func jiraActivityPoll() async throws -> ActivityPoll { try await call("jira_activity_poll") }
     func jiraActivityRead(_ ids: [String]?) async throws -> ActivityFeed { try await call("jira_activity_read", ["ids": json(ids)]) }
     func jiraPreviewAttachment(url: String, filename: String, mime: String, service: Service = .jira) async throws -> AttachmentPreview {
-        try await call("jira_preview_attachment", ["url": .string(url), "filename": .string(filename), "mime": .string(mime), "service": .string(service.rawValue)])
+        let encoded = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url
+        let (data, _) = try await asset(service.rawValue + "/" + encoded)
+        return await Task.detached { Previewer.preview(filename: filename, mime: mime, data: data) }.value
     }
     func jiraFavouriteFilters() async throws -> [JiraFilter] { try await call("jira_favourite_filters") }
     func jiraSimilarIssues(_ key: String, summary: String, resolvedOnly: Bool) async throws -> SimilarIssues {

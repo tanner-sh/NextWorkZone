@@ -12,7 +12,6 @@ nextworkzone-jira = { path = "crates/jira" }
 nextworkzone-confluence = { path = "crates/confluence" }
 nextworkzone-gitlab = { path = "crates/gitlab" }
 nextworkzone-workspace = { path = "crates/workspace" }
-nextworkzone-preview = { path = "crates/preview" }
 nextworkzone-clipboard = { path = "crates/clipboard" }
 nextworkzone-desktop = { path = "crates/desktop" }
 nextworkzone-app = { path = "crates/app" }

@@ -63,7 +63,6 @@ pub async fn dispatch(state: &Arc<AppState>, cmd: &str, args: Value) -> Result<V
         "jira_upload_attachments" => json(jira::jira_upload_attachments(state, arg(&args, "key")?, arg(&args, "paths")?).await?),
         "local_image_preview" => json(jira::local_image_preview(arg(&args, "path")?).await),
         "jira_open_attachment" => json(jira::jira_open_attachment(state, arg(&args, "url")?, arg(&args, "filename")?, arg(&args, "service")?).await?),
-        "jira_preview_attachment" => json(jira::jira_preview_attachment(state, arg(&args, "url")?, arg(&args, "filename")?, arg(&args, "mime")?, arg(&args, "service")?).await?),
         "jira_edit_fields" => json(jira::jira_edit_fields(state, arg(&args, "key")?).await?),
         "jira_update_issue" => json(jira::jira_update_issue(state, arg(&args, "key")?, arg(&args, "fields")?).await?),
         "jira_cached_create_projects" => json(jira::jira_cached_create_projects(state).await?),

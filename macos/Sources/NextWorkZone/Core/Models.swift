@@ -1,3 +1,4 @@
+import NWZPreview
 import Foundation
 import NWZCore
 import NWZServices
@@ -284,39 +285,9 @@ struct ActivityPoll: Codable, Hashable {
     var fresh: [ActivityEvent]
 }
 
-struct PreviewSheet: Codable, Hashable {
-    var name: String
-    var rows: [[String]]
-    var totalRows: Int
-    var totalCols: Int
-}
-
-struct ArchiveEntry: Codable, Hashable {
-    var name: String
-    var size: Int
-    var dir: Bool
-}
-
-enum AttachmentPreview: Decodable, Hashable {
-    case text(text: String, truncated: Bool, encoding: String)
-    case sheet([PreviewSheet])
-    case document(paragraphs: [String], truncated: Bool)
-    case archive(entries: [ArchiveEntry], truncated: Bool)
-    case unsupported(String)
-
-    private enum Keys: String, CodingKey { case kind, text, truncated, encoding, sheets, paragraphs, entries, reason }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .kind) {
-        case "text": self = .text(text: try c.decode(String.self, forKey: .text), truncated: try c.decode(Bool.self, forKey: .truncated), encoding: try c.decode(String.self, forKey: .encoding))
-        case "sheet": self = .sheet(try c.decode([PreviewSheet].self, forKey: .sheets))
-        case "document": self = .document(paragraphs: try c.decode([String].self, forKey: .paragraphs), truncated: try c.decode(Bool.self, forKey: .truncated))
-        case "archive": self = .archive(entries: try c.decode([ArchiveEntry].self, forKey: .entries), truncated: try c.decode(Bool.self, forKey: .truncated))
-        default: self = .unsupported((try? c.decode(String.self, forKey: .reason)) ?? "不支持预览")
-        }
-    }
-}
+typealias PreviewSheet = NWZPreview.PreviewSheet
+typealias ArchiveEntry = NWZPreview.ArchiveEntry
+typealias AttachmentPreview = NWZPreview.AttachmentPreview
 
 struct JiraFilter: Codable, Hashable, Identifiable {
     var id: String

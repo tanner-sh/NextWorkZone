@@ -454,16 +454,6 @@ pub async fn jira_open_attachment(
     Ok(path.to_string_lossy().into_owned())
 }
 
-/// 在应用内预览附件：表格、Word 文档、文本文件转换为可显示的内容。
-pub async fn jira_preview_attachment(state: &AppState, url: String, filename: String, mime: String, service: Option<Service>) -> Result<nextworkzone_preview::Preview> {
-    let service = service.unwrap_or(Service::Jira);
-    let url = state.resolve_url(service, &url)?;
-    let (bytes, _) = state.fetch_web(service, &url).await?;
-    tokio::task::spawn_blocking(move || nextworkzone_preview::preview(&filename, &mime, &bytes))
-        .await
-        .map_err(|e| nextworkzone_core::Error::Other(e.to_string()))
-}
-
 /// 文件已存在时依次尝试 `name (1).ext`、`name (2).ext`……
 fn unique_path(dir: &Path, filename: &str) -> PathBuf {
     let name = Path::new(filename).file_name().map(|n| n.to_string_lossy().into_owned());

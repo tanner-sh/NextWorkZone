@@ -17,7 +17,6 @@ nextworkzone-jira.workspace = true
 nextworkzone-confluence.workspace = true
 nextworkzone-gitlab.workspace = true
 nextworkzone-workspace.workspace = true
-nextworkzone-preview.workspace = true
 nextworkzone-clipboard.workspace = true
 nextworkzone-desktop.workspace = true
 reqwest.workspace = true
