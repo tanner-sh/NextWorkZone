@@ -51,7 +51,7 @@ fn ms_of(s: &str) -> Option<i64> {
 }
 
 /// 某一天（`YYYY-MM-DD`）的工作记录。
-pub async fn ws_worklog(state: &AppState, day: String) -> Result<WorkLog> {
+pub async fn bridge_work_events(state: &AppState, day: String) -> Result<WorkLog> {
     let date = NaiveDate::parse_from_str(&day, "%Y-%m-%d").map_err(|_| Error::Other(format!("日期无效：{day}")))?;
     let (start, end) = (local_ms(date)?, local_ms(date + Duration::days(1))?);
     let within = |at: i64| at >= start && at < end;
@@ -66,20 +66,6 @@ pub async fn ws_worklog(state: &AppState, day: String) -> Result<WorkLog> {
         }
     }
 
-    // 手动完成的待办（问题解决后自动完成的不算）
-    for todo in state.workspace.todos()?.into_iter().filter(|t| t.done && !t.auto_done) {
-        if let Some(at) = todo.completed_at.filter(|at| within(*at)) {
-            events.push(WorkEvent {
-                at,
-                system: "todo",
-                kind: "done".into(),
-                title: todo.title,
-                key: todo.ref_key.filter(|_| todo.ref_system.as_deref() == Some("jira")),
-                detail: String::new(),
-                project_id: None,
-            });
-        }
-    }
     events.sort_by_key(|e| e.at);
     Ok(WorkLog { day, events, notes })
 }

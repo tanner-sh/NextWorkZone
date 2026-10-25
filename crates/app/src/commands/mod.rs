@@ -8,7 +8,6 @@ pub mod jira_tools;
 pub mod search;
 pub mod rich;
 pub mod session;
-pub mod tools;
 pub mod weekly;
 pub mod wiki;
 pub mod workspace;

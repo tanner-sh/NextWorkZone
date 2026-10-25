@@ -23,6 +23,11 @@ public actor SettingsService {
         try bridge?.setSecrets(credentials)
     }
 
+    public func updateConfiguration(_ change: @Sendable (inout AppConfig) throws -> Void) throws {
+        try configuration.update(change)
+        try bridge?.setConfiguration(configuration.snapshot())
+    }
+
     public func getSettings() -> Settings {
         let config = configuration.snapshot()
         return Settings(proxy: config.proxy ?? "", services: Service.allCases.map { service in

@@ -1,6 +1,7 @@
 import Foundation
 import NWZCore
 import NWZServices
+import NWZWorkspace
 
 // 与 Rust 应用层命令的参数、结果一一对应（字段名为 camelCase）。与 src/api.ts 中的类型相同。
 
@@ -270,19 +271,7 @@ struct Reminders: Codable, Hashable {
     var remind: Bool
 }
 
-struct ActivityEvent: Codable, Hashable, Identifiable {
-    var id: String
-    var issueKey: String
-    var issueSummary: String
-    var issueTypeIcon: String?
-    var kind: String
-    var actor: String
-    var at: String
-    var text: String
-    var read: Bool
-    /// jira / wiki
-    var system: String
-}
+typealias ActivityEvent = NWZServices.ActivityEvent
 
 struct ActivityFeed: Codable, Hashable {
     var events: [ActivityEvent]
@@ -781,35 +770,9 @@ struct MrQuery: Codable, Hashable {
 
 // MARK: - 工作空间
 
-struct ChecklistItem: Codable, Hashable, Identifiable {
-    var id: String
-    var text: String
-    var done: Bool
-}
+typealias ChecklistItem = NWZWorkspace.ChecklistItem
 
-struct Todo: Codable, Hashable, Identifiable {
-    var id: String
-    var title: String
-    var notes: String
-    var done: Bool
-    var completedAt: Int64?
-    /// YYYY-MM-DD
-    var due: String?
-    /// 0 无、1 低、2 中、3 高
-    var priority: Int
-    var sort: Double
-    var refSystem: String?
-    var refKey: String?
-    var refTitle: String?
-    var source: String?
-    var autoDone: Bool
-    var createdAt: Int64
-    var updatedAt: Int64
-    var remindAt: Int64?
-    /// daily / weekdays / weekly / monthly
-    var `repeat`: String?
-    var checklist: [ChecklistItem]
-}
+typealias Todo = NWZWorkspace.Todo
 
 struct TodoInput: Codable, Hashable {
     var id: String?
@@ -863,94 +826,24 @@ struct TodoInput: Codable, Hashable {
     }
 }
 
-struct InboxMr: Codable, Hashable {
-    var projectId: Int
-    var iid: Int
-    var reference: String
-}
+typealias InboxMr = NWZServices.InboxMr
 
-struct InboxItem: Codable, Hashable, Identifiable {
-    var id: String
-    /// activity / due / mr
-    var source: String
-    var title: String
-    var detail: String
-    var at: Int64
-    var system: String?
-    var key: String?
-    var url: String?
-    var mr: InboxMr?
-    var events: [ActivityEvent]
-    var dueKind: String?
-    var dueDays: Int?
-    var snoozeUntil: Int64?
-}
+typealias InboxItem = NWZServices.InboxItem
 
-struct InboxView: Codable, Hashable {
-    var items: [InboxItem]
-    var snoozed: [InboxItem]
-    var notes: [String]
-}
+typealias InboxView = NWZServices.InboxView
 
-struct InboxHandleInput: Codable, Hashable {
-    var id: String
-    var title: String
-    var eventIds: [String]?
-}
+typealias InboxHandleInput = NWZServices.InboxHandleInput
 
-struct WorkEvent: Codable, Hashable {
-    var at: Int64
-    /// jira / gitlab / wiki / todo
-    var system: String
-    var kind: String
-    var title: String
-    var key: String?
-    var detail: String
-    var projectId: Int?
-}
+typealias WorkEvent = NWZServices.WorkEvent
 
-struct WorkLog: Codable, Hashable {
-    var day: String
-    var events: [WorkEvent]
-    var notes: [String]
-}
+typealias WorkLog = NWZServices.WorkLog
 
 /// note / daily / page，以及模板 jira-template
 typealias DocKind = String
 
-struct Doc: Codable, Hashable, Identifiable {
-    var id: String
-    var kind: DocKind
-    var title: String
-    var content: String
-    var parentId: String?
-    var sort: Double
-    var tags: [String]
-    var day: String?
-    var pinned: Bool
-    var sourceSystem: String?
-    var sourceKey: String?
-    var sourceUrl: String?
-    var publishedUrl: String?
-    var createdAt: Int64
-    var updatedAt: Int64
-}
+typealias Doc = NWZWorkspace.Doc
 
-struct DocSummary: Codable, Hashable, Identifiable {
-    var id: String
-    var kind: DocKind
-    var title: String
-    var excerpt: String
-    var parentId: String?
-    var sort: Double
-    var tags: [String]
-    var day: String?
-    var pinned: Bool
-    var sourceSystem: String?
-    var sourceKey: String?
-    var publishedUrl: String?
-    var updatedAt: Int64
-}
+typealias DocSummary = NWZWorkspace.DocSummary
 
 struct DocInput: Codable, Hashable {
     var id: String?
@@ -965,59 +858,19 @@ struct DocInput: Codable, Hashable {
     var sourceUrl: String?
 }
 
-struct TagCount: Codable, Hashable, Identifiable {
-    var name: String
-    var count: Int
-    var id: String { name }
-}
+typealias TagCount = NWZWorkspace.TagCount
 
-struct Backlink: Codable, Hashable, Identifiable {
-    /// todo / doc
-    var itemType: String
-    var id: String
-    var kind: String
-    var title: String
-    var done: Bool
-    var updatedAt: Int64
-}
+typealias Backlink = NWZWorkspace.Backlink
 
-struct WorkspaceHit: Codable, Hashable, Identifiable {
-    var itemType: String
-    var id: String
-    var kind: String
-    var title: String
-    var snippet: String
-    var done: Bool
-}
+typealias WorkspaceHit = NWZWorkspace.SearchHit
 
-struct SyncReport: Codable, Hashable {
-    var exported: Int
-    var imported: Int
-    var conflicts: Int
-    var devices: Int
-    var finishedAt: Int64
-}
+typealias SyncReport = NWZWorkspace.SyncReport
 
-struct WorkspaceSettings: Codable, Hashable {
-    var syncDir: String
-    var jiraTodos: Bool
-    var deviceId: String
-    var lastSync: SyncReport?
-    var lastError: String?
-    var captureShortcut: String
-    var captureError: String?
-}
+typealias WorkspaceSettings = NWZServices.WorkspaceSettings
 
-struct JiraTodoSync: Codable, Hashable {
-    var added: Int
-    var completed: Int
-    var reopened: Int
-}
+typealias JiraTodoSync = NWZWorkspace.JiraTodoSync
 
-struct SavedAsset: Codable, Hashable {
-    var id: String
-    var mime: String
-}
+typealias SavedAsset = NWZWorkspace.AssetMeta
 
 struct WsWikiPage: Codable, Hashable {
     var id: String
@@ -1324,4 +1177,15 @@ struct WebLoginInfo: Codable, Hashable {
 struct Nothing: Decodable {
     init(from decoder: Decoder) throws {}
     init() {}
+}
+
+extension TodoInput {
+    var serviceInput: NWZWorkspace.TodoInput {
+        .init(id: id, title: title, notes: notes ?? "", done: done ?? false, due: due ?? nil, priority: priority ?? 0, refSystem: refSystem ?? nil, refKey: refKey ?? nil, refTitle: refTitle ?? nil, remindAt: remindAt ?? nil, repeat: self.repeat ?? nil, checklist: checklist ?? [])
+    }
+}
+extension DocInput {
+    var serviceInput: NWZWorkspace.DocInput {
+        .init(id: id, kind: kind, title: title, content: content, parentId: parentId, tags: tags ?? [], pinned: pinned ?? false, sourceSystem: sourceSystem, sourceKey: sourceKey, sourceUrl: sourceUrl)
+    }
 }

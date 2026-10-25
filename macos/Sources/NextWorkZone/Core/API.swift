@@ -2,6 +2,7 @@ import Foundation
 import NWZCore
 import NWZServices
 import NWZRich
+import NWZWorkspace
 
 /// 命令失败时的错误，`message` 可以直接显示给用户。
 struct APIError: LocalizedError {
@@ -23,10 +24,12 @@ final class API: @unchecked Sendable {
     let core: Core
 
     let settings: SettingsService
+    let workspace: Task<WorkspaceService, Error>
 
-    init(core: Core, settings: SettingsService) {
+    init(core: Core, settings: SettingsService, workspace: Task<WorkspaceService, Error>) {
         self.core = core
         self.settings = settings
+        self.workspace = workspace
     }
 
     /// 调用命令，返回原始 JSON 文本。
@@ -41,6 +44,7 @@ final class API: @unchecked Sendable {
             guard let doc = args["doc"]?.decode(RichDoc.self) else { throw APIError(message: "缺少文档") }
             return try JSONEncoder().encode(Markdown.write(doc))
         }
+        if WorkspaceService.readOnlyCommands.contains(cmd) { return try await workspace.value.readOnly(cmd, arguments: args) }
         let object = JSONValue.object(args)
         let text = String(decoding: try JSONEncoder().encode(object), as: UTF8.self)
         do {
@@ -70,6 +74,10 @@ final class API: @unchecked Sendable {
 
     /// 读取图片等资源，路径格式见 crates/app/src/asset.rs。
     func asset(_ path: String) async throws -> (Data, String?) {
+        if path.hasPrefix("ws/") {
+            guard let asset = try await workspace.value.store.asset(String(path.dropFirst(3))) else { throw APIError(message: "图片尚未同步或不存在") }
+            return (asset.data, asset.mime)
+        }
         do {
             let a = try await core.asset(path: path)
             return (a.data, a.contentType)
@@ -226,38 +234,38 @@ final class API: @unchecked Sendable {
 
     // MARK: 工作空间
 
-    func wsTodos() async throws -> [Todo] { try await call("ws_todos") }
-    func wsSaveTodo(_ input: TodoInput) async throws -> Todo { try await call("ws_save_todo", ["input": json(input)]) }
-    func wsSetTodoDone(_ id: String, done: Bool) async throws -> Todo { try await call("ws_set_todo_done", ["id": .string(id), "done": .bool(done)]) }
-    func wsMoveTodo(_ id: String, sort: Double) async throws { try await run("ws_move_todo", ["id": .string(id), "sort": .number(sort)]) }
-    func wsDeleteTodo(_ id: String) async throws { try await run("ws_delete_todo", ["id": .string(id)]) }
+    func wsTodos() async throws -> [Todo] { try await workspace.value.store.todos() }
+    func wsSaveTodo(_ input: TodoInput) async throws -> Todo { try await workspace.value.store.saveTodo(input.serviceInput) }
+    func wsSetTodoDone(_ id: String, done: Bool) async throws -> Todo { try await workspace.value.setTodoDone(id, done: done) }
+    func wsMoveTodo(_ id: String, sort: Double) async throws { try await workspace.value.store.moveTodo(id, sort: sort) }
+    func wsDeleteTodo(_ id: String) async throws { try await workspace.value.store.deleteTodo(id) }
     func wsRefreshJiraTodos() async throws -> JiraTodoSync? { try await call("ws_refresh_jira_todos") }
-    func wsDocs(_ kind: DocKind) async throws -> [DocSummary] { try await call("ws_docs", ["kind": .string(kind)]) }
-    func wsDoc(_ id: String) async throws -> Doc? { try await call("ws_doc", ["id": .string(id)]) }
-    func wsFullDocs(_ kind: DocKind) async throws -> [Doc] { try await call("ws_full_docs", ["kind": .string(kind)]) }
-    func wsDaily(_ day: String) async throws -> Doc { try await call("ws_daily", ["day": .string(day)]) }
-    func wsDailyDays() async throws -> [String] { try await call("ws_daily_days") }
-    func wsSaveDoc(_ input: DocInput) async throws -> Doc { try await call("ws_save_doc", ["input": json(input)]) }
-    func wsMoveDoc(_ id: String, parentId: String?, sort: Double) async throws -> Doc { try await call("ws_move_doc", ["id": .string(id), "parentId": json(parentId), "sort": .number(sort)]) }
-    func wsDeleteDoc(_ id: String) async throws -> Int { try await call("ws_delete_doc", ["id": .string(id)]) }
-    func wsTags() async throws -> [TagCount] { try await call("ws_tags") }
-    func wsBacklinks(system: String, key: String) async throws -> [Backlink] { try await call("ws_backlinks", ["system": .string(system), "key": .string(key)]) }
-    func wsSearch(_ query: String) async throws -> [WorkspaceHit] { try await call("ws_search", ["query": .string(query)]) }
-    func wsSaveAsset(base64: String, mime: String) async throws -> SavedAsset { try await call("ws_save_asset", ["data": .string(base64), "mime": .string(mime)]) }
-    func wsSettings() async throws -> WorkspaceSettings { try await call("ws_settings") }
-    func wsSaveSettings(syncDir: String, jiraTodos: Bool) async throws -> WorkspaceSettings { try await call("ws_save_settings", ["syncDir": .string(syncDir), "jiraTodos": .bool(jiraTodos)]) }
-    func wsSync() async throws -> SyncReport? { try await call("ws_sync") }
-    func wsSaveCaptureShortcut(_ shortcut: String) async throws -> WorkspaceSettings { try await call("ws_save_capture_shortcut", ["shortcut": .string(shortcut)]) }
-    func wsInbox() async throws -> InboxView { try await call("ws_inbox") }
-    func wsInboxHandle(_ input: InboxHandleInput) async throws { try await run("ws_inbox_handle", ["input": json(input)]) }
-    func wsInboxSnooze(_ id: String, title: String, until: Int64?) async throws { try await run("ws_inbox_snooze", ["id": .string(id), "title": .string(title), "until": json(until)]) }
-    func wsWorklog(_ day: String) async throws -> WorkLog { try await call("ws_worklog", ["day": .string(day)]) }
+    func wsDocs(_ kind: DocKind) async throws -> [DocSummary] { try await workspace.value.store.docs(kind: kind) }
+    func wsDoc(_ id: String) async throws -> Doc? { try await workspace.value.doc(id) }
+    func wsFullDocs(_ kind: DocKind) async throws -> [Doc] { try await workspace.value.store.fullDocs(kind: kind) }
+    func wsDaily(_ day: String) async throws -> Doc { try await workspace.value.store.daily(day) }
+    func wsDailyDays() async throws -> [String] { try await workspace.value.store.dailyDays() }
+    func wsSaveDoc(_ input: DocInput) async throws -> Doc { try await workspace.value.store.saveDoc(input.serviceInput) }
+    func wsMoveDoc(_ id: String, parentId: String?, sort: Double) async throws -> Doc { try await workspace.value.store.moveDoc(id, parentId: parentId, sort: sort) }
+    func wsDeleteDoc(_ id: String) async throws -> Int { try await workspace.value.store.deleteDoc(id) }
+    func wsTags() async throws -> [TagCount] { try await workspace.value.store.tags() }
+    func wsBacklinks(system: String, key: String) async throws -> [Backlink] { try await workspace.value.store.backlinks(system: system, key: key) }
+    func wsSearch(_ query: String) async throws -> [WorkspaceHit] { try await workspace.value.store.search(query) }
+    func wsSaveAsset(base64: String, mime: String) async throws -> SavedAsset { try await workspace.value.saveAsset(base64: base64, mime: mime) }
+    func wsSettings() async throws -> WorkspaceSettings { try await workspace.value.getSettings() }
+    func wsSaveSettings(syncDir: String, jiraTodos: Bool) async throws -> WorkspaceSettings { try await workspace.value.saveSettings(syncDir: syncDir, jiraTodos: jiraTodos) }
+    func wsSync() async throws -> SyncReport? { try await workspace.value.sync() }
+    func wsSaveCaptureShortcut(_ shortcut: String) async throws -> WorkspaceSettings { try await workspace.value.saveCaptureShortcut(shortcut) }
+    func wsInbox() async throws -> InboxView { try await workspace.value.inbox() }
+    func wsInboxHandle(_ input: InboxHandleInput) async throws { try await workspace.value.handleInbox(input) }
+    func wsInboxSnooze(_ id: String, title: String, until: Int64?) async throws { try await workspace.value.snoozeInbox(id, title: title, until: until) }
+    func wsWorklog(_ day: String) async throws -> WorkLog { try await workspace.value.worklog(day) }
     func wsWikiPage(_ page: String) async throws -> WsWikiPage { try await call("ws_wiki_page", ["page": .string(page)]) }
     func wsPublishToWiki(docId: String?, mode: String, parent: String, title: String, storage: String, assets: [String]) async throws -> PublishResult {
         try await call("ws_publish_to_wiki", ["docId": json(docId), "mode": .string(mode), "parent": .string(parent), "title": .string(title), "storage": .string(storage), "assets": json(assets)])
     }
-    func toolsHidden() async throws -> [String] { try await call("tools_hidden") }
-    func toolsSetHidden(_ hidden: [String]) async throws -> [String] { try await call("tools_set_hidden", ["hidden": json(hidden)]) }
+    func toolsHidden() async throws -> [String] { try await workspace.value.toolsHidden() }
+    func toolsSetHidden(_ hidden: [String]) async throws -> [String] { try await workspace.value.setToolsHidden(hidden) }
 
     // MARK: 剪贴板
 
@@ -369,8 +377,32 @@ extension API {
     static func make(paths: AppPaths, legacyPaths: CorePaths) throws -> API {
         try paths.createDirectories()
         let configuration = try ConfigurationStore(path: paths.config)
-        let core = try Core(paths: legacyPaths, host: AppHost(configuration: configuration))
+        let host = AppHost(configuration: configuration)
+        let core = try Core(paths: legacyPaths, host: host)
         let settings = try SettingsService(paths: paths, configuration: configuration, bridge: RustSettingsBridge(core: core))
-        return API(core: core, settings: settings)
+        let workspace = Task {
+            let store = try await Workspace(path: paths.data.appendingPathComponent("workspace.sqlite").path)
+            let service = WorkspaceService(store: store, settings: settings, host: host, remote: RustWorkspaceSources(core: core))
+            await service.start()
+            return service
+        }
+        return API(core: core, settings: settings, workspace: workspace)
+    }
+}
+
+private struct RustWorkspaceSources: WorkspaceRemoteSources {
+    let core: Core
+    private func read<T: Decodable>(_ command: String, _ arguments: [String: JSONValue] = [:]) async throws -> T {
+        let args = String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
+        let result = try await core.call(cmd: command, args: args)
+        return try JSONDecoder().decode(T.self, from: Data(result.utf8))
+    }
+    func inboxSources() async throws -> InboxView { try await read("bridge_inbox_sources") }
+    func workEvents(day: String) async throws -> WorkLog { try await read("bridge_work_events", ["day": .string(day)]) }
+    func markActivityRead(_ ids: [String]) async throws {
+        let _: JSONValue = try await read("jira_activity_read", ["ids": .from(ids)])
+    }
+    func setWikiTask(page: String, task: String, done: Bool) async throws {
+        let _: JSONValue = try await read("wiki_set_task", ["page": .string(page), "task": .string(task), "done": .bool(done)])
     }
 }

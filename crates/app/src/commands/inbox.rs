@@ -6,26 +6,24 @@
 //! 另有后台循环在提醒时间到达时发送系统通知（待办的提醒时间、收件箱的稍后提醒）。
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::{Local, TimeZone};
 use nextworkzone_core::Result;
 use nextworkzone_gitlab::{MergeRequest, MrQuery, MrScope};
 use nextworkzone_jira::ActivityEvent;
-use nextworkzone_workspace::{InboxEntry, Workspace};
+use nextworkzone_workspace::InboxEntry;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{activity, jira_tools};
 use crate::state::AppState;
 
 /// 收件箱有变化（提醒到时、其他窗口记下内容）时发给前端的事件。
-pub const INBOX_EVENT: &str = "inbox-changed";
 /// 需要处理的动态类型；字段修改、Wiki 页面修改、点赞等只在动态页中查看。
 const ACTION_KINDS: &[&str] = &["mention", "assigned", "comment", "status", "created", "share", "task"];
 /// 合并请求列表的缓存时间，收件箱计数会定期刷新，不必每次都请求 GitLab。
 const MR_CACHE: Duration = Duration::from_secs(120);
-const ALERT_INTERVAL: Duration = Duration::from_secs(20);
 
 /// 合并请求及进入收件箱的原因（请你审核 / 指派给你）。
 type MrList = Vec<(MergeRequest, &'static str)>;
@@ -102,13 +100,8 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-pub async fn ws_inbox(state: &AppState) -> Result<InboxView> {
-    // 旧版本（或其他设备同步来的）记下的内容转为待办
-    let ws = state.workspace.clone();
-    if run(&ws, |ws| ws.captures_to_todos()).await? > 0 {
-        state.emit(crate::commands::workspace::SYNCED_EVENT, ());
-    }
-    let entries: BTreeMap<String, InboxEntry> = state.workspace.inbox()?.into_iter().map(|e| (e.id.clone(), e)).collect();
+pub async fn bridge_inbox_sources(state: &AppState) -> Result<InboxView> {
+    let entries: BTreeMap<String, InboxEntry> = BTreeMap::new();
     let mut items: Vec<InboxItem> = Vec::new();
     let mut notes = Vec::new();
 
@@ -229,53 +222,4 @@ async fn mr_items(state: &&AppState, entries: &BTreeMap<String, InboxEntry>) -> 
             Some(item)
         })
         .collect())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HandleInput {
-    id: String,
-    title: String,
-    /// 动态条目：一并标为已读的动态。
-    #[serde(default)]
-    event_ids: Vec<String>,
-}
-
-/// 处理完一条（完成、忽略或已转为待办）：记下处理时间，之后有新变化时重新出现。
-pub async fn ws_inbox_handle(state: &AppState, input: HandleInput) -> Result<()> {
-    if !input.event_ids.is_empty() {
-        activity::jira_activity_read(state, Some(input.event_ids.clone())).await?;
-    }
-    let ws = state.workspace.clone();
-    run(&ws, move |ws| ws.set_inbox_state(&input.id, &input.title, Some(now_ms()), None).map(|_| ())).await
-}
-
-/// 稍后提醒；`until` 为空时取消稍后提醒。
-pub async fn ws_inbox_snooze(state: &AppState, id: String, title: String, until: Option<i64>) -> Result<()> {
-    let ws = state.workspace.clone();
-    run(&ws, move |ws| ws.set_inbox_state(&id, &title, None, until).map(|_| ())).await
-}
-
-async fn run<T: Send + 'static>(ws: &std::sync::Arc<Workspace>, f: impl FnOnce(&Workspace) -> Result<T> + Send + 'static) -> Result<T> {
-    let ws = ws.clone();
-    tokio::task::spawn_blocking(move || f(&ws)).await.map_err(|e| nextworkzone_core::Error::Other(e.to_string()))?
-}
-
-/// 后台检查提醒时间：到时发送系统通知，并通知前端刷新。不依赖窗口是否显示。
-pub async fn alert_loop(state: Arc<AppState>) {
-    let mut interval = tokio::time::interval(ALERT_INTERVAL);
-    loop {
-        interval.tick().await;
-        let ws = state.workspace.clone();
-        let Ok(alerts) = run(&ws, |ws| ws.take_due_alerts(now_ms())).await else { continue };
-        if alerts.is_empty() {
-            continue;
-        }
-        let (title, body) = match alerts.as_slice() {
-            [one] => (if one.item_type == "todo" { "待办提醒" } else { "稍后提醒" }.to_string(), one.title.clone()),
-            many => (format!("{} 条提醒", many.len()), many.iter().take(4).map(|a| a.title.as_str()).collect::<Vec<_>>().join("\n")),
-        };
-        state.host.notify(&title, &body);
-        state.emit(INBOX_EVENT, ());
-    }
 }
