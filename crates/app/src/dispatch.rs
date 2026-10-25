@@ -182,12 +182,9 @@ pub async fn dispatch(state: &Arc<AppState>, cmd: &str, args: Value) -> Result<V
         },
         "clip_ignore_candidates" => json(clipboard::clip_ignore_candidates(state).await?),
         "clip_touch" => json(clipboard::clip_touch(state, arg(&args, "ids")?).await?),
-        "rich_from_html" => json(rich::rich_from_html(arg(&args, "html")?).await?),
-        "rich_to_wiki" => json(rich::rich_to_wiki(arg(&args, "doc")?).await?),
         "rich_to_xhtml" => json(rich::rich_to_xhtml(arg(&args, "doc")?).await?),
         "rich_edit_load" => json(rich::rich_edit_load(arg(&args, "html")?).await?),
         "rich_edit_xhtml" => json(rich::rich_edit_xhtml(arg(&args, "segments")?, arg(&args, "baseline")?, arg(&args, "doc")?).await?),
-        "rich_html_to_markdown" => json(rich::rich_html_to_markdown(arg(&args, "html")?, arg(&args, "baseUrl")?).await?),
         "rich_markdown_to_storage" => json(rich::rich_markdown_to_storage(arg(&args, "markdown")?).await?),
         _ => Err(Error::Other(format!("未知的命令：{cmd}"))),
     }

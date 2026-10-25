@@ -39,6 +39,12 @@ final class API: @unchecked Sendable {
             guard let name = args["service"]?.string, let service = Service(rawValue: name) else { throw APIError(message: "缺少系统名称") }
             return try JSONEncoder().encode(await settings.testConnection(service))
         }
+        if cmd == "rich_from_html" { return try JSONEncoder().encode(HTML.parse(args["html"]?.string ?? "")) }
+        if cmd == "rich_html_to_markdown" { return try JSONEncoder().encode(HTML.markdown(args["html"]?.string ?? "", baseURL: args["baseUrl"]?.string ?? "")) }
+        if cmd == "rich_to_wiki" {
+            guard let doc = args["doc"]?.decode(RichDoc.self) else { throw APIError(message: "缺少文档") }
+            return try JSONEncoder().encode(JiraMarkup.write(doc))
+        }
         if cmd == "rich_from_markdown" { return try JSONEncoder().encode(Markdown.parse(args["markdown"]?.string ?? "")) }
         if cmd == "rich_to_markdown" {
             guard let doc = args["doc"]?.decode(RichDoc.self) else { throw APIError(message: "缺少文档") }

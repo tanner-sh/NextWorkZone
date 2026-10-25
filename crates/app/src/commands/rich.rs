@@ -4,14 +4,6 @@ use nextworkzone_core::Result;
 use nextworkzone_richdoc::{self as rich, Doc};
 use serde::Serialize;
 
-pub async fn rich_from_html(html: String) -> Result<Doc> {
-    Ok(rich::from_html(&html))
-}
-
-pub async fn rich_to_wiki(doc: Doc) -> Result<String> {
-    Ok(rich::to_wiki(&doc))
-}
-
 pub async fn rich_to_xhtml(doc: Doc) -> Result<String> {
     Ok(rich::to_xhtml(&doc))
 }
@@ -31,11 +23,6 @@ pub async fn rich_edit_load(html: String) -> Result<EditLoad> {
 /// 编辑后的文档 → 编辑格式的 XHTML：没有修改的片段原样写回。
 pub async fn rich_edit_xhtml(segments: Vec<rich::Segment>, baseline: Doc, doc: Doc) -> Result<String> {
     Ok(rich::edit_xhtml(&segments, &baseline, &doc))
-}
-
-/// 系统渲染的 HTML → Markdown（沉淀、剪藏到知识库）。
-pub async fn rich_html_to_markdown(html: String, base_url: String) -> Result<String> {
-    Ok(rich::html_to_markdown(&html, &base_url))
 }
 
 #[derive(Serialize)]

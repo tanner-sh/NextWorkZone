@@ -14,12 +14,12 @@ typealias RichImage = NWZRich.RichImage
 
 /// 格式转换。已迁移的格式直接使用 Swift。
 enum Rich {
-    static func fromHTML(_ html: String) async throws -> RichDoc { try await API.shared.call("rich_from_html", ["html": .string(html)]) }
+    static func fromHTML(_ html: String) async throws -> RichDoc { HTML.parse(html) }
     static func fromMarkdown(_ md: String) async throws -> RichDoc { Markdown.parse(md) }
     static func toMarkdown(_ doc: RichDoc) async throws -> String { Markdown.write(doc) }
-    static func toWiki(_ doc: RichDoc) async throws -> String { try await API.shared.call("rich_to_wiki", ["doc": json(doc)]) }
+    static func toWiki(_ doc: RichDoc) async throws -> String { JiraMarkup.write(doc) }
     static func toXHTML(_ doc: RichDoc) async throws -> String { try await API.shared.call("rich_to_xhtml", ["doc": json(doc)]) }
-    static func htmlToMarkdown(_ html: String, baseUrl: String) async throws -> String { try await API.shared.call("rich_html_to_markdown", ["html": .string(html), "baseUrl": .string(baseUrl)]) }
+    static func htmlToMarkdown(_ html: String, baseUrl: String) async throws -> String { HTML.markdown(html, baseURL: baseUrl) }
 
     struct Storage: Decodable {
         var storage: String

@@ -14,7 +14,7 @@ let package = Package(
         .systemLibrary(name: "CSQLite"),
         .systemLibrary(name: "CLibXML2"),
         .target(name: "NWZCore", dependencies: ["CSQLite"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .target(name: "NWZRich", dependencies: ["NWZCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(name: "NWZRich", dependencies: ["NWZCore", "CLibXML2"], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
         .target(name: "NWZWorkspace", dependencies: ["NWZCore", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "NWZServices", dependencies: ["NWZCore", "NWZWorkspace", "NWZRich"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "NWZTool", dependencies: ["NWZServices", "NWZCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
