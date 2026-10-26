@@ -14,7 +14,11 @@ struct PageView: View {
 
     @Environment(AppModel.self) private var model
     @State private var page: WikiPageDetail?
-    @State private var doc: RichDoc?
+    @State private var doc: RichDoc? { didSet { sections = doc?.sections() ?? [] } }
+    /// 正文按顶层标题分段显示（见 RichDoc.sections）：只有滚到附近的段才创建和排版
+    @State private var sections: [(doc: RichDoc, headingStart: Int)] = []
+    /// 目录跳转到段内的标题（段中第几个标题，0 为段首，滚到段的顶部即可）
+    @State private var sectionTarget: (section: Int, local: Int)?
     /// 页面中的标题和引用的问题：长页面遍历一遍要十几毫秒，载入时算好，不在 body 中每次重算
     @State private var headings: [(level: Int, text: String, index: Int)] = []
     @State private var issueKeys: [String] = []
@@ -32,12 +36,17 @@ struct PageView: View {
                 VStack { ErrorBox(message: error) { Task { await load() } } }.padding(24).frame(maxHeight: .infinity, alignment: .top)
             } else if let page {
                 HStack(spacing: 0) {
-                    ScrollView {
-                        content(page)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 24)
-                            .frame(maxWidth: 1000, alignment: .leading)
-                            .frame(maxWidth: .infinity)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            content(page)
+                                .padding(.horizontal, 32)
+                                .padding(.vertical, 24)
+                                .frame(maxWidth: 1000, alignment: .leading)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .onChange(of: scrollTo) { _, index in
+                            if let index { jump(to: index, proxy: proxy) }
+                        }
                     }
                     .contextMenu(specs: { pageActions(page) })
                     .pageToolbar { toolbar(page) }
@@ -56,6 +65,21 @@ struct PageView: View {
         .task(id: pageId) { await load() }
         .sheet(isPresented: $history) { if let page { HistorySheet(page: page) } }
         .issueMenuDialogs(issueMenu)
+    }
+
+    /// 跳到第 index 个标题：先滚到所在的段，标题不在段首时再由这一段滚到标题处。
+    private func jump(to index: Int, proxy: ScrollViewProxy) {
+        guard let i = sections.lastIndex(where: { $0.headingStart <= index }) else { return }
+        let local = index - sections[i].headingStart
+        sectionTarget = nil
+        proxy.scrollTo("section-\(i)", anchor: .top)
+        scrollTo = nil
+        guard local > 0 else { return }
+        // 段的视图滚到附近才创建，等它排好再滚到段内的标题
+        Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            sectionTarget = (i, local)
+        }
     }
 
     private func load() async {
@@ -128,7 +152,7 @@ struct PageView: View {
 
     @ViewBuilder
     private func content(_ page: WikiPageDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             // 面包屑
             HStack(spacing: 4) {
                 Text(page.spaceName)
@@ -154,9 +178,13 @@ struct PageView: View {
 
             WebLoginHint(service: .confluence).padding(.bottom, 10)
 
-            if let doc {
-                RichView(doc: doc, service: .confluence, onTask: { toggleTask($0) }, scrollToHeading: scrollTo)
-                    .padding(.bottom, 24)
+            if doc != nil {
+                ForEach(sections.indices, id: \.self) { i in
+                    let local = sectionTarget.flatMap { $0.section == i && $0.local > 0 ? $0.local : nil }
+                    RichView(doc: sections[i].doc, service: .confluence, onTask: { toggleTask($0) }, scrollToHeading: local)
+                        .padding(.bottom, i == sections.count - 1 ? 24 : 8)
+                        .id("section-\(i)")
+                }
             } else {
                 ProgressView().padding(.bottom, 24)
             }

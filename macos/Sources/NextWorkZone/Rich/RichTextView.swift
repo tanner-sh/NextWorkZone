@@ -97,6 +97,9 @@ struct RichTextView: NSViewRepresentable {
         if let h = scrollToHeading, c.scrolledHeading != h {
             c.scrolledHeading = h
             c.scroll(toHeading: h)
+        } else if scrollToHeading == nil {
+            // 目标清除后再次指向同一个标题时也要滚动
+            c.scrolledHeading = nil
         }
     }
 

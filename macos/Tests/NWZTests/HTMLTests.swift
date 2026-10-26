@@ -2,6 +2,18 @@ import Testing
 @testable import NWZRich
 
 struct HTMLTests {
+    @Test func splitsLongPagesIntoSectionsAtTopLevelHeadings() {
+        // 折叠区中的标题也计数：分段后的标题序号要与整页的目录一致
+        let doc = HTML.parse(#"<p>前言</p><h1>A</h1><div class="expand-container"><span class="expand-control-text">展开</span><div class="expand-content"><h2>A1</h2><p>x</p></div></div><h1>B</h1><p>y</p>"#)
+        let sections = doc.sections()
+        #expect(sections.count == 3)
+        #expect(sections.map(\.headingStart) == [0, 0, 2])
+        #expect(sections.flatMap(\.doc.blocks) == doc.blocks)
+        #expect(doc.headings.map(\.index) == [0, 1, 2])
+        #expect(RichDoc(blocks: [.para([])]).sections().count == 1)
+        #expect(RichDoc.empty.sections().count == 1)
+    }
+
     @Test func collapsesWhitespaceAndMergesRuns() {
         let blocks = HTML.parse("<p>  a \n b <b>c</b><b> d</b></p>").blocks
         #expect(blocks == [.para([.text("a b ", [], link: nil, color: nil), .text("c d", .bold, link: nil, color: nil)])])

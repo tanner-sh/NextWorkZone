@@ -49,6 +49,26 @@ public struct RichDoc: Codable, Hashable, Sendable {
         go(blocks)
     }
 
+    /// 按顶层标题切成几段，每段从一个顶层标题开始（第一段可以没有标题）。很长的页面分段显示：
+    /// 整页放在一个文本视图里时，几十万点高的视图排版要将近一秒，绘制时还会出现空白或黑块。
+    /// `headingStart` 是这一段之前的标题数，与 `headings` 中的 `index` 对应（含嵌套在面板、表格等里面的标题）。
+    public func sections() -> [(doc: RichDoc, headingStart: Int)] {
+        var out: [(doc: RichDoc, headingStart: Int)] = []
+        var current: [RichBlock] = []
+        var start = 0, count = 0
+        for b in blocks {
+            if case .heading = b, !current.isEmpty {
+                out.append((RichDoc(blocks: current), start))
+                current = []
+                start = count
+            }
+            current.append(b)
+            RichDoc(blocks: [b]).walk { if case .heading = $0 { count += 1 } }
+        }
+        if !current.isEmpty || out.isEmpty { out.append((RichDoc(blocks: current), start)) }
+        return out
+    }
+
     /// 标题（目录）。
     public var headings: [(level: Int, text: String, index: Int)] {
         var out: [(Int, String, Int)] = []
