@@ -58,6 +58,11 @@ struct RichTextView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = scrolls
         context.coordinator.textView = textView
         textView.service = service
+        textView.onEndLiveResize = { [weak coordinator = context.coordinator] in
+            guard let coordinator, coordinator.measureAfterResize else { return }
+            coordinator.measureAfterResize = false
+            coordinator.parent.onRelayout?()
+        }
         if scrolls {
             let scroll = NSScrollView()
             scroll.hasVerticalScroller = true
@@ -103,12 +108,13 @@ struct RichTextView: NSViewRepresentable {
         let proposed = proposal.width.flatMap { $0.isFinite ? $0 : nil }
         let width = (proposed ?? (frameWidth >= RichNSTextView.minLayoutWidth ? frameWidth : 600)).rounded()
         if let cached = c.heights[width] { return CGSize(width: width, height: cached) }
-        // 长文（例如几千段的周报页）按新宽度完整排版一次要将近一秒：拖动窗口边框时每帧都排会卡住，
-        // 换了窗口宽度后回到页面也会卡住。已经量过别的宽度时先按比例估计高度，在后台按新宽度量出准确高度后再更新；
-        // 显示时只排到看得见的位置为止。不要打开 allowsNonContiguousLayout：表格（NSTextTable）在这种模式下后半部分画不出来
-        if (textView.textStorage?.length ?? 0) > RichNSTextView.longText, width >= RichNSTextView.minLayoutWidth,
+        // 长文（例如几千段的周报页）按新宽度完整排版一次要将近一秒，拖动窗口边框时每帧都排会卡住：
+        // 拖动期间先按最接近宽度的高度按比例估计，松开后再按最终宽度精确计算（见 RichNSTextView.viewDidEndLiveResize）。
+        // 不要在后台线程排版副本：NSAttributedString 的副本和原文共用同一个 NSTextTable，表格在里面缓存排版结果，
+        // 两个线程同时用会损坏它，绘制时崩溃。也不要打开 allowsNonContiguousLayout：表格在这种模式下后半部分画不出来
+        if textView.inLiveResize, (textView.textStorage?.length ?? 0) > RichNSTextView.longText,
            let near = c.heights.min(by: { abs($0.key - width) < abs($1.key - width) }) {
-            c.measureInBackground(width: width)
+            c.measureAfterResize = true
             return CGSize(width: width, height: ceil(near.value * near.key / width))
         }
         // 求最小尺寸时 SwiftUI 会用 0 之类的宽度询问：按这种宽度排版长文要几秒（每个字一行），直接用已知的高度回答
@@ -123,19 +129,6 @@ struct RichTextView: NSViewRepresentable {
         return CGSize(width: width, height: height)
     }
 
-    /// 按宽度排版求文字的高度。只用传入的副本和新建的排版对象，可以在后台线程执行。
-    nonisolated static func measure(_ text: NSAttributedString, width: CGFloat) -> CGFloat {
-        let storage = NSTextStorage(attributedString: text)
-        let layout = NSLayoutManager()
-        layout.allowsNonContiguousLayout = false
-        storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        layout.addTextContainer(container)
-        layout.ensureLayout(for: container)
-        return layout.usedRect(for: container).height
-    }
-
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RichTextView!
@@ -147,9 +140,8 @@ struct RichTextView: NSViewRepresentable {
         var issues: [String: IssueSummary] = [:]
         /// 各宽度下的高度（内容变化后清空）
         var heights: [CGFloat: CGFloat] = [:]
-        /// 内容（或图片尺寸）变化一次加一：后台量出的高度属于旧内容时丢弃
-        private var generation = 0
-        private var measuring: Task<Void, Never>?
+        /// 缩放窗口期间用了估计的高度，松开后要重新计算
+        var measureAfterResize = false
         private var relayout: Task<Void, Never>?
 
         func render() {
@@ -161,7 +153,6 @@ struct RichTextView: NSViewRepresentable {
             #endif
             let text = renderer.render(parent.doc)
             heights = [:]
-            generation += 1
             textView.textStorage?.setAttributedString(text)
             textView.invalidateIntrinsicContentSize()
             // SwiftUI 可能在换上新内容之前就量过高度：换好后再量一次
@@ -178,29 +169,10 @@ struct RichTextView: NSViewRepresentable {
                 guard !Task.isCancelled, let tv = self?.textView, let lm = tv.layoutManager, let storage = tv.textStorage else { return }
                 lm.invalidateLayout(forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
                 self?.heights = [:]
-                self?.generation += 1
                 tv.invalidateIntrinsicContentSize()
                 tv.needsDisplay = true
                 // 让 SwiftUI 重新计算高度
                 if self?.parent.scrolls == false { self?.parent.onRelayout?() }
-            }
-        }
-
-        /// 在后台按给定宽度量出长文的高度（用文字的副本排版，不动显示用的视图），量好后让 SwiftUI 重新计算大小。
-        /// 连续询问（拖动窗口边框）时只量最后一个宽度。
-        func measureInBackground(width: CGFloat) {
-            measuring?.cancel()
-            let generation = generation
-            measuring = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(120))
-                guard !Task.isCancelled, let textView = self?.textView, let storage = textView.textStorage else { return }
-                // 等停下来再复制文字（长文复制一次也要几毫秒）
-                let inset = textView.textContainerInset.height * 2
-                nonisolated(unsafe) let text = NSAttributedString(attributedString: storage)
-                let used = await Task.detached(priority: .userInitiated) { RichTextView.measure(text, width: width) }.value
-                guard let self, !Task.isCancelled, self.generation == generation else { return }
-                self.heights[width] = ceil(used + inset)
-                self.parent.onRelayout?()
             }
         }
 
@@ -263,10 +235,17 @@ struct RichTextView: NSViewRepresentable {
 final class RichNSTextView: NSTextView {
     /// 小于这个宽度时不排版
     static let minLayoutWidth: CGFloat = 50
-    /// 超过这个字数算长文：换宽度时在后台量高度，不在主线程完整排版
+    /// 超过这个字数算长文：拖动窗口边框时不逐帧完整排版
     static let longText = 20_000
     /// 内容所属的系统（右键菜单中打开链接、图片时使用）
     var service: Service = .jira
+    /// 窗口缩放结束
+    var onEndLiveResize: (() -> Void)?
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        onEndLiveResize?()
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let specs = RichContextMenu.specs(self, at: convert(event.locationInWindow, from: nil), service: service)
