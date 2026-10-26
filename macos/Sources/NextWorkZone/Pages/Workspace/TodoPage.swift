@@ -128,8 +128,25 @@ struct TodoPage: View {
     // MARK: 列表
 
     private var listPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
-
+        List(selection: $selected) {
+            ForEach(visible) { todo in
+                TodoRow(todo: todo, day: day, onToggle: { toggle(todo) }, onPlan: view == .unscheduled ? { due in plan(todo, due) } : nil)
+                    .tag(todo.id)
+                    .contextMenu(specs: { TodoActions.menu(todo, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) })
+            }
+            if todos != nil && visible.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(view.empty).foregroundStyle(.secondary)
+                    if view == .today && count(.unscheduled) > 0 {
+                        Button("从 \(count(.unscheduled)) 个未安排的待办中挑几个") { view = .unscheduled }.buttonStyle(.link)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .listStyle(.inset)
+        .overlay { if todos == nil && error == nil { ProgressView() } }
+        .listHeader(inset: 12) {
             HStack {
                 Image(systemName: "plus").foregroundStyle(.secondary)
                 TextField(view == .today ? "添加今天的待办，回车保存" : "添加待办，回车保存", text: $newTitle)
@@ -138,8 +155,6 @@ struct TodoPage: View {
             }
             .padding(8)
             .fieldBackground()
-            .padding(.horizontal, 12)
-
             if let syncNote {
                 HStack {
                     Text(syncNote).font(.callout)
@@ -148,29 +163,10 @@ struct TodoPage: View {
                 }
                 .padding(8)
                 .noticeBackground(.green)
-                .padding(.horizontal, 12)
             }
-            if let error { ErrorBox(message: error) { Task { await load() } }.padding(.horizontal, 12) }
-
-            List(selection: $selected) {
-                ForEach(visible) { todo in
-                    TodoRow(todo: todo, day: day, onToggle: { toggle(todo) }, onPlan: view == .unscheduled ? { due in plan(todo, due) } : nil)
-                        .tag(todo.id)
-                        .contextMenu(specs: { TodoActions.menu(todo, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) })
-                }
-                if todos != nil && visible.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(view.empty).foregroundStyle(.secondary)
-                        if view == .today && count(.unscheduled) > 0 {
-                            Button("从 \(count(.unscheduled)) 个未安排的待办中挑几个") { view = .unscheduled }.buttonStyle(.link)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-            }
-            .listStyle(.inset)
-            .overlay { if todos == nil && error == nil { ProgressView() } }
+            if let error { ErrorBox(message: error) { Task { await load() } } }
         }
+        .padding(.top, 12)
     }
 
     private func add() {

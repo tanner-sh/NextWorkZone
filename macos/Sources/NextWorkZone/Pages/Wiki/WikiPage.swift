@@ -128,6 +128,7 @@ struct WikiPage: View {
             case .search: WikiSearchPanel(text: $searchText, spaces: tree.spaces ?? [], selected: $selected, onOpen: open)
             }
         }
+        .padding(.top, 12)
     }
 
     @ViewBuilder
@@ -319,23 +320,22 @@ private struct SpaceTreeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            FilterField(prompt: "筛选空间", text: $filter)
-                .padding(.horizontal, 12)
-            if let e = tree.error { ErrorBox(message: e) { tree.loadSpaces() }.padding(.horizontal, 12) }
-            List(selection: Binding(get: { selected }, set: { id in if let id, !id.hasPrefix("space:"), !id.contains("#") { onOpen(id) } })) {
-                ForEach(rows) { row in
-                    switch row {
-                    case .space(let s): spaceRow(s)
-                    case .page(let n, let s, let depth): pageRow(n, space: s, depth: depth)
-                    case .note(let text, let depth, _):
-                        Text(text).font(.caption).foregroundStyle(.secondary).padding(.leading, CGFloat(depth) * 14 + 18)
-                    }
+        List(selection: Binding(get: { selected }, set: { id in if let id, !id.hasPrefix("space:"), !id.contains("#") { onOpen(id) } })) {
+            ForEach(rows) { row in
+                switch row {
+                case .space(let s): spaceRow(s)
+                case .page(let n, let s, let depth): pageRow(n, space: s, depth: depth)
+                case .note(let text, let depth, _):
+                    Text(text).font(.caption).foregroundStyle(.secondary).padding(.leading, CGFloat(depth) * 14 + 18)
                 }
-                if tree.spaces?.isEmpty == false && rows.isEmpty { Text("没有匹配的空间").foregroundStyle(.secondary) }
             }
-            .listStyle(.inset)
-            .overlay { if tree.spaces == nil && tree.error == nil { ProgressView() } }
+            if tree.spaces?.isEmpty == false && rows.isEmpty { Text("没有匹配的空间").foregroundStyle(.secondary) }
+        }
+        .listStyle(.inset)
+        .overlay { if tree.spaces == nil && tree.error == nil { ProgressView() } }
+        .listHeader(inset: 12) {
+            FilterField(prompt: "筛选空间", text: $filter)
+            if let e = tree.error { ErrorBox(message: e) { tree.loadSpaces() } }
         }
     }
 
@@ -403,49 +403,46 @@ private struct WikiSearchPanel: View {
     private static let dayOptions = [(0, "不限时间"), (7, "最近一周"), (30, "最近一月"), (365, "最近一年")]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            VStack(alignment: .leading, spacing: 6) {
-                FilterField(prompt: "搜索标题和正文", text: $text, loading: loading, focus: $focused)
+        List(selection: Binding(get: { selected }, set: { if let id = $0 { onOpen(id) } })) {
+            ForEach(result?.hits ?? []) { h in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(highlighted(h.title, text)).lineLimit(2)
+                    if !h.snippet.isEmpty { Text(highlighted(h.snippet, text)).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+                    Text("\(h.spaceName)\(h.ancestors.last.map { " › \($0.title)" } ?? "")\(h.authorName.isEmpty ? "" : " · \(h.authorName)")\(h.modified.isEmpty ? "" : " · \(Fmt.time(h.modified))")")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .padding(.vertical, 2)
+                .tag(h.id)
+                .contextMenu(specs: { WikiMenus.page(id: h.id, title: h.title, space: h.spaceName) })
+            }
+            if let result, result.hits.isEmpty { Text("没有找到页面").foregroundStyle(.secondary) }
+            if result == nil && !loading { Text("输入关键词搜索；多个关键词用空格分开，需全部出现").foregroundStyle(.secondary) }
+        }
+        .listStyle(.inset)
+        .listHeader(inset: 12) {
+            FilterField(prompt: "搜索标题和正文", text: $text, loading: loading, focus: $focused)
+            HStack {
+                Picker("", selection: $space) {
+                    Text("全部空间").tag("")
+                    ForEach(spaces) { s in Text(s.name).tag(s.key) }
+                }
+                Picker("", selection: $days) {
+                    ForEach(Self.dayOptions, id: \.0) { Text($0.1).tag($0.0) }
+                }
+                Toggle("我修改的", isOn: $mine).toggleStyle(.checkbox)
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            if let result {
                 HStack {
-                    Picker("", selection: $space) {
-                        Text("全部空间").tag("")
-                        ForEach(spaces) { s in Text(s.name).tag(s.key) }
-                    }
-                    Picker("", selection: $days) {
-                        ForEach(Self.dayOptions, id: \.0) { Text($0.1).tag($0.0) }
-                    }
-                    Toggle("我修改的", isOn: $mine).toggleStyle(.checkbox)
+                    Text(result.source == "local" ? "本机 Wiki 库 · \(result.hits.count) 个结果" : "Confluence 搜索 · 共 \(result.total) 个")
+                    Spacer()
+                    Button(server ? "改用本机搜索" : "在服务器上搜索") { server.toggle() }.buttonStyle(.link)
                 }
-                .labelsHidden()
-                .controlSize(.small)
-                if let result {
-                    HStack {
-                        Text(result.source == "local" ? "本机 Wiki 库 · \(result.hits.count) 个结果" : "Confluence 搜索 · 共 \(result.total) 个")
-                        Spacer()
-                        Button(server ? "改用本机搜索" : "在服务器上搜索") { server.toggle() }.buttonStyle(.link)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12)
-            if let error { ErrorBox(message: error).padding(.horizontal, 12) }
-            List(selection: Binding(get: { selected }, set: { if let id = $0 { onOpen(id) } })) {
-                ForEach(result?.hits ?? []) { h in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(highlighted(h.title, text)).lineLimit(2)
-                        if !h.snippet.isEmpty { Text(highlighted(h.snippet, text)).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
-                        Text("\(h.spaceName)\(h.ancestors.last.map { " › \($0.title)" } ?? "")\(h.authorName.isEmpty ? "" : " · \(h.authorName)")\(h.modified.isEmpty ? "" : " · \(Fmt.time(h.modified))")")
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    .padding(.vertical, 2)
-                    .tag(h.id)
-                    .contextMenu(specs: { WikiMenus.page(id: h.id, title: h.title, space: h.spaceName) })
-                }
-                if let result, result.hits.isEmpty { Text("没有找到页面").foregroundStyle(.secondary) }
-                if result == nil && !loading { Text("输入关键词搜索；多个关键词用空格分开，需全部出现").foregroundStyle(.secondary) }
-            }
-            .listStyle(.inset)
+            if let error { ErrorBox(message: error) }
         }
         .onAppear { focused = true }
         .task(id: "\(text)|\(space)|\(days)|\(mine)|\(server)") {

@@ -6,6 +6,7 @@ import SwiftUI
 /// 隐藏而不是去掉：去掉的话每次切换页面都要重新创建这些项目，切换一次多花 50 毫秒左右。
 /// `ToolbarSpacer` 不受 `hidden` 影响，但隐藏页面的间隔落在中间的弹性空白里，看不出来；
 /// 也不要按页面是否显示加减间隔，那样每次切换整条工具栏都会重建。
+/// 醒目的按钮用 `.borderedProminent`（工具栏中显示为着色的玻璃）；`.glassProminent` 放在工具栏中会让整个窗口的内容画不出来。
 /// 标题由 RootView 按当前页面统一设置（几个页面都设置标题时，窗口显示的是最后更新的那个，不一定是正在显示的页面）。
 private struct PageToolbar<Items: ToolbarContent>: ViewModifier {
     @Environment(\.pageActive) private var active

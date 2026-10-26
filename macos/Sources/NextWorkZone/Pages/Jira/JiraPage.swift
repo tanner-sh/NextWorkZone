@@ -343,38 +343,43 @@ struct JiraPage: View {
 
     // MARK: 列表
 
+    /// 搜索条件、筛选框贴在列表顶上：列表滚到它们下面时渐隐。
     private var listPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if mode == .search {
-                SearchPanel(form: $form, source: Binding(get: { source }, set: { source = $0; AppPreferences.shared.set($0.rawValue, forKey: Self.sourceKey) }), index: indexStore.status) { f in
-                    if let built = JQL.search(f) { query = (built, nil) }
-                }
-            }
-            if mode == .jql {
-                TextField("输入 JQL，回车查询", text: $customJql)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.callout, design: .monospaced))
-                    .onSubmit {
-                        let j = customJql.trimmingCharacters(in: .whitespaces)
-                        if !j.isEmpty { query = (j, nil) }
-                    }
-            }
-            FilterField(prompt: "筛选当前列表", text: $filter)
-            if let error { ErrorBox(message: error) { Task { await load() } } }
-            if let createWarning { ErrorBox(message: createWarning) }
-
+        Group {
             if mode == .search && JQL.search(form) == nil {
                 Text("输入关键词搜索问题，例如报错信息、功能名称，多个关键词用空格分开。可以限定项目、只看已解决的，找同事处理过的类似问题。" + (source == .local && (indexStore.status?.count ?? 0) > 0 ? " 本机问题库会同时搜索描述和评论，输入即出结果。" : ""))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.top, 8)
-                Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 issueList
             }
         }
+        .listHeader { listControls }
         .padding(.horizontal, 12)
         .padding(.top, 12)
+    }
+
+    @ViewBuilder
+    private var listControls: some View {
+        if mode == .search {
+            SearchPanel(form: $form, source: Binding(get: { source }, set: { source = $0; AppPreferences.shared.set($0.rawValue, forKey: Self.sourceKey) }), index: indexStore.status) { f in
+                if let built = JQL.search(f) { query = (built, nil) }
+            }
+        }
+        if mode == .jql {
+            TextField("输入 JQL，回车查询", text: $customJql)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.callout, design: .monospaced))
+                .onSubmit {
+                    let j = customJql.trimmingCharacters(in: .whitespaces)
+                    if !j.isEmpty { query = (j, nil) }
+                }
+        }
+        FilterField(prompt: "筛选当前列表", text: $filter)
+        if let error { ErrorBox(message: error) { Task { await load() } } }
+        if let createWarning { ErrorBox(message: createWarning) }
     }
 
     private var issueList: some View {

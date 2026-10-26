@@ -95,7 +95,39 @@ struct NotesPage: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        List(selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) {
+            if tab == .daily {
+                ForEach(dayList, id: \.self) { day in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(day == today ? "今天" : day).fontWeight(.medium)
+                        Text(day == today ? "\(day) · \(Fmt.weekday(day))" : Fmt.weekday(day)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                    .tag("daily-\(day)")
+                    .contextMenu(specs: { dayMenu(day) })
+                }
+            } else {
+                ForEach(visibleNotes) { n in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            if n.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                            Text(n.title.isEmpty ? "无标题" : n.title).fontWeight(.medium).lineLimit(1)
+                        }
+                        if !n.excerpt.isEmpty { Text(n.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                        Text(Fmt.time(ms: n.updatedAt) + (n.tags.isEmpty ? "" : " · " + n.tags.map { "#\($0)" }.joined(separator: " "))).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                    .tag(n.id)
+                    .contextMenu(specs: { noteMenu(n) })
+                }
+                if notes != nil && visibleNotes.isEmpty {
+                    Text(filter.isEmpty ? "还没有笔记，点击工具栏中的 + 新建" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .listHeader {
             if tab == .daily {
                 DatePicker("跳到日期", selection: Binding(get: {
                     Fmt.date(ofDay: selected.hasPrefix("daily-") ? String(selected.dropFirst(6)) : today) ?? Date()
@@ -105,38 +137,6 @@ struct NotesPage: View {
                 FilterField(prompt: "筛选笔记", text: $filter)
             }
             if let error { ErrorBox(message: error) { Task { await load() } } }
-            List(selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) {
-                if tab == .daily {
-                    ForEach(dayList, id: \.self) { day in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(day == today ? "今天" : day).fontWeight(.medium)
-                            Text(day == today ? "\(day) · \(Fmt.weekday(day))" : Fmt.weekday(day)).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
-                        .tag("daily-\(day)")
-                        .contextMenu(specs: { dayMenu(day) })
-                    }
-                } else {
-                    ForEach(visibleNotes) { n in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                if n.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
-                                Text(n.title.isEmpty ? "无标题" : n.title).fontWeight(.medium).lineLimit(1)
-                            }
-                            if !n.excerpt.isEmpty { Text(n.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-                            Text(Fmt.time(ms: n.updatedAt) + (n.tags.isEmpty ? "" : " · " + n.tags.map { "#\($0)" }.joined(separator: " "))).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
-                        .tag(n.id)
-                        .contextMenu(specs: { noteMenu(n) })
-                    }
-                    if notes != nil && visibleNotes.isEmpty {
-                        Text(filter.isEmpty ? "还没有笔记，点击工具栏中的 + 新建" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
         .padding([.horizontal, .top], 12)
     }

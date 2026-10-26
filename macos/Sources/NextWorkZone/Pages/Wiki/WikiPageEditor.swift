@@ -259,7 +259,7 @@ struct WikiPageEditor: View {
             ToolbarItem {
                 Button(checking ? "检查中…" : pageId != nil ? "保存…" : "创建…", systemImage: "square.and.arrow.down", action: review)
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .disabled(session == nil || checking)
                     .keyboardShortcut("s", modifiers: .command)
             }

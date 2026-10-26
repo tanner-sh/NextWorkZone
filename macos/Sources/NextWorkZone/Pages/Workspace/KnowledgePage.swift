@@ -195,7 +195,32 @@ struct KnowledgePage: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        List(selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) {
+            if filtering {
+                ForEach(matches) { p in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(p.title.isEmpty ? "无标题" : p.title).lineLimit(1)
+                        if !p.excerpt.isEmpty { Text(p.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                    }
+                    .tag(p.id)
+                    .contextMenu(specs: { pageMenu(p) })
+                }
+                if matches.isEmpty { Text("没有匹配的页面").foregroundStyle(.secondary) }
+            } else {
+                let tree = byParent
+                ForEach(rows(tree), id: \.page.id) { row in
+                    treeRow(row.page, depth: row.depth, hasChildren: !(tree[row.page.id] ?? []).isEmpty)
+                        .tag(row.page.id)
+                        .contextMenu(specs: { pageMenu(row.page) })
+                }
+                if pages?.isEmpty == true {
+                    Text("知识库还是空的。可以新建页面，或把解决过的 Jira 问题、常看的 Wiki 页面沉淀进来。").foregroundStyle(.secondary).lineLimit(4)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .listHeader {
             FilterField(prompt: "筛选页面", text: $filter)
             if !allTags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -213,31 +238,6 @@ struct KnowledgePage: View {
                 }
             }
             if let error { ErrorBox(message: error) { Task { await load() } } }
-            List(selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) {
-                if filtering {
-                    ForEach(matches) { p in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(p.title.isEmpty ? "无标题" : p.title).lineLimit(1)
-                            if !p.excerpt.isEmpty { Text(p.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-                        }
-                        .tag(p.id)
-                        .contextMenu(specs: { pageMenu(p) })
-                    }
-                    if matches.isEmpty { Text("没有匹配的页面").foregroundStyle(.secondary) }
-                } else {
-                    let tree = byParent
-                    ForEach(rows(tree), id: \.page.id) { row in
-                        treeRow(row.page, depth: row.depth, hasChildren: !(tree[row.page.id] ?? []).isEmpty)
-                            .tag(row.page.id)
-                            .contextMenu(specs: { pageMenu(row.page) })
-                    }
-                    if pages?.isEmpty == true {
-                        Text("知识库还是空的。可以新建页面，或把解决过的 Jira 问题、常看的 Wiki 页面沉淀进来。").foregroundStyle(.secondary).lineLimit(4)
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
         .padding([.horizontal, .top], 12)
     }

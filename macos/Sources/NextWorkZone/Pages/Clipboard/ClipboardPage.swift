@@ -106,7 +106,18 @@ private struct ClipHistory: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
+            List(selection: Binding(get: { selected?.id }, set: { selectedId = $0 })) {
+                ForEach(items) { item in
+                    row(item).tag(item.id)
+                        .onAppear { if item.id == items.last?.id { list.loadMore() } }
+                }
+                if let empty, items.isEmpty {
+                    Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 30)
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .listHeader(inset: 12) {
                 FilterField(prompt: "搜索文字、文件名、应用", text: $input)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -134,18 +145,7 @@ private struct ClipHistory: View {
                     .labelsHidden()
                 }
             }
-            .padding([.horizontal, .top], 12)
-            List(selection: Binding(get: { selected?.id }, set: { selectedId = $0 })) {
-                ForEach(items) { item in
-                    row(item).tag(item.id)
-                        .onAppear { if item.id == items.last?.id { list.loadMore() } }
-                }
-                if let empty, items.isEmpty {
-                    Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 30)
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .padding(.top, 12)
             if let settings {
                 Label(settings.config.enabled ? "在任何应用中按 \(HotKeys.display(settings.config.shortcut)) 打开面板" : "剪贴板记录已关闭", systemImage: "keyboard")
                     .font(.caption).foregroundStyle(.secondary)
@@ -331,7 +331,7 @@ private struct ClipDetail: View {
             ToolbarItem {
                 Button("复制", systemImage: "doc.on.doc") { guarded { try await API.shared.clipCopy([item.id]); toast("已复制") } }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
             }
         }
         .task {

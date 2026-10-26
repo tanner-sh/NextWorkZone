@@ -225,52 +225,51 @@ struct GitlabPage: View {
     // MARK: 合并请求列表
 
     private var mrPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        MrListBody(list: mrList, selected: selectedMr?.id, showProject: true, empty: mrSearch.isEmpty ? "没有合并请求" : "没有匹配的合并请求") { mr in
+            selectedMr = MrRef(project: String(mr.projectId), iid: mr.iid, id: mr.id)
+        } loadMore: {
+            Task { await mrList.loadMore(.scope(scope), state: mrState, search: mrSearch) }
+        }
+        .listHeader {
             Picker("", selection: Binding(get: { scope }, set: { scope = $0; AppPreferences.shared.set($0, forKey: Self.scopeKey) })) {
                 ForEach(Self.scopes, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .controlSize(.small)
             FilterField(prompt: "搜索标题，回车", text: $mrInput) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
-            MrListBody(list: mrList, selected: selectedMr?.id, showProject: true, empty: mrSearch.isEmpty ? "没有合并请求" : "没有匹配的合并请求") { mr in
-                selectedMr = MrRef(project: String(mr.projectId), iid: mr.iid, id: mr.id)
-            } loadMore: {
-                Task { await mrList.loadMore(.scope(scope), state: mrState, search: mrSearch) }
-            }
         }
     }
 
     // MARK: 项目列表
 
     private var projectPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        List(selection: Binding(get: { selected }, set: { if let id = $0 { openProject(id) } })) {
+            ForEach(visible) { p in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(p.name).fontWeight(.medium).lineLimit(1)
+                        Spacer()
+                        Text(Fmt.time(p.lastActivityAt)).font(.caption).foregroundStyle(.secondary)
+                        Button { toggleStar(p.id) } label: {
+                            Image(systemName: starred.contains(p.id) ? "star.fill" : "star").foregroundStyle(starred.contains(p.id) ? Color.yellow : Color.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(starred.contains(p.id) ? "取消收藏" : "收藏")
+                    }
+                    Text("\(p.pathWithNamespace)\(p.description.map { $0.isEmpty ? "" : " · \($0)" } ?? "")").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .help(p.description.map { "\(p.pathWithNamespace)\n\($0)" } ?? p.pathWithNamespace)
+                }
+                .padding(.vertical, 2)
+                .tag(p.id)
+                .contextMenu(specs: { projectMenu(p) })
+            }
+            if projects != nil && visible.isEmpty { Text("没有匹配的项目").foregroundStyle(.secondary) }
+        }
+        .listStyle(.inset)
+        .overlay { if projects == nil && error == nil { ProgressView() } }
+        .listHeader {
             FilterField(prompt: "筛选项目（收藏的项目置顶）", text: $filter)
             if let error { ErrorBox(message: error) { Task { await loadProjects() } } }
-            List(selection: Binding(get: { selected }, set: { if let id = $0 { openProject(id) } })) {
-                ForEach(visible) { p in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(p.name).fontWeight(.medium).lineLimit(1)
-                            Spacer()
-                            Text(Fmt.time(p.lastActivityAt)).font(.caption).foregroundStyle(.secondary)
-                            Button { toggleStar(p.id) } label: {
-                                Image(systemName: starred.contains(p.id) ? "star.fill" : "star").foregroundStyle(starred.contains(p.id) ? Color.yellow : Color.secondary)
-                            }
-                            .buttonStyle(.borderless)
-                            .help(starred.contains(p.id) ? "取消收藏" : "收藏")
-                        }
-                        Text("\(p.pathWithNamespace)\(p.description.map { $0.isEmpty ? "" : " · \($0)" } ?? "")").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            .help(p.description.map { "\(p.pathWithNamespace)\n\($0)" } ?? p.pathWithNamespace)
-                    }
-                    .padding(.vertical, 2)
-                    .tag(p.id)
-                    .contextMenu(specs: { projectMenu(p) })
-                }
-                if projects != nil && visible.isEmpty { Text("没有匹配的项目").foregroundStyle(.secondary) }
-            }
-            .listStyle(.inset)
-            .overlay { if projects == nil && error == nil { ProgressView() } }
         }
     }
 

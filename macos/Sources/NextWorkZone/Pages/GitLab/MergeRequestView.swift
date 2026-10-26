@@ -177,7 +177,7 @@ struct MergeRequestView: View {
             ToolbarItem {
                 Button("合并", systemImage: "arrow.triangle.merge") { merging = true }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .disabled(busy || !mergeable(mr))
                     .help(mergeable(mr) ? "合并" : mr.draft ? "草稿状态不能合并，先标记为就绪" : "有冲突，需要先解决")
             }

@@ -49,9 +49,9 @@ struct SettingsPage: View {
     var body: some View {
         Group {
             if let settings = model.settings {
-                VStack(spacing: 0) {
-                    form(settings)
-                    // 有未保存的修改时固定在底部，滚到哪里都能保存
+                form(settings)
+                // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面
+                .safeAreaBar(edge: .bottom) {
                     if dirty {
                         HStack {
                             Text("连接设置有未保存的修改")
@@ -59,8 +59,9 @@ struct SettingsPage: View {
                             Button("放弃修改") { fill(settings) }.disabled(saving)
                             Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
                         }
-                        .padding(12)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.leading, 18)
+                        .padding([.trailing, .vertical], 8)
+                        .glassEffect(.regular, in: Capsule())
                         .padding(12)
                     }
                 }

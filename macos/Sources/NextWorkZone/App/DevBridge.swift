@@ -156,9 +156,10 @@ enum DevBridge {
                 }
             }
         case "/snapshot":
-            // 把窗口内容画到图片（屏幕休眠时也能检查界面）：path=输出文件，title=窗口标题
-            let title = query["title"] ?? "NextWorkZone"
-            guard let path = query["path"], let window = NSApp.windows.first(where: { $0.title == title && $0.isVisible }) ?? MainWindow.window,
+            // 把窗口内容画到图片（屏幕休眠时也能检查界面）：path=输出文件，title=窗口标题（默认主窗口）
+            // 不指定标题时为主窗口（主窗口的标题随页面变化）
+            let window = query["title"].flatMap { title in NSApp.windows.first { $0.title == title && $0.isVisible } } ?? MainWindow.window
+            guard let path = query["path"], let window,
                   let view = window.contentView?.superview ?? window.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return "{\"error\":\"snapshot\"}" }
             view.cacheDisplay(in: view.bounds, to: rep)
