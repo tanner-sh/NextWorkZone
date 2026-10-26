@@ -192,6 +192,7 @@ final class API: @unchecked Sendable {
     func glBranches(_ project: Int) async throws -> [Branch] { try await gitlab.client().branches(project) }
     func glTree(_ project: Int, ref: String, path: String) async throws -> [TreeEntry] { try await gitlab.client().tree(project, ref: ref, path: path) }
     func glFile(_ project: Int, ref: String, path: String) async throws -> FileContent { try await gitlab.client().file(project, ref: ref, path: path) }
+    func glFileRaw(_ project: Int, ref: String, path: String) async throws -> Data { try await gitlab.client().rawFile(project, ref: ref, path: path) }
     func glCommits(_ project: Int, ref: String, path: String?, page: Int) async throws -> [Commit] { try await gitlab.client().commits(project, ref: ref, path: path, page: page) }
     func glCommit(_ project: Int, sha: String) async throws -> CommitDetail { try await gitlab.client().commit(project, sha: sha) }
     func glCompare(_ project: Int, from: String, to: String) async throws -> Comparison { try await gitlab.client().compare(project, from: from, to: to) }

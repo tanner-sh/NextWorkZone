@@ -1,3 +1,4 @@
+import NWZPreview
 import SwiftUI
 
 /// 项目：代码、合并请求、提交、分支、对比。
@@ -169,6 +170,7 @@ private struct CodeTab: View {
     @Binding var isFile: Bool
     @State private var entries: [TreeEntry]?
     @State private var file: FileContent?
+    @State private var readme: FileContent?
     @State private var error: String?
 
     var body: some View {
@@ -190,27 +192,42 @@ private struct CodeTab: View {
             if let error { ErrorBox(message: error) }
             if isFile {
                 if let file {
-                    FileBody(file: file)
+                    FileBody(file: file, projectId: projectId, projectUrl: projectUrl, ref: ref)
                 } else if error == nil {
                     LoadingView()
                 }
             } else if let entries {
-                List {
-                    if !path.isEmpty {
-                        Label("..", systemImage: "arrow.turn.left.up").rowTap { go(path.components(separatedBy: "/").dropLast().joined(separator: "/"), false) }
-                    }
-                    ForEach(entries) { e in
-                        Label {
-                            Text(e.name).fontWeight(e.kind == "tree" ? .medium : .regular)
-                        } icon: {
-                            Image(systemName: e.kind == "tree" ? "folder.fill" : e.kind == "commit" ? "shippingbox" : "doc.text").foregroundStyle(e.kind == "tree" ? Color.accentColor : .secondary)
+                // 和网页版一样：目录列表下面显示这一层的 README
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !path.isEmpty {
+                            TreeRow(name: "..", icon: "arrow.turn.left.up", tint: .secondary, bold: false) { go(path.components(separatedBy: "/").dropLast().joined(separator: "/"), false) }
                         }
-                        .rowTap { if e.kind != "commit" { go(e.path, e.kind == "blob") } }
-                        .contextMenu(specs: { GitLab.treeEntryMenu(e, projectUrl: projectUrl, ref: ref) { go(e.path, e.kind == "blob") } })
+                        ForEach(entries) { e in
+                            TreeRow(name: e.name, icon: e.kind == "tree" ? "folder.fill" : e.kind == "commit" ? "shippingbox" : "doc.text", tint: e.kind == "tree" ? Color.accentColor : .secondary, bold: e.kind == "tree") {
+                                if e.kind != "commit" { go(e.path, e.kind == "blob") }
+                            }
+                            .contextMenu(specs: { GitLab.treeEntryMenu(e, projectUrl: projectUrl, ref: ref) { go(e.path, e.kind == "blob") } })
+                        }
+                        if entries.isEmpty { Text("空目录").foregroundStyle(.secondary).padding(8) }
                     }
-                    if entries.isEmpty { Text("空目录").foregroundStyle(.secondary) }
+                    .groupBackground(radius: Theme.controlRadius)
+                    if let readme {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label((readme.path as NSString).lastPathComponent, systemImage: "book").font(.headline)
+                            Divider()
+                            if ["md", "markdown"].contains((readme.path as NSString).pathExtension.lowercased()) {
+                                MarkdownFile(text: readme.text ?? "", projectUrl: projectUrl)
+                            } else {
+                                Text(readme.text ?? "").font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .groupBackground(radius: Theme.controlRadius)
+                        .padding(.top, 12)
+                    }
                 }
-                .listStyle(.inset)
             } else if error == nil {
                 LoadingView()
             }
@@ -219,8 +236,18 @@ private struct CodeTab: View {
             error = nil
             entries = nil
             file = nil
+            readme = nil
             do {
-                if isFile { file = try await API.shared.glFile(projectId, ref: ref, path: path) } else { entries = try await API.shared.glTree(projectId, ref: ref, path: path) }
+                if isFile {
+                    file = try await API.shared.glFile(projectId, ref: ref, path: path)
+                } else {
+                    let list = try await API.shared.glTree(projectId, ref: ref, path: path)
+                    entries = list
+                    let names = ["readme.md", "readme.markdown", "readme", "readme.txt"]
+                    if let r = list.filter({ $0.kind == "blob" && names.contains($0.name.lowercased()) }).min(by: { names.firstIndex(of: $0.name.lowercased())! < names.firstIndex(of: $1.name.lowercased())! }) {
+                        readme = try? await API.shared.glFile(projectId, ref: ref, path: r.path)
+                    }
+                }
             } catch {
                 guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
@@ -234,19 +261,139 @@ private struct CodeTab: View {
     }
 }
 
-private struct FileBody: View {
-    var file: FileContent
+/// 目录中的一行（文件或子目录）。
+private struct TreeRow: View {
+    var name: String
+    var icon: String
+    var tint: Color
+    var bold: Bool
+    var action: () -> Void
+    @State private var hover = false
 
     var body: some View {
-        if file.tooLarge {
-            Text("文件过大（\(Fmt.size(file.size))），请在浏览器中查看。").foregroundStyle(.secondary)
-        } else if let url = file.imageDataUrl, let comma = url.firstIndex(of: ","), let data = Data(base64Encoded: String(url[url.index(after: comma)...])), let image = NSImage(data: data) {
-            ScrollView { Image(nsImage: image) }
-        } else if file.binary || file.text == nil {
-            Text("二进制文件（\(Fmt.size(file.size))），无法预览。").foregroundStyle(.secondary)
+        Label {
+            Text(name).fontWeight(bold ? .medium : .regular).lineLimit(1)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(tint).frame(width: 20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(hover ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .onHover { hover = $0 }
+        .rowTap(action)
+    }
+}
+
+/// 文件内容：代码高亮显示；Markdown 默认显示渲染结果（可切换源码）；图片直接显示；
+/// 其他文件（PDF、Office 文档、表格、压缩包、超过 2 MB 的文本）下载原文件后在应用内预览。
+private struct FileBody: View {
+    var file: FileContent
+    var projectId: Int
+    var projectUrl: String
+    var ref: String
+    @State private var source = false
+
+    private var isMarkdown: Bool { ["md", "markdown"].contains((file.path as NSString).pathExtension.lowercased()) }
+
+    var body: some View {
+        if let url = file.imageDataUrl, let comma = url.firstIndex(of: ","), let data = Data(base64Encoded: String(url[url.index(after: comma)...])), let image = NSImage(data: data) {
+            ZoomableImage(image: image).groupBackground(radius: Theme.controlRadius)
+        } else if let text = file.text, !file.tooLarge {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text([Fmt.size(file.size), text.isEmpty ? nil : "\(text.split(separator: "\n", omittingEmptySubsequences: false).count) 行", file.encoding.flatMap { $0 == "UTF-8" ? nil : "编码 \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if isMarkdown {
+                        Picker("", selection: $source) {
+                            Text("预览").tag(false)
+                            Text("源码").tag(true)
+                        }
+                        .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+                    }
+                    Button("复制内容", systemImage: "doc.on.doc") {
+                        Pasteboard.copy(text)
+                        toast("已复制")
+                    }
+                    .controlSize(.small)
+                }
+                if isMarkdown && !source {
+                    ScrollView { MarkdownFile(text: text, projectUrl: projectUrl).padding(16).frame(maxWidth: .infinity, alignment: .leading) }
+                        .groupBackground(radius: Theme.controlRadius)
+                } else {
+                    CodeView(code: text, path: file.path).groupBackground(radius: Theme.controlRadius)
+                }
+            }
         } else {
-            CodeView(code: file.text ?? "", path: file.path)
-                .groupBackground(radius: Theme.controlRadius)
+            RawFilePreview(file: file, projectId: projectId, ref: ref)
+        }
+    }
+}
+
+/// Markdown 文件按 GitLab 的写法渲染（相对地址、表情等）。
+struct MarkdownFile: View {
+    var text: String
+    var projectUrl: String
+    @State private var doc: RichDoc?
+
+    var body: some View {
+        Group {
+            if let doc { RichView(doc: doc, service: .gitlab) } else { ProgressView() }
+        }
+        .task(id: text) { doc = await GitLab.markdown(text, projectUrl: projectUrl) }
+    }
+}
+
+/// 下载原文件后预览：能转换的（表格、Word、压缩包、文本）由应用转换显示，其余交给系统的快速查看。
+private struct RawFilePreview: View {
+    var file: FileContent
+    var projectId: Int
+    var ref: String
+    @State private var preview: AttachmentPreview?
+    @State private var local: URL?
+    @State private var error: String?
+
+    private var name: String { (file.path as NSString).lastPathComponent }
+
+    var body: some View {
+        Group {
+            if let error {
+                ContentUnavailableView("无法预览", systemImage: "doc.questionmark", description: Text(error))
+            } else if let preview {
+                ConvertedPreview(preview: preview, filename: name)
+            } else if let local {
+                QuickLookView(url: local)
+            } else {
+                LoadingView(label: "正在下载…")
+            }
+        }
+        .groupBackground(radius: Theme.controlRadius)
+        .task(id: file.path) { await load() }
+    }
+
+    private func load() async {
+        guard file.size <= AttachmentViewer.maxPreviewBytes else {
+            error = "文件较大（\(Fmt.size(file.size))），请在浏览器中查看。"
+            return
+        }
+        do {
+            let data = try await API.shared.glFileRaw(projectId, ref: ref, path: file.path)
+            let ext = (name as NSString).pathExtension.lowercased()
+            // 文本过大、表格、Word、压缩包由应用转换；其余（PDF、演示文稿、音视频等）用快速查看
+            if file.tooLarge || Previewer.canPreview(filename: name, mime: "") && ext != "html" && ext != "htm" {
+                let name = name
+                preview = await Task.detached(priority: .userInitiated) { Previewer.preview(filename: name, mime: "", data: data) }.value
+                return
+            }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NextWorkZone/preview/\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(name)
+            try data.write(to: url)
+            local = url
+        } catch {
+            guard !isCancellation(error) else { return }
+            self.error = errorMessage(error)
         }
     }
 }

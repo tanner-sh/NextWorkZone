@@ -27,10 +27,14 @@ struct CodeView: NSViewRepresentable {
         tv.usesFindBar = true
         tv.isIncrementalSearchingEnabled = true
         tv.textContainerInset = NSSize(width: 8, height: 8)
-        // 不自动折行，横向滚动
+        // 不自动折行，横向滚动。宽度上限不能用 greatestFiniteMagnitude：TextKit 排不了这么宽，正文空白，
+        // 文本视图的宽度还会撑坏外层布局
+        let limit: CGFloat = 10_000_000
         tv.isHorizontallyResizable = true
+        tv.maxSize = NSSize(width: limit, height: limit)
+        tv.autoresizingMask = [.width, .height]
         tv.textContainer?.widthTracksTextView = false
-        tv.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.textContainer?.containerSize = NSSize(width: limit, height: limit)
         scroll.hasHorizontalScroller = true
         scroll.drawsBackground = false
         let ruler = LineNumberRuler(textView: tv)
@@ -50,6 +54,11 @@ struct CodeView: NSViewRepresentable {
         scroll.verticalRulerView?.needsDisplay = true
     }
 
+    /// 占满给定的空间，不按文本大小撑开外层布局
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 400, height: proposal.height ?? 300)
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
@@ -66,6 +75,8 @@ final class LineNumberRuler: NSRulerView {
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
         ruleThickness = 44
+        // macOS 14 起视图默认不裁剪绘制，传入的区域可能超出行号栏，填底色会把整个窗口盖成空白
+        clipsToBounds = true
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: NSText.didChangeNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: NSView.boundsDidChangeNotification, object: textView.enclosingScrollView?.contentView)
     }
@@ -77,7 +88,7 @@ final class LineNumberRuler: NSRulerView {
     override func drawHashMarksAndLabels(in rect: NSRect) {
         guard let tv = textView, let lm = tv.layoutManager, let container = tv.textContainer else { return }
         NSColor.textBackgroundColor.setFill()
-        rect.fill()
+        rect.intersection(bounds).fill()
         let string = tv.string as NSString
         let visible = tv.visibleRect
         let glyphs = lm.glyphRange(forBoundingRect: visible, in: container)

@@ -10,7 +10,8 @@ enum CodeHighlight {
     nonisolated(unsafe) private static let patterns: [(Regex<Substring>, NSColor)] = [
         (try! Regex(#"//[^\n ]*|#(?!include)[^\n ]*|--[^\n ]*|/\*[\s\S]*?\*/"#), .systemGreen),
         (try! Regex(#""(?:\\.|[^"\\\n ])*"|'(?:\\.|[^'\\\n ])*'|`[^`]*`"#), .systemRed),
-        (try! Regex(#"\b\d+(?:\.\d+)?\b"#), .systemPurple),
+        // 只认 ASCII 数字：Regex 的 \d 会把“四”这类汉字数字也当成数字
+        (try! Regex(#"\b[0-9]+(?:\.[0-9]+)?\b"#), .systemPurple),
     ]
 
     static func apply(_ text: NSMutableAttributedString, lang: String, font: NSFont) {

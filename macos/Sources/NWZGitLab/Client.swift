@@ -50,10 +50,25 @@ public struct GitLabClient: Sendable {
         guard let data = Data(base64Encoded: raw["content"].text.replacingOccurrences(of: "\n", with: "")) else { throw NWZError.other("文件内容解码失败") }
         if data.count > maxSize { file.size = max(file.size, data.count); file.tooLarge = true; return file }
         if let mime = Self.imageMIME(path) { file.imageDataUrl = "data:\(mime);base64," + data.base64EncodedString() }
-        else if data.contains(0) { file.binary = true }
-        else if let text = String(data: data, encoding: .utf8) { file.text = text }
+        else if let (text, encoding) = Self.decodeText(data) { file.text = text; file.encoding = encoding }
         else { file.binary = true }
         return file
+    }
+    /// 文件原始内容（二进制文件在应用内预览时用）。
+    public func rawFile(_ project: Int, ref: String, path: String) async throws -> Data {
+        try await rest.response("GET", Self.path(["projects", String(project), "repository", "files", path, "raw"]), query: [("ref", ref)]).data
+    }
+    /// 识别文本文件的编码：UTF-8（可带 BOM）、UTF-16（带 BOM）、GB18030；含 NUL 等控制字符的视为二进制。
+    static func decodeText(_ data: Data) -> (String, String)? {
+        let bytes = Array(data)
+        if bytes.starts(with: [0xef, 0xbb, 0xbf]) { return String(bytes: bytes.dropFirst(3), encoding: .utf8).map { ($0, "UTF-8") } }
+        if bytes.starts(with: [0xff, 0xfe]) { return String(bytes: bytes.dropFirst(2), encoding: .utf16LittleEndian).map { ($0, "UTF-16LE") } }
+        if bytes.starts(with: [0xfe, 0xff]) { return String(bytes: bytes.dropFirst(2), encoding: .utf16BigEndian).map { ($0, "UTF-16BE") } }
+        let control = bytes.prefix(8192).filter { $0 < 9 || ($0 > 13 && $0 < 32) }.count
+        if bytes.prefix(8192).contains(0) || control * 100 > min(bytes.count, 8192) { return nil }
+        if let text = String(bytes: bytes, encoding: .utf8) { return (text, "UTF-8") }
+        let gb = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+        return String(bytes: bytes, encoding: gb).map { ($0, "GB18030") }
     }
     static func imageMIME(_ path: String) -> String? {
         ["png":"image/png", "jpg":"image/jpeg", "jpeg":"image/jpeg", "gif":"image/gif", "webp":"image/webp", "svg":"image/svg+xml", "ico":"image/x-icon", "bmp":"image/bmp"][path.split(separator: ".").last.map { $0.lowercased() } ?? ""]

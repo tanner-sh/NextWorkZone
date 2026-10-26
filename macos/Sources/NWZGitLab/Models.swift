@@ -118,6 +118,8 @@ public struct FileContent: Codable, Hashable, Sendable {
     public var imageDataUrl: String?
     public var tooLarge: Bool
     public var binary: Bool
+    /// 文本的编码（非 UTF-8 时在界面上提示）
+    public var encoding: String?
 }
 
 public struct FileDiff: Codable, Hashable, Sendable, Identifiable {
