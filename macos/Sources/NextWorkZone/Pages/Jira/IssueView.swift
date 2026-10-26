@@ -42,6 +42,7 @@ struct IssueView: View {
                     }
                 }
                 .contextMenu(specs: { issueActions(issue) })
+                .pageToolbar { toolbar(issue) }
                 .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
                     // 把文件拖进详情即可上传到当前问题
                     loadURLs(providers) { paths in upload(paths) }
@@ -74,6 +75,46 @@ struct IssueView: View {
             if let issue {
                 CreateIssueSheet(parent: IssueRef(key: issue.key, summary: issue.summary, status: issue.status, issueType: issue.issueType)) { _ in reload() }
             }
+        }
+    }
+
+    // MARK: 工具栏
+
+    /// 可以一步流转的模板（模板指定的流转当前可用）
+    private var quickTemplates: [(JiraTemplate, Transition)] {
+        store.list.compactMap { tpl -> (JiraTemplate, Transition)? in
+            guard tpl.kind == "transition", let t = transitions.first(where: { $0.name == tpl.transition }) else { return nil }
+            return (tpl, t)
+        }
+    }
+
+    /// 问题的操作放在窗口工具栏右侧（列表的操作在左侧）：流转、编辑、关注。
+    @ToolbarContentBuilder
+    private func toolbar(_ issue: IssueDetail) -> some ToolbarContent {
+        if !transitions.isEmpty || !quickTemplates.isEmpty {
+            ToolbarItemGroup {
+                // 前两个流转直接显示（与 Jira 网页一致），其余和模板收进“更多”
+                ForEach(transitions.prefix(2)) { t in
+                    Button(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) }.help("流转到「\(t.to.name)」")
+                }
+                if transitions.count + quickTemplates.count > 2 {
+                    Button {
+                        let templates = quickTemplates
+                        var specs: [MenuSpec] = transitions.dropFirst(2).map { t in .action(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) } }
+                        if !templates.isEmpty && transitions.count > 2 { specs.append(.separator) }
+                        specs += templates.map { tpl, t in .action("\(tpl.name)（\(t.name)）", icon: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) } }
+                        MenuBuilder.popUp(specs)
+                    } label: {
+                        Label("更多", systemImage: "chevron.down").labelStyle(.titleAndIcon)
+                    }
+                    .help("更多流转和流转模板")
+                }
+            }
+            ToolbarSpacer(.fixed)
+        }
+        ToolbarItemGroup {
+            Button("编辑", systemImage: "pencil") { editing = true }.help("编辑问题")
+            WatchButton(issueKey: issue.key)
         }
     }
 
@@ -147,10 +188,6 @@ struct IssueView: View {
         // 别人在上次查看之后修改的字段（按显示名称），在字段列表中高亮
         let othersChanges = (changes?.history ?? []).filter { me == nil || $0.authorName != me }
         let changed = Set(othersChanges.flatMap { $0.items.map(\.field) })
-        let quickTemplates = store.list.compactMap { tpl -> (JiraTemplate, Transition)? in
-            guard tpl.kind == "transition", let t = transitions.first(where: { $0.name == tpl.transition }) else { return nil }
-            return (tpl, t)
-        }
         VStack(alignment: .leading, spacing: 0) {
             // 标题
             VStack(alignment: .leading, spacing: 8) {
@@ -173,24 +210,6 @@ struct IssueView: View {
                     StatusPill(status: issue.status)
                     if let r = issue.resolution { Text("解决结果：\(r)").font(.callout).foregroundStyle(.secondary) }
                     if let r = reminder, issue.resolution == nil { Chip(text: AppModel.reminderLabel(r.kind, r.days), tint: r.kind == "overdue" ? .red : .orange) }
-                    Spacer()
-                    // 流转放在前面：前两个直接显示（与 Jira 网页一致），其余和模板收进“更多”
-                    ForEach(transitions.prefix(2)) { t in
-                        Button(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) }.help("流转到「\(t.to.name)」")
-                    }
-                    if transitions.count + quickTemplates.count > 2 {
-                        Button {
-                            var specs: [MenuSpec] = transitions.dropFirst(2).map { t in .action(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) } }
-                            if !quickTemplates.isEmpty && transitions.count > 2 { specs.append(.separator) }
-                            specs += quickTemplates.map { tpl, t in .action("\(tpl.name)（\(t.name)）", icon: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) } }
-                            MenuBuilder.popUp(specs)
-                        } label: {
-                            HStack(spacing: 3) { Text("更多"); Image(systemName: "chevron.down").font(.caption) }
-                        }
-                    }
-                    if !transitions.isEmpty || !quickTemplates.isEmpty { Divider().frame(height: 18) }
-                    Button("编辑", systemImage: "pencil") { editing = true }
-                    WatchButton(issueKey: issue.key)
                 }
                 // 代码、Wiki、工作空间中的关联数，点击滚动到对应区块
                 let items = [("code", "代码"), ("wiki", "Wiki"), ("workspace", "工作空间")].filter { (related[$0.0] ?? 0) > 0 }

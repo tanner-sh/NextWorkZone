@@ -25,6 +25,8 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .textBackgroundColor))
+            .navigationTitle(title)
+            .navigationSubtitle(PageTitles.shared.subtitles[model.current.page] ?? "")
         }
         .overlay { ToastOverlay() }
         .overlay {
@@ -40,6 +42,11 @@ struct RootView: View {
         .onChange(of: model.current.page, initial: true) { _, page in
             if Self.keepAlive.contains(page) && !kept.contains(page) { kept.append(page) }
         }
+    }
+
+    private var title: String {
+        if model.current.page == .tools { return Tools.byId(model.current.tool)?.name ?? Tools.all[0].name }
+        return MainMenu.pageTitles[model.current.page] ?? "NextWorkZone"
     }
 
     @ViewBuilder

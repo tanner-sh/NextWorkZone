@@ -79,10 +79,7 @@ struct SettingsPage: View {
     private func form(_ settings: Settings) -> some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("设置").font(.largeTitle.weight(.semibold))
-                    Text("工作空间、工具，以及连接的系统地址与凭据。凭据只保存在本机。").foregroundStyle(.secondary)
-                }
+                Text("工作空间、工具，以及连接的系统地址与凭据。凭据只保存在本机。").foregroundStyle(.secondary)
                 #if DEBUG
                 Button("导入 tokens.env", systemImage: "square.and.arrow.down", action: importEnv).help("开发用：从 ~/.nextworkzone/tokens.env 导入")
                 #endif

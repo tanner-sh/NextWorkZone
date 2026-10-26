@@ -109,12 +109,6 @@ struct GitlabPage: View {
             } else {
                 SplitPane("gitlab", minWidth: 320, idealWidth: 380, maxWidth: 560) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Picker("", selection: Binding(get: { mode }, set: { setMode($0) })) {
-                            Text("合并请求").tag(Mode.mrs)
-                            Text("项目").tag(Mode.projects)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
                         if mode == .mrs { mrPane } else { projectPane }
                     }
                     .padding(.horizontal, 12)
@@ -122,6 +116,8 @@ struct GitlabPage: View {
                 } trailing: {
                     detail
                 }
+                .pageToolbar { toolbar }
+                .pageSubtitle(.gitlab, subtitle)
             }
         }
         .onAppear { takeTarget() }
@@ -195,6 +191,37 @@ struct GitlabPage: View {
         return list.filter { starred.contains($0.id) } + list.filter { !starred.contains($0.id) }
     }
 
+    // MARK: 工具栏
+
+    /// 左侧：切换合并请求和项目，合并请求的状态，刷新。详情的操作由 MergeRequestView、ProjectView 放在右侧。
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("显示", selection: Binding(get: { mode }, set: { setMode($0) })) {
+                Text("合并请求").tag(Mode.mrs)
+                Text("项目").tag(Mode.projects)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        ToolbarItemGroup(placement: .navigation) {
+            if mode == .mrs {
+                Picker("状态", selection: $mrState) { ForEach(mrStates, id: \.0) { Text($0.1).tag($0.0) } }
+                    .pickerStyle(.menu)
+                    .help("合并请求的状态")
+                Button("刷新", systemImage: "arrow.clockwise") { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
+                    .disabled(mrList.loading).help("刷新")
+            } else {
+                Button("刷新", systemImage: "arrow.clockwise") { Task { await loadProjects() } }.disabled(loading).help("刷新")
+            }
+        }
+    }
+
+    private var subtitle: String {
+        if mode == .mrs { return mrList.items.map { "\($0.count)\(mrList.hasMore ? "+" : "") 个合并请求" } ?? "" }
+        return projects.map { "\($0.count) 个项目" } ?? ""
+    }
+
     // MARK: 合并请求列表
 
     private var mrPane: some View {
@@ -205,15 +232,7 @@ struct GitlabPage: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            HStack {
-                FilterField(prompt: "搜索标题，回车", text: $mrInput) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
-                Picker("", selection: $mrState) { ForEach(mrStates, id: \.0) { Text($0.1).tag($0.0) } }.labelsHidden().fixedSize().help("状态")
-                Button { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).disabled(mrList.loading).help("刷新")
-            }
-            if let items = mrList.items {
-                Text("\(items.count)\(mrList.hasMore ? "+" : "") 个 · 发起新的合并请求请到「项目」中").font(.caption).foregroundStyle(.secondary)
-            }
+            FilterField(prompt: "搜索标题，回车", text: $mrInput) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
             MrListBody(list: mrList, selected: selectedMr?.id, showProject: true, empty: mrSearch.isEmpty ? "没有合并请求" : "没有匹配的合并请求") { mr in
                 selectedMr = MrRef(project: String(mr.projectId), iid: mr.iid, id: mr.id)
             } loadMore: {
@@ -226,11 +245,7 @@ struct GitlabPage: View {
 
     private var projectPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                FilterField(prompt: "筛选项目", text: $filter)
-                Button { Task { await loadProjects() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).disabled(loading).help("刷新")
-            }
-            if let projects { Text("\(projects.count) 个项目 · 收藏的项目置顶").font(.caption).foregroundStyle(.secondary) }
+            FilterField(prompt: "筛选项目（收藏的项目置顶）", text: $filter)
             if let error { ErrorBox(message: error) { Task { await loadProjects() } } }
             List(selection: Binding(get: { selected }, set: { if let id = $0 { openProject(id) } })) {
                 ForEach(visible) { p in
@@ -287,7 +302,7 @@ struct GitlabPage: View {
             if let ref = selectedMr {
                 MergeRequestView(project: ref.project, iid: ref.iid, onChanged: { mrList.replace($0) }).id(ref)
             } else {
-                Text("选择左侧的合并请求").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView("选择左侧的合并请求", systemImage: "arrow.triangle.pull", description: Text("发起新的合并请求请到「项目」中"))
             }
         } else if let id = selected {
             ProjectView(projectId: id, initialRef: opening?.gitRef, initialCommit: opening?.commitSha)

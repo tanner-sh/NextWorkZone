@@ -35,7 +35,7 @@ struct ProjectView: View {
                 if ref.isEmpty {
                     Text("这是一个空仓库。").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    content(project)
+                    content(project).pageToolbar { toolbar(project) }
                 }
             } else {
                 LoadingView()
@@ -79,6 +79,26 @@ struct ProjectView: View {
         tab = .code
     }
 
+    /// 项目的操作放在窗口工具栏右侧：分支（代码、提交）、新建合并请求、在浏览器中打开；打开了合并请求时由它提供。
+    @ToolbarContentBuilder
+    private func toolbar(_ project: Project) -> some ToolbarContent {
+        if !(tab == .mrs && openMr != nil) {
+            if tab == .code || tab == .commits {
+                ToolbarItem {
+                    Picker(selection: Binding(get: { ref }, set: { openBranch($0) })) {
+                        ForEach(branches) { b in Text(b.name).tag(b.name) }
+                    } label: { Label("分支", systemImage: "arrow.triangle.branch") }
+                    .pickerStyle(.menu)
+                    .help("分支")
+                }
+            }
+            ToolbarItemGroup {
+                Button("新建合并请求", systemImage: "plus") { creating = NewMrRequest(source: ref != project.defaultBranch ? ref : nil) }.help("新建合并请求")
+                Button("在浏览器中打开", systemImage: "safari") { Links.openInBrowser(project.webUrl) }.help("在浏览器中打开")
+            }
+        }
+    }
+
     @ViewBuilder
     private func content(_ project: Project) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -102,16 +122,6 @@ struct ProjectView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                Spacer()
-                if tab == .mrs && openMr == nil {
-                    Button("新建合并请求", systemImage: "plus") { creating = NewMrRequest(source: ref != project.defaultBranch ? ref : nil) }.buttonStyle(.borderedProminent)
-                }
-                if tab == .code || tab == .commits {
-                    Picker(selection: Binding(get: { ref }, set: { openBranch($0) })) {
-                        ForEach(branches) { b in Text(b.name).tag(b.name) }
-                    } label: { Image(systemName: "arrow.triangle.branch") }
-                    .fixedSize()
-                }
             }
             switch tab {
             case .code:

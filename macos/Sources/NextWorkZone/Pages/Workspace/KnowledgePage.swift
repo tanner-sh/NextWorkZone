@@ -65,10 +65,10 @@ struct KnowledgePage: View {
                     }, header: { doc in
                         PageHeader(doc: doc, pages: pages ?? [], children: tree[doc.id] ?? []) { self.selected = $0 }
                     }, actions: { doc in
-                        Button { create(parent: doc.id) } label: { Image(systemName: "plus") }.buttonStyle(.borderless).help("添加子页面")
-                        Button { pageDialog = PageDialog(kind: .move, doc: doc) } label: { Image(systemName: "folder") }.buttonStyle(.borderless).help("移动到…")
+                        Button("添加子页面", systemImage: "plus") { create(parent: doc.id) }.help("添加子页面")
+                        Button("移动到…", systemImage: "folder") { pageDialog = PageDialog(kind: .move, doc: doc) }.help("移动到…")
                         if model.isReady(.confluence) {
-                            Button { pageDialog = PageDialog(kind: .publish, doc: doc) } label: { Image(systemName: "paperplane") }.buttonStyle(.borderless).help("发布到 Wiki")
+                            Button("发布到 Wiki", systemImage: "paperplane") { pageDialog = PageDialog(kind: .publish, doc: doc) }.help("发布到 Wiki")
                         }
                     }, footer: { _ in EmptyView() })
                     .id(selected)
@@ -82,6 +82,18 @@ struct KnowledgePage: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .pageToolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button("新建页面", systemImage: "square.and.pencil") { create(parent: nil) }.help("新建页面")
+                Menu {
+                    Button("从 Jira 沉淀…", systemImage: "smallcircle.filled.circle") { importKind = .jira }
+                    Button("剪藏 Wiki 页面…", systemImage: "square.and.arrow.down") { importKind = .wiki }
+                } label: {
+                    Label("导入", systemImage: "tray.and.arrow.down")
+                }
+                .help("把解决过的 Jira 问题、常看的 Wiki 页面沉淀到知识库")
+            }
         }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
@@ -184,15 +196,7 @@ struct KnowledgePage: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                TextField("", text: $filter, prompt: Text("筛选页面")).textFieldStyle(.roundedBorder)
-                Button { create(parent: nil) } label: { Image(systemName: "plus") }.help("新建页面")
-            }
-            HStack {
-                Button("从 Jira 沉淀", systemImage: "smallcircle.filled.circle") { importKind = .jira }
-                Button("剪藏 Wiki", systemImage: "square.and.arrow.down") { importKind = .wiki }
-            }
-            .controlSize(.small)
+            FilterField(prompt: "筛选页面", text: $filter)
             if !allTags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
@@ -203,7 +207,7 @@ struct KnowledgePage: View {
                                 .font(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
-                                .background(tag == t ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.06), in: Capsule())
+                                .background(tag == t ? AnyShapeStyle(Color.accentColor.opacity(0.2)) : AnyShapeStyle(Theme.chipFill), in: Capsule())
                         }
                     }
                 }

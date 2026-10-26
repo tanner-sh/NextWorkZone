@@ -8,7 +8,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
     var onDeleted: (() -> Void)? = nil
     /// 标题下方的额外内容（知识库的来源、子页面等）
     @ViewBuilder var header: (Doc) -> Header
-    /// 标题栏右侧的额外操作
+    /// 工具栏中的额外操作（放在置顶、删除之前）
     @ViewBuilder var actions: (Doc) -> Actions
     /// 正文下方的额外内容（日记的工作记录）
     @ViewBuilder var footer: (Doc) -> Footer
@@ -36,7 +36,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
             if let error {
                 ErrorBox(message: error) { Task { await load() } }.padding(24)
             } else if let doc {
-                content(doc)
+                content(doc).pageToolbar { toolbar(doc) }
             } else {
                 LoadingView()
             }
@@ -109,9 +109,26 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
         }
     }
 
+    /// 文档的操作放在窗口工具栏右侧：额外操作；置顶、删除。
+    @ToolbarContentBuilder
+    private func toolbar(_ doc: Doc) -> some ToolbarContent {
+        if Actions.self != EmptyView.self {
+            ToolbarItemGroup { actions(doc) }
+            ToolbarSpacer(.fixed)
+        }
+        ToolbarItemGroup {
+            if doc.kind != "daily" {
+                Button(doc.pinned ? "取消置顶" : "置顶", systemImage: doc.pinned ? "pin.slash" : "pin") { save { $0.pinned.toggle() } }
+                    .help(doc.pinned ? "取消置顶" : "置顶")
+            }
+            if doc.createdAt != 0 {
+                Button("删除", systemImage: "trash") { remove(doc) }.help("删除")
+            }
+        }
+    }
+
     private func content(_ doc: Doc) -> some View {
         let isDaily = doc.kind == "daily"
-        let exists = doc.createdAt != 0
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
@@ -131,14 +148,6 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                         .font(.largeTitle.weight(.semibold))
                     }
                     Spacer()
-                    actions(doc)
-                    if !isDaily {
-                        Button { save { $0.pinned.toggle() } } label: { Image(systemName: doc.pinned ? "pin.slash" : "pin") }
-                            .buttonStyle(.borderless).help(doc.pinned ? "取消置顶" : "置顶")
-                    }
-                    if exists {
-                        Button { remove(doc) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除")
-                    }
                 }
                 if !isDaily { TagsInput(tags: doc.tags) { tags in save { $0.tags = tags } } }
                 header(doc)
@@ -164,7 +173,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                 )
                 if let saveError { ErrorBox(message: "保存失败：\(saveError)") }
                 footer(doc)
-                if exists { BacklinksSection(system: "doc", itemKey: doc.id, title: "引用了本文的内容", hideEmpty: true) }
+                if doc.createdAt != 0 { BacklinksSection(system: "doc", itemKey: doc.id, title: "引用了本文的内容", hideEmpty: true) }
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 22)

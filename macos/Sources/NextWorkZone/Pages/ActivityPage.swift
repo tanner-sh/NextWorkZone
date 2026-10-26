@@ -70,6 +70,8 @@ struct ActivityPage: View {
                 NotConfigured(label: "Jira 或 Wiki")
             } else {
                 content
+                    .pageToolbar { toolbar }
+                    .pageSubtitle(.activity, model.activity?.lastCheck.map { "上次检查 \(Fmt.time($0))" } ?? "")
             }
         }
         .issueMenuDialogs(issueMenu)
@@ -89,35 +91,43 @@ struct ActivityPage: View {
         if let t = ActivityText.target(group[0]) { model.navigate(t) }
     }
 
+    /// 左侧筛选；右侧通知设置、立即检查、全部已读。
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("筛选", selection: $filter) {
+                ForEach(Filter.allCases) { f in
+                    Text(f == .unread && (model.activity?.unread ?? 0) > 0 ? "未读 \(model.activity!.unread)" : f.label).tag(f)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        ToolbarItemGroup {
+            Button("通知设置", systemImage: "bell.badge") {
+                MenuBuilder.popUp([.label("以下动态发送系统通知")] + ActivityText.kindLabels.map { k, label in
+                    .action(label, checked: notifyKinds.contains(k)) {
+                        notifyKinds = notifyKinds.contains(k) ? notifyKinds.filter { $0 != k } : notifyKinds + [k]
+                        ActivityText.storeNotifyKinds(notifyKinds)
+                    }
+                })
+            }
+            .help("通知设置")
+            Button("立即检查", systemImage: "arrow.clockwise") { Task { await refresh() } }.disabled(loading).help("立即检查")
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItem {
+            Button("全部已读", systemImage: "checkmark.circle") { Task { await model.markRead(nil) } }
+                .labelStyle(.titleAndIcon)
+                .disabled((model.activity?.unread ?? 0) == 0)
+        }
+    }
+
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("动态").font(.largeTitle.weight(.semibold))
-                        Text("你经办、报告、关注的问题和提到你的评论，以及 Wiki 上的评论、提到、分享和你关注的页面的修改。每 3 分钟检查一次\(model.activity?.lastCheck.map { "，上次检查 \(Fmt.time($0))" } ?? "")")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button {
-                        MenuBuilder.popUp([.label("以下动态发送系统通知")] + ActivityText.kindLabels.map { k, label in
-                            .action(label, checked: notifyKinds.contains(k)) {
-                                notifyKinds = notifyKinds.contains(k) ? notifyKinds.filter { $0 != k } : notifyKinds + [k]
-                                ActivityText.storeNotifyKinds(notifyKinds)
-                            }
-                        })
-                    } label: { Image(systemName: "bell.badge") }.help("通知设置")
-                    Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise") }.disabled(loading).help("立即检查")
-                    Button("全部已读", systemImage: "checkmark.circle") { Task { await model.markRead(nil) } }.disabled((model.activity?.unread ?? 0) == 0)
-                }
-                Picker("", selection: $filter) {
-                    ForEach(Filter.allCases) { f in
-                        Text(f == .unread && (model.activity?.unread ?? 0) > 0 ? "未读 \(model.activity!.unread)" : f.label).tag(f)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                Text("你经办、报告、关注的问题和提到你的评论，以及 Wiki 上的评论、提到、分享和你关注的页面的修改。每 3 分钟检查一次。")
+                    .font(.callout).foregroundStyle(.secondary)
                 if let error { ErrorBox(message: error) { Task { await refresh() } } }
                 if model.activity == nil { ProgressView() }
                 let days = self.days

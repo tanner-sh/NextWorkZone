@@ -69,6 +69,18 @@ struct TodoPage: View {
         } trailing: {
             detailPane
         }
+        .pageToolbar {
+            ToolbarItem(placement: .navigation) {
+                Picker("视图", selection: $view) {
+                    ForEach(ViewKind.allCases) { v in
+                        let n = count(v)
+                        Text(v != .done && n > 0 ? "\(v.label) \(n)" : v.label).tag(v)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+        }
         .task {
             await load()
             // 打开页面时同步一次分配给我的 Jira 问题
@@ -117,16 +129,6 @@ struct TodoPage: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: $view) {
-                ForEach(ViewKind.allCases) { v in
-                    let n = count(v)
-                    Text(v != .done && n > 0 ? "\(v.label) \(n)" : v.label).tag(v)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
 
             HStack {
                 Image(systemName: "plus").foregroundStyle(.secondary)
@@ -457,24 +459,29 @@ private struct TodoDetail: View {
 
                 if let error { ErrorBox(message: error) }
 
-                HStack {
-                    if draft.refKey == nil && model.isReady(.jira) {
-                        Button("创建为 Jira 问题", systemImage: "smallcircle.filled.circle") { promoting = true }
-                    }
-                    Spacer()
-                    Text("创建于 \(Date(timeIntervalSince1970: Double(todo.createdAt) / 1000).formatted(date: .numeric, time: .shortened))").font(.caption).foregroundStyle(.secondary)
-                    Button(draft.refSystem == "jira" ? "删除待办" : "删除", systemImage: "trash", role: .destructive) {
-                        let note = draft.refSystem == "jira" ? (TodoActions.fromJiraSync(todo) ? "只删除待办，不影响 Jira 问题，之后也不会再自动添加。" : "只删除待办，不影响 Jira 问题。") : ""
-                        if Confirm.ask("确认删除这个待办？" + (note.isEmpty ? "" : "\n" + note)) {
-                            guarded {
-                                try await API.shared.wsDeleteTodo(todo.id)
-                                onDeleted()
-                            }
+                Text("创建于 \(Date(timeIntervalSince1970: Double(todo.createdAt) / 1000).formatted(date: .numeric, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(24)
+        }
+        .pageToolbar {
+            // 待办的操作放在窗口工具栏右侧
+            if draft.refKey == nil && model.isReady(.jira) {
+                ToolbarItem {
+                    Button("创建为 Jira 问题", systemImage: "smallcircle.filled.circle") { promoting = true }.help("创建为 Jira 问题")
+                }
+            }
+            ToolbarItem {
+                Button(draft.refSystem == "jira" ? "删除待办" : "删除", systemImage: "trash", role: .destructive) {
+                    let note = draft.refSystem == "jira" ? (TodoActions.fromJiraSync(todo) ? "只删除待办，不影响 Jira 问题，之后也不会再自动添加。" : "只删除待办，不影响 Jira 问题。") : ""
+                    if Confirm.ask("确认删除这个待办？" + (note.isEmpty ? "" : "\n" + note)) {
+                        guarded {
+                            try await API.shared.wsDeleteTodo(todo.id)
+                            onDeleted()
                         }
                     }
                 }
+                .help(draft.refSystem == "jira" ? "删除待办（不影响 Jira 问题）" : "删除待办")
             }
-            .padding(24)
         }
         .onChange(of: todo) { _, new in
             // 外部更新（例如同步、勾选完成）时刷新未在编辑的字段

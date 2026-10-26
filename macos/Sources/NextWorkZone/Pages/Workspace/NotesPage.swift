@@ -42,6 +42,19 @@ struct NotesPage: View {
             .id(selected)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .pageToolbar {
+            ToolbarItem(placement: .navigation) {
+                Picker("显示", selection: $tab) {
+                    Text("日记").tag(Tab.daily)
+                    Text(notes.map { $0.isEmpty ? "笔记" : "笔记 \($0.count)" } ?? "笔记").tag(Tab.notes)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            ToolbarItem(placement: .navigation) {
+                Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记")
+            }
+        }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
         .onAppear { take() }
@@ -83,24 +96,13 @@ struct NotesPage: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Picker("", selection: $tab) {
-                    Label("日记", systemImage: "calendar").tag(Tab.daily)
-                    Label(notes.map { $0.isEmpty ? "笔记" : "笔记 \($0.count)" } ?? "笔记", systemImage: "note.text").tag(Tab.notes)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                Button(action: createNote) { Image(systemName: "plus") }.help("新建笔记")
-            }
             if tab == .daily {
                 DatePicker("跳到日期", selection: Binding(get: {
                     Fmt.date(ofDay: selected.hasPrefix("daily-") ? String(selected.dropFirst(6)) : today) ?? Date()
                 }, set: { selected = "daily-\(Fmt.day($0))" }), in: ...Date(), displayedComponents: .date)
                 .font(.callout)
             } else {
-                TextField("", text: $filter, prompt: Text("筛选笔记")).textFieldStyle(.roundedBorder)
+                FilterField(prompt: "筛选笔记", text: $filter)
             }
             if let error { ErrorBox(message: error) { Task { await load() } } }
             List(selection: Binding(get: { selected }, set: { if let v = $0 { selected = v } })) {
@@ -129,7 +131,7 @@ struct NotesPage: View {
                         .contextMenu(specs: { noteMenu(n) })
                     }
                     if notes != nil && visibleNotes.isEmpty {
-                        Text(filter.isEmpty ? "还没有笔记，点击右上角 + 新建" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
+                        Text(filter.isEmpty ? "还没有笔记，点击工具栏中的 + 新建" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
                     }
                 }
             }

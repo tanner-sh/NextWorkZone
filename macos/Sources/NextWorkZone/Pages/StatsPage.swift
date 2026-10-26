@@ -88,12 +88,8 @@ struct StatsPage: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         let range = period.range
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("统计").font(.largeTitle.weight(.semibold))
-                            Text("\(range.from) 至 \(range.to) · 处理过：你修改过状态的问题；解决：这段时间内解决、经办人是你或由你流转的问题；解决用时：从创建到解决")
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
-                        Picker("", selection: $period) { ForEach(Period.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden().fixedSize()
+                        Text("处理过：你修改过状态的问题；解决：这段时间内解决、经办人是你或由你流转的问题；解决用时：从创建到解决")
+                            .font(.callout).foregroundStyle(.secondary)
                         if let error { ErrorBox(message: error) }
                         if let stats { StatsBody(stats: stats, range: range, menu: issueMenu).opacity(loading ? 0.6 : 1) } else if error == nil { ProgressView() }
                     }
@@ -101,6 +97,15 @@ struct StatsPage: View {
                     .frame(maxWidth: 1100, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
+                .pageToolbar {
+                    ToolbarItem(placement: .navigation) {
+                        Picker("时间范围", selection: $period) { ForEach(Period.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()
+                    }
+                    ToolbarItem {
+                        Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(loading).help("刷新")
+                    }
+                }
+                .pageSubtitle(.stats, "\(period.range.from) 至 \(period.range.to)")
             }
         }
         .issueMenuDialogs(issueMenu)

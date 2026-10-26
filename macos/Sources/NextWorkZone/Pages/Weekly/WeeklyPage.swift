@@ -45,12 +45,7 @@ struct WeeklyPage: View {
             if model.settings == nil {
                 LoadingView()
             } else if !configured {
-                VStack(alignment: .leading) {
-                    Text("周报").font(.largeTitle.weight(.semibold))
-                    NotConfigured(label: "Wiki 或周报页面")
-                }
-                .padding(28)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                NotConfigured(label: "Wiki 或周报页面")
             } else if let error {
                 ErrorBox(message: error) { Task { await load(entry?.sectionTitle) } }.padding(28)
             } else if let view {
@@ -116,21 +111,11 @@ struct WeeklyPage: View {
     private func editor(_ view: WeeklyView) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("周报").font(.largeTitle.weight(.semibold))
-                        HStack(spacing: 4) {
-                            Button(view.pageTitle) { if let id = wikiPageIdOf(view.pageUrl) ?? Optional(view.pageId) { model.navigate(NavTarget(.wiki, wikiPage: id)) } }.buttonStyle(.link)
-                            Text("· 版本 \(view.version) · \(view.modifiedBy) 于 \(Fmt.time(view.modifiedAt)) 更新").foregroundStyle(.secondary)
-                        }
-                        .font(.callout)
-                    }
-                    Spacer()
-                    Button("刷新", systemImage: "arrow.clockwise") { Task { await load(entry?.sectionTitle) } }.disabled(loading)
-                    Button("预览并保存", systemImage: "square.and.arrow.down") { actionError = nil; confirmSave = true }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!dirty || busy)
+                HStack(spacing: 4) {
+                    Button(view.pageTitle) { if let id = wikiPageIdOf(view.pageUrl) ?? Optional(view.pageId) { model.navigate(NavTarget(.wiki, wikiPage: id)) } }.buttonStyle(.link)
+                    Text("· 版本 \(view.version) · \(view.modifiedBy) 于 \(Fmt.time(view.modifiedAt)) 更新").foregroundStyle(.secondary)
                 }
+                .font(.callout)
                 if !view.currentWeekExists {
                     HStack {
                         Label("本周（\(view.currentWeekTitle)）的小节还没有创建。如果团队约定由他人创建，可以稍后刷新。", systemImage: "calendar.badge.plus")
@@ -177,6 +162,19 @@ struct WeeklyPage: View {
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        .pageToolbar {
+            ToolbarItem {
+                Button("刷新", systemImage: "arrow.clockwise") { Task { await load(entry?.sectionTitle) } }.disabled(loading).help("重新读取周报页面")
+            }
+            ToolbarSpacer(.fixed)
+            ToolbarItem {
+                Button("预览并保存", systemImage: "square.and.arrow.down") { actionError = nil; confirmSave = true }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.glassProminent)
+                    .disabled(!dirty || busy)
+            }
+        }
+        .pageSubtitle(.weekly, entry?.sectionTitle ?? "")
     }
 
     private var saveSheet: some View {

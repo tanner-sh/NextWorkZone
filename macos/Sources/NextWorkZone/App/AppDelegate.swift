@@ -174,7 +174,6 @@ enum MainWindow {
         host.sceneBridgingOptions = [.toolbars, .title]
         window.contentViewController = host
         window.title = "NextWorkZone"
-        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.minSize = NSSize(width: 960, height: 600)

@@ -209,11 +209,6 @@ struct WikiPageEditor: View {
                     .onChange(of: title) { if session != nil && dirty, let d = controller.doc { changed(d) } }
                 Text((pageId != nil ? (session.map { "基于第 \($0.version) 版编辑" } ?? "") : "新页面") + (dirty ? " · 已自动保存草稿" : ""))
                     .font(.caption).foregroundStyle(.secondary)
-                Button("取消", systemImage: "xmark", action: close)
-                Button(checking ? "检查中…" : pageId != nil ? "保存…" : "创建…", systemImage: "square.and.arrow.down", action: review)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(session == nil || checking)
-                    .keyboardShortcut("s", modifiers: .command)
             }
             if let d = draft {
                 HStack {
@@ -256,6 +251,19 @@ struct WikiPageEditor: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 18)
+        .pageToolbar {
+            ToolbarItem {
+                Button("取消", systemImage: "xmark", action: close).help("退出编辑")
+            }
+            ToolbarSpacer(.fixed)
+            ToolbarItem {
+                Button(checking ? "检查中…" : pageId != nil ? "保存…" : "创建…", systemImage: "square.and.arrow.down", action: review)
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.glassProminent)
+                    .disabled(session == nil || checking)
+                    .keyboardShortcut("s", modifiers: .command)
+            }
+        }
     }
 
     private var toolbar: some View {

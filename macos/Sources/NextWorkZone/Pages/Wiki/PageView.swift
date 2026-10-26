@@ -39,6 +39,7 @@ struct PageView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .contextMenu(specs: { pageActions(page) })
+                    .pageToolbar { toolbar(page) }
                     if headings.count >= Self.tocMin {
                         Divider()
                         TableOfContents(items: headings) { scrollTo = $0 }
@@ -74,6 +75,26 @@ struct PageView: View {
         }
     }
 
+    /// 页面的操作放在窗口工具栏右侧：收藏；编辑、新建子页面、历史版本、更多。
+    @ToolbarContentBuilder
+    private func toolbar(_ page: WikiPageDetail) -> some ToolbarContent {
+        let favorite = favorites.contains(page.id)
+        ToolbarItem {
+            Button(favorite ? "取消收藏" : "收藏", systemImage: favorite ? "star.fill" : "star") {
+                favorites.toggle(FavoritePage(id: page.id, title: page.title, space: page.spaceName))
+            }
+            .tint(favorite ? .yellow : nil)
+            .help(favorite ? "取消收藏" : "收藏")
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItemGroup {
+            if page.canEdit { Button("编辑", systemImage: "pencil", action: onEdit).help("编辑页面") }
+            Button("新建子页面", systemImage: "doc.badge.plus") { onNewChild() }.help("新建子页面")
+            Button("历史版本", systemImage: "clock.arrow.circlepath") { history = true }.help("历史版本")
+            Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(pageActions(page)) }.help("更多")
+        }
+    }
+
     /// 更多按钮、页面空白处右键共用。
     private func pageActions(_ page: WikiPageDetail) -> [MenuSpec] {
         var specs: [MenuSpec] = []
@@ -102,7 +123,6 @@ struct PageView: View {
 
     @ViewBuilder
     private func content(_ page: WikiPageDetail) -> some View {
-        let favorite = favorites.contains(page.id)
         VStack(alignment: .leading, spacing: 0) {
             // 面包屑
             HStack(spacing: 4) {
@@ -116,21 +136,7 @@ struct PageView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.bottom, 8)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(page.title).font(.title.weight(.semibold)).textSelection(.enabled)
-                Button {
-                    favorites.toggle(FavoritePage(id: page.id, title: page.title, space: page.spaceName))
-                } label: {
-                    Image(systemName: favorite ? "star.fill" : "star").foregroundStyle(favorite ? Color.yellow : Color.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help(favorite ? "取消收藏" : "收藏")
-                Spacer()
-                if page.canEdit { Button("编辑", systemImage: "pencil", action: onEdit) }
-                Button { onNewChild() } label: { Image(systemName: "doc.badge.plus") }.help("新建子页面")
-                Button { history = true } label: { Image(systemName: "clock.arrow.circlepath") }.help("历史版本")
-                Button { MenuBuilder.popUp(pageActions(page)) } label: { Image(systemName: "ellipsis") }.help("更多")
-            }
+            Text(page.title).font(.title.weight(.semibold)).textSelection(.enabled)
             HStack(spacing: 6) {
                 Text("\(page.modifiedBy) 修改于 \(Fmt.time(page.modified)) · 第 \(page.version) 版")
                 if !page.createdBy.isEmpty { Text("· \(page.createdBy) 创建于 \(Fmt.time(page.created))") }

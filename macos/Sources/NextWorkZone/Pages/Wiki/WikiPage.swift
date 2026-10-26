@@ -48,6 +48,8 @@ struct WikiPage: View {
                 } trailing: {
                     detailPane
                 }
+                .pageToolbar { toolbar }
+                .pageSubtitle(.wiki, editing != nil ? (pageEditing ? "编辑页面" : "新建页面") : detail?.spaceName ?? "")
             }
         }
         .onAppear { takeTarget() }
@@ -95,18 +97,30 @@ struct WikiPage: View {
         AppPreferences.shared.set(id, forKey: Self.lastPageKey)
     }
 
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: Binding(get: { tab }, set: { switchTab($0) })) {
-                Label("最近", systemImage: "clock").tag(Tab.recent)
-                Label("收藏", systemImage: "star").tag(Tab.favorites)
-                Label("空间", systemImage: "folder").tag(Tab.spaces)
-                Label("搜索", systemImage: "magnifyingglass").tag(Tab.search)
+    private var pageEditing: Bool { if case .edit = editing { true } else { false } }
+
+    /// 左侧：切换最近、收藏、空间、搜索；空间页面树可以刷新。页面的操作由 PageView 放在右侧。
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("列表", selection: Binding(get: { tab }, set: { switchTab($0) })) {
+                Text("最近").tag(Tab.recent)
+                Text("收藏").tag(Tab.favorites)
+                Text("空间").tag(Tab.spaces)
+                Text("搜索").tag(Tab.search)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
+        }
+        if tab == .spaces {
+            ToolbarItem(placement: .navigation) {
+                Button("刷新空间", systemImage: "arrow.clockwise") { tree.loadSpaces() }.help("刷新空间列表")
+            }
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 8) {
             switch tab {
             case .recent: RecentList(selected: $selected, onOpen: open)
             case .favorites: FavoriteList(selected: $selected, onOpen: open)
@@ -193,7 +207,7 @@ private struct FavoriteList: View {
                 .tag(p.id)
                 .contextMenu(specs: { WikiMenus.page(id: p.id, title: p.title, space: p.space) })
             }
-            if favorites.list.isEmpty { Text("点击页面标题旁的星标收藏常看的页面").foregroundStyle(.secondary) }
+            if favorites.list.isEmpty { Text("点击工具栏中的星标收藏常看的页面").foregroundStyle(.secondary) }
         }
         .listStyle(.inset)
     }
@@ -306,11 +320,8 @@ private struct SpaceTreeView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack {
-                FilterField(prompt: "筛选空间", text: $filter)
-                Button { tree.loadSpaces() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("刷新")
-            }
-            .padding(.horizontal, 12)
+            FilterField(prompt: "筛选空间", text: $filter)
+                .padding(.horizontal, 12)
             if let e = tree.error { ErrorBox(message: e) { tree.loadSpaces() }.padding(.horizontal, 12) }
             List(selection: Binding(get: { selected }, set: { id in if let id, !id.hasPrefix("space:"), !id.contains("#") { onOpen(id) } })) {
                 ForEach(rows) { row in

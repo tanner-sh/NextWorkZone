@@ -16,32 +16,24 @@ struct ClipboardPage: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .fixedSize()
     }
 
     var body: some View {
-        if tab == "settings" {
-            VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("剪贴板").font(.largeTitle.weight(.semibold))
-                        Text("记录复制过的内容，随时搜索、粘贴。").foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    switcher
-                }
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
+        Group {
+            if tab == "settings" {
                 ClipboardSettingsForm()
+            } else {
+                ClipHistory(initialQuery: query ?? "")
             }
-        } else {
-            ClipHistory(switcher: AnyView(switcher), initialQuery: query ?? "")
         }
+        .pageToolbar {
+            ToolbarItem(placement: .navigation) { switcher }
+        }
+        .pageSubtitle(.tools, "记录复制过的内容，随时搜索、粘贴")
     }
 }
 
 private struct ClipHistory: View {
-    var switcher: AnyView
     var initialQuery: String
     @Environment(AppModel.self) private var model
     @State private var list = ClipListModel()
@@ -115,9 +107,7 @@ private struct ClipHistory: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
-                switcher
-                TextField("", text: $input, prompt: Text("搜索文字、文件名、应用"))
-                    .textFieldStyle(.roundedBorder)
+                FilterField(prompt: "搜索文字、文件名、应用", text: $input)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         BoardChip(label: "全部", active: list.board == nil) { setBoard(nil) }
@@ -291,13 +281,6 @@ private struct ClipDetail: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            HStack {
-                Button("复制", systemImage: "doc.on.doc") { guarded { try await API.shared.clipCopy([item.id]); toast("已复制") } }.buttonStyle(.borderedProminent)
-                if item.hasHtml { Button("复制为纯文本") { guarded { try await API.shared.clipCopy([item.id], plain: true); toast("已复制纯文本") } } }
-                if item.textual && draft == nil { Button("编辑", systemImage: "pencil") { draft = text } }
-                Button(board?.name ?? "置顶到…", systemImage: "pin") { MenuBuilder.popUp(pinMenu([item.id], item.pinboard)) }
-                Button("删除", systemImage: "trash") { guarded { try await API.shared.clipDelete([item.id]) } }
-            }
             if let d = draft {
                 VStack(alignment: .trailing) {
                     TextEditor(text: Binding(get: { d }, set: { draft = $0 }))
@@ -336,6 +319,21 @@ private struct ClipDetail: View {
             }
         }
         .padding(24)
+        .pageToolbar {
+            // 条目的操作放在窗口工具栏右侧
+            ToolbarItemGroup {
+                if item.hasHtml { Button("复制为纯文本", systemImage: "textformat") { guarded { try await API.shared.clipCopy([item.id], plain: true); toast("已复制纯文本") } }.help("复制为纯文本") }
+                if item.textual && draft == nil { Button("编辑", systemImage: "pencil") { draft = text }.help("编辑") }
+                Button(board?.name ?? "置顶到…", systemImage: "pin") { MenuBuilder.popUp(pinMenu([item.id], item.pinboard)) }.help(board.map { "置顶于“\($0.name)”" } ?? "置顶到…")
+                Button("删除", systemImage: "trash") { guarded { try await API.shared.clipDelete([item.id]) } }.help("删除")
+            }
+            ToolbarSpacer(.fixed)
+            ToolbarItem {
+                Button("复制", systemImage: "doc.on.doc") { guarded { try await API.shared.clipCopy([item.id]); toast("已复制") } }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.glassProminent)
+            }
+        }
         .task {
             text = item.text
             title = item.title

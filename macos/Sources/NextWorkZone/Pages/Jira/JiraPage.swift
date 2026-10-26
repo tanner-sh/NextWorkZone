@@ -76,6 +76,8 @@ struct JiraPage: View {
                 } trailing: {
                     detailPane
                 }
+                .pageToolbar { toolbar }
+                .pageSubtitle(.jira, subtitle)
             }
         }
         .issueMenuDialogs(issueMenu)
@@ -306,18 +308,43 @@ struct JiraPage: View {
         ]
     }
 
-    // MARK: 列表
+    // MARK: 工具栏
 
-    private var listPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("", selection: Binding(get: { mode }, set: { chooseMode($0) })) {
+    /// 列表的操作在左侧：切换查询方式、常用查询、排序分组、刷新；新建在最右侧（问题的操作由 IssueView 放在它前面）。
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("查询方式", selection: Binding(get: { mode }, set: { chooseMode($0) })) {
                 ForEach(JQL.presets, id: \.id) { p in Text(p.label).tag(Mode(rawValue: p.id)!) }
                 Text("搜索").tag(Mode.search)
                 Text("JQL").tag(Mode.jql)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+        }
+        ToolbarItemGroup(placement: .navigation) {
+            Button("常用查询", systemImage: "bookmark") { MenuBuilder.popUp(savedMenu()) }.help("常用查询")
+            Button("排序与分组", systemImage: view.sort != "default" || view.group != "none" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") { MenuBuilder.popUp(viewMenu()) }
+                .help("排序与分组")
+            Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(loading).help("刷新")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button("新建问题", systemImage: "plus") { creating = true }.help("新建问题")
+        }
+    }
 
+    /// 副标题：常用查询的名称和条数（只加载了一部分、本机搜索时说明）。
+    private var subtitle: String {
+        guard let issues, !(mode == .search && JQL.search(form) == nil) else { return "" }
+        let count = localSearch ? "本机问题库中找到 \(total >= 200 ? "200+" : "\(total)") 条"
+            : total > issues.count ? "共 \(total) 条，已显示 \(issues.count) 条" : "\(total) 条"
+        return [query.label, count].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    // MARK: 列表
+
+    private var listPane: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if mode == .search {
                 SearchPanel(form: $form, source: Binding(get: { source }, set: { source = $0; AppPreferences.shared.set($0.rawValue, forKey: Self.sourceKey) }), index: indexStore.status) { f in
                     if let built = JQL.search(f) { query = (built, nil) }
@@ -332,25 +359,7 @@ struct JiraPage: View {
                         if !j.isEmpty { query = (j, nil) }
                     }
             }
-            HStack(spacing: 6) {
-                FilterField(prompt: issues.map { $0.isEmpty ? "筛选当前列表" : "筛选 \($0.count) 条" } ?? "筛选当前列表", text: $filter)
-                Button { MenuBuilder.popUp(savedMenu()) } label: { Image(systemName: "bookmark") }.buttonStyle(.borderless).help("常用查询")
-                Button { MenuBuilder.popUp(viewMenu()) } label: { Image(systemName: "slider.horizontal.3") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(view.sort != "default" || view.group != "none" ? Color.accentColor : Color.primary)
-                    .help("排序与分组")
-                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).disabled(loading).help("刷新")
-                Button { creating = true } label: { Image(systemName: "plus") }.buttonStyle(.borderedProminent).help("新建问题")
-            }
-            // 常用查询的名称、只加载了一部分、本机搜索时才多一行说明
-            if let issues, !(mode == .search && JQL.search(form) == nil), query.label != nil || localSearch || total > issues.count {
-                HStack(spacing: 0) {
-                    if let label = query.label { Text("\(label) · ").fontWeight(.semibold) }
-                    Text(localSearch ? "本机问题库中找到 \(total >= 200 ? "200+" : "\(total)") 条" : "共 \(total) 条\(total > issues.count ? "，已显示 \(issues.count) 条" : "")")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            FilterField(prompt: "筛选当前列表", text: $filter)
             if let error { ErrorBox(message: error) { Task { await load() } } }
             if let createWarning { ErrorBox(message: createWarning) }
 

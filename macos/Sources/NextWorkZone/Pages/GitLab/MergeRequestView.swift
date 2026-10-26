@@ -46,6 +46,7 @@ struct MergeRequestView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .contextMenu(specs: { moreEntries(mr) })
+                .pageToolbar { toolbar(mr) }
             } else {
                 LoadingView()
             }
@@ -158,6 +159,37 @@ struct MergeRequestView: View {
         return specs
     }
 
+    /// 合并请求的操作放在窗口工具栏右侧：批准、合并、重新打开；刷新、在浏览器中打开、更多。
+    @ToolbarContentBuilder
+    private func toolbar(_ mr: MergeRequest) -> some ToolbarContent {
+        ToolbarItemGroup {
+            if mr.state == "opened", let a = approvals, a.userCanApprove, !a.userHasApproved {
+                Button("批准", systemImage: "hand.thumbsup") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: true); toast("已批准") } }
+                    .labelStyle(.titleAndIcon).disabled(busy)
+            }
+            if mr.state == "opened", approvals?.userHasApproved == true {
+                Button("取消批准", systemImage: "arrow.uturn.backward") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: false); toast("已取消批准") } }
+                    .labelStyle(.titleAndIcon).disabled(busy)
+            }
+            if mr.state == "closed" { Button("重新打开") { setState("reopen") }.disabled(busy) }
+        }
+        if mr.state == "opened" && mr.canMerge {
+            ToolbarItem {
+                Button("合并", systemImage: "arrow.triangle.merge") { merging = true }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.glassProminent)
+                    .disabled(busy || !mergeable(mr))
+                    .help(mergeable(mr) ? "合并" : mr.draft ? "草稿状态不能合并，先标记为就绪" : "有冲突，需要先解决")
+            }
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItemGroup {
+            Button("刷新", systemImage: "arrow.clockwise") { refresh() }.help("刷新")
+            Button("在浏览器中打开", systemImage: "safari") { Links.openInBrowser(mr.webUrl) }.help("在浏览器中打开")
+            Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(moreEntries(mr)) }.help("更多")
+        }
+    }
+
     /// GitLab 只在需要时才重新检查能否合并，“未检查”时网页端也允许合并（合并时再检查），这里保持一致。
     private func mergeable(_ mr: MergeRequest) -> Bool {
         mr.canMerge && !mr.draft && !mr.hasConflicts && mr.mergeStatus != "cannot_be_merged"
@@ -172,9 +204,6 @@ struct MergeRequestView: View {
                 if let onBack { Button("返回", systemImage: "chevron.left", action: onBack) }
                 Button(projectPath) { model.navigate(NavTarget(.gitlab, projectId: mr.projectId)) }.buttonStyle(.link).help("打开项目")
                 Text("!\(mr.iid)").foregroundStyle(.secondary)
-                Spacer()
-                Button { refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("刷新")
-                Button { Links.openInBrowser(mr.webUrl) } label: { Image(systemName: "safari") }.buttonStyle(.borderless).help("在浏览器中打开")
             }
             .font(.callout)
             HStack(spacing: 8) {
@@ -201,21 +230,6 @@ struct MergeRequestView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                Spacer()
-                if mr.state == "opened", let a = approvals, a.userCanApprove, !a.userHasApproved {
-                    Button("批准", systemImage: "hand.thumbsup") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: true); toast("已批准") } }.disabled(busy)
-                }
-                if mr.state == "opened", approvals?.userHasApproved == true {
-                    Button("取消批准", systemImage: "arrow.uturn.backward") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: false); toast("已取消批准") } }.disabled(busy)
-                }
-                if mr.state == "opened" && mr.canMerge {
-                    Button("合并", systemImage: "arrow.triangle.merge") { merging = true }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(busy || !mergeable(mr))
-                        .help(mergeable(mr) ? "" : mr.draft ? "草稿状态不能合并，先标记为就绪" : "有冲突，需要先解决")
-                }
-                if mr.state == "closed" { Button("重新打开") { setState("reopen") }.disabled(busy) }
-                Button { MenuBuilder.popUp(moreEntries(mr)) } label: { Image(systemName: "ellipsis") }.help("更多")
             }
             switch tab {
             case .overview: overview(mr, projectPath: projectPath)

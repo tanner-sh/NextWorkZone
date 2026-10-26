@@ -323,10 +323,7 @@ struct SearchPage: View {
         let q = input.trimmingCharacters(in: .whitespaces)
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("搜索").font(.largeTitle.weight(.semibold))
-                    Text("本机数据（待办、笔记、知识库、本机问题库和 Wiki 库、剪贴板）先显示，GitLab 等服务器结果随后补上。").font(.callout).foregroundStyle(.secondary)
-                }
+                Text("本机数据（待办、笔记、知识库、本机问题库和 Wiki 库、剪贴板）先显示，GitLab 等服务器结果随后补上。").font(.callout).foregroundStyle(.secondary)
                 HStack {
                     if search.pending { ProgressView().controlSize(.small) } else { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }
                     TextField("输入至少两个字", text: $input).textFieldStyle(.plain).font(.title3).focused($focused)
@@ -334,12 +331,6 @@ struct SearchPage: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Theme.fieldFill, in: Capsule())
-                Picker("", selection: $scope) {
-                    ForEach(Scope.allCases) { s in Text(search.results != nil ? "\(s.label) \(count(s))" : s.label).tag(s) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
                 if let e = search.error { ErrorBox(message: e) }
                 if let errs = search.results?.errors, !errs.isEmpty { Notice(text: errs.joined(separator: "；")) }
                 if q.count < 2 { Text("输入至少两个字开始搜索。").foregroundStyle(.secondary) }
@@ -349,6 +340,15 @@ struct SearchPage: View {
             .padding(28)
             .frame(maxWidth: 980, alignment: .leading)
             .frame(maxWidth: .infinity)
+        }
+        .pageToolbar {
+            ToolbarItem(placement: .navigation) {
+                Picker("范围", selection: $scope) {
+                    ForEach(Scope.allCases) { s in Text(search.results != nil ? "\(s.label) \(count(s))" : s.label).tag(s) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
         }
         .issueMenuDialogs(issueMenu)
         .onAppear {
