@@ -55,6 +55,8 @@ struct JiraTransportTests {
         #expect(requests[3].value(forHTTPHeaderField: "X-Atlassian-Token") == "no-check")
         #expect(requests[3].httpBody?.range(of: Data("离线附件".utf8)) != nil)
         #expect(try body(requests[4]) == ["rendererType":"atlassian-wiki-renderer", "unrenderedMarkup":"*预览*", "issueKey":"PROJ-123"])
+        // 渲染接口返回 HTML，只接受 JSON 时真实的 Jira 会回 406
+        #expect(requests[4].value(forHTTPHeaderField: "Accept") == "text/html")
     }
     @Test func readsOrderedFieldsAndProtectsCredentials() async throws {
         let transport = OfflineTransport([.response(200, #"{"fields":{"summary":"内容"},"editmeta":{"fields":{"summary":{"name":"概要","schema":{"type":"string"}},"duedate":{"name":"日期"}}}}"#)]), jira = client(transport)

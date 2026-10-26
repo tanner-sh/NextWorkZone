@@ -57,7 +57,10 @@ public struct JiraClient: Sendable {
     public func renderWiki(_ markup: String, issueKey: String?) async throws -> String {
         var body: [String: JSONValue] = ["rendererType":"atlassian-wiki-renderer", "unrenderedMarkup": .string(markup)]
         if let issueKey { body["issueKey"] = .string(issueKey) }
-        return String(decoding: try await rest.response("POST", "/rest/api/1.0/render", body: .object(body)).data, as: UTF8.self)
+        // 这个接口返回 HTML：按默认的 Accept: application/json 请求时 Jira 回 406
+        var request = try rest.request("POST", "/rest/api/1.0/render", body: .object(body))
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        return String(decoding: try await rest.http.send(request).data, as: UTF8.self)
     }
     public func findUsers(_ query: String, field: String, issueKey: String?, projectKey: String?) async throws -> [UserRef] {
         let raw: JSONDocument
