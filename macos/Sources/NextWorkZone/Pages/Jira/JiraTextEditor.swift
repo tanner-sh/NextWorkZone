@@ -279,66 +279,63 @@ struct JiraTextEditor: View {
     // MARK: 工具栏
 
     private var toolbar: some View {
-        HStack(spacing: 2) {
-            Menu {
-                Button("正文") { if let h = controller.heading { controller.toggleHeading(h) } }
-                ForEach(1...4, id: \.self) { level in Button("标题 \(level)") { controller.toggleHeading(level) } }
-            } label: {
-                Image(systemName: "textformat.size")
-            }
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("段落格式")
-            tool("bold", "粗体（⌘B）", controller.marks.contains(.bold)) { controller.toggleMark(.bold) }
-            tool("italic", "斜体（⌘I）", controller.marks.contains(.italic)) { controller.toggleMark(.italic) }
-            tool("underline", "下划线（⌘U）", controller.marks.contains(.underline)) { controller.toggleMark(.underline) }
-            tool("strikethrough", "删除线", controller.marks.contains(.strike)) { controller.toggleMark(.strike) }
-            tool("chevron.left.forwardslash.chevron.right", "行内代码", controller.marks.contains(.code)) { controller.toggleMark(.code) }
-            Menu {
-                Button("默认颜色") { controller.setColor(nil) }
-                ForEach(Self.colors, id: \.self) { c in
-                    Button { controller.setColor(c) } label: { Label(c, systemImage: "circle.fill").foregroundStyle(ClipFmt.color(c)) }
+        FormatBar {
+            FormatGroup {
+                Menu {
+                    Button("正文") { if let h = controller.heading { controller.toggleHeading(h) } }
+                    ForEach(1...4, id: \.self) { level in Button("标题 \(level)") { controller.toggleHeading(level) } }
+                } label: {
+                    Image(systemName: "textformat.size").frame(width: 26, height: 24)
                 }
-            } label: {
-                Image(systemName: "paintpalette")
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("段落格式")
+                FormatButton("bold", "粗体（⌘B）", controller.marks.contains(.bold)) { controller.toggleMark(.bold) }
+                FormatButton("italic", "斜体（⌘I）", controller.marks.contains(.italic)) { controller.toggleMark(.italic) }
+                FormatButton("underline", "下划线（⌘U）", controller.marks.contains(.underline)) { controller.toggleMark(.underline) }
+                FormatButton("strikethrough", "删除线", controller.marks.contains(.strike)) { controller.toggleMark(.strike) }
+                FormatButton("chevron.left.forwardslash.chevron.right", "行内代码", controller.marks.contains(.code)) { controller.toggleMark(.code) }
+                Menu {
+                    Button("默认颜色") { controller.setColor(nil) }
+                    ForEach(Self.colors, id: \.self) { c in
+                        Button { controller.setColor(c) } label: { Label(c, systemImage: "circle.fill").foregroundStyle(ClipFmt.color(c)) }
+                    }
+                } label: {
+                    Image(systemName: "paintpalette").frame(width: 26, height: 24)
+                }
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("文字颜色")
+                FormatButton("link", "链接", controller.link != nil) { linkDraft = controller.link ?? "https://" }
             }
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("文字颜色")
-            tool("link", "链接", controller.link != nil) { linkDraft = controller.link ?? "https://" }
-            Divider().frame(height: 14)
-            tool("list.bullet", "无序列表", controller.list == .bullet) { controller.toggleList(.bullet) }
-            tool("list.number", "有序列表", controller.list == .ordered) { controller.toggleList(.ordered) }
-            tool("text.quote", "引用", controller.quote) { controller.toggleQuote() }
-            tool("curlybraces.square", "代码块（原样显示）", controller.code) { controller.toggleCode() }
-            tool("tablecells", "插入表格", false) { controller.insertTable() }
-            tool("minus", "分隔线", false) { controller.insertRule() }
+            FormatGroup {
+                FormatButton("list.bullet", "无序列表", controller.list == .bullet) { controller.toggleList(.bullet) }
+                FormatButton("list.number", "有序列表", controller.list == .ordered) { controller.toggleList(.ordered) }
+                FormatButton("text.quote", "引用", controller.quote) { controller.toggleQuote() }
+                FormatButton("curlybraces.square", "代码块（原样显示）", controller.code) { controller.toggleCode() }
+                FormatButton("tablecells", "插入表格") { controller.insertTable() }
+                FormatButton("minus", "分隔线") { controller.insertRule() }
+            }
             if controller.table {
-                Divider().frame(height: 14)
-                ForEach([("+行", RichOps.TableOp.addRow), ("+列", .addCol), ("−行", .deleteRow), ("−列", .deleteCol), ("删表", .deleteTable)], id: \.0) { title, op in
-                    Button(title) { controller.tableOp(op) }.font(.caption)
+                FormatGroup {
+                    ForEach([("+行", RichOps.TableOp.addRow), ("+列", .addCol), ("−行", .deleteRow), ("−列", .deleteCol), ("删表", .deleteTable)], id: \.0) { title, op in
+                        FormatTextButton(label: title) { controller.tableOp(op) }
+                    }
                 }
             }
             if let draft = linkDraft {
-                TextField("", text: Binding(get: { draft }, set: { linkDraft = $0 }), prompt: Text("链接地址"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                    .onSubmit(applyLink)
-                    .onKeyPress(.escape) { linkDraft = nil; return .handled }
-                Button("确定", action: applyLink).controlSize(.small)
+                FormatGroup {
+                    TextField("", text: Binding(get: { draft }, set: { linkDraft = $0 }), prompt: Text("链接地址"))
+                        .textFieldStyle(.plain)
+                        .frame(width: 220)
+                        .padding(.horizontal, 6)
+                        .onSubmit(applyLink)
+                        .onKeyPress(.escape) { linkDraft = nil; return .handled }
+                    FormatTextButton(label: "确定", action: applyLink)
+                }
             }
-            Spacer(minLength: 0)
         }
-        .buttonStyle(.borderless)
-    }
-
-    private func tool(_ icon: String, _ title: String, _ active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .frame(width: 24, height: 22)
-                .selectionBackground(active, radius: 5)
-        }
-        .help(title)
+        .animation(.snappy(duration: 0.2), value: controller.table)
     }
 
     private func applyLink() {

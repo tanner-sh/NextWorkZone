@@ -229,7 +229,6 @@ struct WikiPageEditor: View {
                 .noticeBackground(.orange)
             }
             if let error { ErrorBox(message: error) }
-            toolbar
             if let doc {
                 ScrollView {
                     RichEditorView(
@@ -243,6 +242,8 @@ struct WikiPageEditor: View {
                     )
                     .padding(.bottom, 40)
                 }
+                // 格式栏浮在正文上方，正文滚到它下面
+                .safeAreaBar(edge: .top) { toolbar.padding(.bottom, 6) }
             } else {
                 LoadingView()
             }
@@ -267,61 +268,56 @@ struct WikiPageEditor: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 2) {
-            tool("arrow.uturn.backward", "撤销（⌘Z）", false) { controller.undo() }
-            tool("arrow.uturn.forward", "重做（⇧⌘Z）", false) { controller.redo() }
-            Divider().frame(height: 14)
-            tool("paragraphsign", "正文", controller.heading == nil) { if let h = controller.heading { controller.toggleHeading(h) } }
-            ForEach(1...3, id: \.self) { level in
-                Button { controller.toggleHeading(level) } label: {
-                    Text("H\(level)").font(.system(size: 12, weight: .semibold)).frame(width: 24, height: 22)
-                        .selectionBackground(controller.heading == level, radius: 5)
-                }
-                .help("\(level) 级标题")
+        FormatBar {
+            FormatGroup {
+                FormatButton("arrow.uturn.backward", "撤销（⌘Z）") { controller.undo() }
+                FormatButton("arrow.uturn.forward", "重做（⇧⌘Z）") { controller.redo() }
             }
-            Divider().frame(height: 14)
-            tool("bold", "粗体（⌘B）", controller.marks.contains(.bold)) { controller.toggleMark(.bold) }
-            tool("italic", "斜体（⌘I）", controller.marks.contains(.italic)) { controller.toggleMark(.italic) }
-            tool("underline", "下划线（⌘U）", controller.marks.contains(.underline)) { controller.toggleMark(.underline) }
-            tool("strikethrough", "删除线", controller.marks.contains(.strike)) { controller.toggleMark(.strike) }
-            tool("chevron.left.forwardslash.chevron.right", "行内代码", controller.marks.contains(.code)) { controller.toggleMark(.code) }
-            tool("link", "链接", controller.link != nil) { linkDraft = controller.link ?? "" }
-            Divider().frame(height: 14)
-            tool("list.bullet", "无序列表", controller.list == .bullet) { controller.toggleList(.bullet) }
-            tool("list.number", "有序列表", controller.list == .ordered) { controller.toggleList(.ordered) }
-            tool("text.quote", "引用", controller.quote) { controller.toggleQuote() }
-            tool("tablecells", "插入表格", false) { controller.insertTable() }
-            tool("minus", "分隔线", false) { controller.insertRule() }
+            FormatGroup {
+                FormatButton("paragraphsign", "正文", controller.heading == nil) { if let h = controller.heading { controller.toggleHeading(h) } }
+                ForEach(1...3, id: \.self) { level in
+                    FormatTextButton(label: "H\(level)", title: "\(level) 级标题", active: controller.heading == level) { controller.toggleHeading(level) }
+                }
+            }
+            FormatGroup {
+                FormatButton("bold", "粗体（⌘B）", controller.marks.contains(.bold)) { controller.toggleMark(.bold) }
+                FormatButton("italic", "斜体（⌘I）", controller.marks.contains(.italic)) { controller.toggleMark(.italic) }
+                FormatButton("underline", "下划线（⌘U）", controller.marks.contains(.underline)) { controller.toggleMark(.underline) }
+                FormatButton("strikethrough", "删除线", controller.marks.contains(.strike)) { controller.toggleMark(.strike) }
+                FormatButton("chevron.left.forwardslash.chevron.right", "行内代码", controller.marks.contains(.code)) { controller.toggleMark(.code) }
+                FormatButton("link", "链接", controller.link != nil) { linkDraft = controller.link ?? "" }
+            }
+            FormatGroup {
+                FormatButton("list.bullet", "无序列表", controller.list == .bullet) { controller.toggleList(.bullet) }
+                FormatButton("list.number", "有序列表", controller.list == .ordered) { controller.toggleList(.ordered) }
+                FormatButton("text.quote", "引用", controller.quote) { controller.toggleQuote() }
+                FormatButton("tablecells", "插入表格") { controller.insertTable() }
+                FormatButton("minus", "分隔线") { controller.insertRule() }
+            }
             if controller.table {
-                Divider().frame(height: 14)
-                ForEach([("+行", RichOps.TableOp.addRow), ("+列", .addCol), ("−行", .deleteRow), ("−列", .deleteCol), ("删表", .deleteTable)], id: \.0) { t, op in
-                    Button(t) { controller.tableOp(op) }.font(.caption)
+                FormatGroup {
+                    ForEach([("+行", RichOps.TableOp.addRow), ("+列", .addCol), ("−行", .deleteRow), ("−列", .deleteCol), ("删表", .deleteTable)], id: \.0) { t, op in
+                        FormatTextButton(label: t) { controller.tableOp(op) }
+                    }
                 }
             }
             if let draft = linkDraft {
-                TextField("", text: Binding(get: { draft }, set: { linkDraft = $0 }), prompt: Text("粘贴链接地址，回车插入"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
-                    .onSubmit {
-                        let url = linkDraft?.trimmingCharacters(in: .whitespaces) ?? ""
-                        linkDraft = nil
-                        controller.setLink(url.isEmpty ? nil : url)
-                        controller.focus()
-                    }
-                    .onKeyPress(.escape) { linkDraft = nil; return .handled }
+                FormatGroup {
+                    TextField("", text: Binding(get: { draft }, set: { linkDraft = $0 }), prompt: Text("粘贴链接地址，回车插入"))
+                        .textFieldStyle(.plain)
+                        .frame(width: 240)
+                        .padding(.horizontal, 6)
+                        .onSubmit {
+                            let url = linkDraft?.trimmingCharacters(in: .whitespaces) ?? ""
+                            linkDraft = nil
+                            controller.setLink(url.isEmpty ? nil : url)
+                            controller.focus()
+                        }
+                        .onKeyPress(.escape) { linkDraft = nil; return .handled }
+                }
             }
-            Spacer(minLength: 0)
         }
-        .buttonStyle(.borderless)
-    }
-
-    private func tool(_ icon: String, _ title: String, _ active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .frame(width: 24, height: 22)
-                .selectionBackground(active, radius: 5)
-        }
-        .help(title)
+        .animation(.snappy(duration: 0.2), value: controller.table)
     }
 }
 

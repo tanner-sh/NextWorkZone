@@ -21,6 +21,8 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
     @State private var issueDraft: IssueDraft?
     @State private var titleDebounce = Debouncer()
     @State private var editingTitle = false
+    /// 编辑器与固定在顶部的格式栏共用
+    @State private var editor = RichEditorController()
     /// 按顺序保存
     @State private var saving = Task<Void, Never> {}
 
@@ -130,7 +132,8 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
     private func content(_ doc: Doc) -> some View {
         let isDaily = doc.kind == "daily"
         return ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            // 格式栏是正文这一节的标题：滚动时固定在顶部，浮在正文上方
+            LazyVStack(alignment: .leading, spacing: 12, pinnedViews: .sectionHeaders) {
                 HStack(alignment: .firstTextBaseline) {
                     if isDaily {
                         Text(doc.day ?? "").font(.largeTitle.weight(.semibold))
@@ -160,20 +163,25 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                     .padding(8)
                     .noticeBackground(.green)
                 }
-                NoteEditor(
-                    docId: doc.id,
-                    value: doc.content,
-                    placeholder: isDaily ? "今天做了什么、遇到什么问题、明天要做什么…" : nil,
-                    onChange: { md in save { $0.content = md } },
-                    onCreateTodos: { lines in createTodos(lines, doc) },
-                    onCreateIssue: { text, insert in
+                Section {
+                    NoteEditor(
+                        docId: doc.id,
+                        value: doc.content,
+                        placeholder: isDaily ? "今天做了什么、遇到什么问题、明天要做什么…" : nil,
+                        onChange: { md in save { $0.content = md } },
+                        controller: editor,
+                        showsToolbar: false
+                    )
+                    if let saveError { ErrorBox(message: "保存失败：\(saveError)") }
+                    footer(doc)
+                    if doc.createdAt != 0 { BacklinksSection(system: "doc", itemKey: doc.id, title: "引用了本文的内容", hideEmpty: true) }
+                } header: {
+                    NoteFormatBar(controller: editor, onCreateTodos: { lines in createTodos(lines, doc) }, onCreateIssue: { text, insert in
                         let lines = text.components(separatedBy: "\n")
                         issueDraft = IssueDraft(summary: lines[0].trimmingCharacters(in: .whitespaces), description: lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), insert: insert)
-                    }
-                )
-                if let saveError { ErrorBox(message: "保存失败：\(saveError)") }
-                footer(doc)
-                if doc.createdAt != 0 { BacklinksSection(system: "doc", itemKey: doc.id, title: "引用了本文的内容", hideEmpty: true) }
+                    })
+                    .padding(.vertical, 6)
+                }
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 22)
