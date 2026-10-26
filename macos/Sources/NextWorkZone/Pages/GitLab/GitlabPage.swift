@@ -206,9 +206,15 @@ struct GitlabPage: View {
         }
         ToolbarItemGroup(placement: .navigation) {
             if mode == .mrs {
-                Picker("状态", selection: $mrState) { ForEach(mrStates, id: \.0) { Text($0.1).tag($0.0) } }
-                    .pickerStyle(.menu)
-                    .help("合并请求的状态")
+                // 工具栏中的菜单样式 Picker 不显示当前值，改用显示状态名的菜单
+                Menu {
+                    ForEach(mrStates, id: \.0) { st in
+                        Toggle(st.1, isOn: Binding(get: { mrState == st.0 }, set: { if $0 { mrState = st.0 } }))
+                    }
+                } label: {
+                    Text(mrStates.first { $0.0 == mrState }?.1 ?? "状态")
+                }
+                .help("合并请求的状态")
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
                     .disabled(mrList.loading).help("刷新")
             } else {

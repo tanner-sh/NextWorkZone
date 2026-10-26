@@ -181,6 +181,11 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                         issueDraft = IssueDraft(summary: lines[0].trimmingCharacters(in: .whitespaces), description: lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), insert: insert)
                     })
                     .padding(.vertical, 6)
+                    // 滚到格式栏下面的正文先淡出，玻璃按钮组之间的缝隙里不露出半行字
+                    .background {
+                        LinearGradient(stops: [.init(color: Color(nsColor: .textBackgroundColor), location: 0.55), .init(color: Color(nsColor: .textBackgroundColor).opacity(0), location: 1)], startPoint: .top, endPoint: .bottom)
+                            .padding(.horizontal, -28)
+                    }
                 }
             }
             .padding(.horizontal, 28)

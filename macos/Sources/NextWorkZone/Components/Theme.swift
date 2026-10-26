@@ -72,12 +72,13 @@ extension View {
     /// 贴在列表顶上的筛选框、输入框：列表可以滚到它们下面，滚过去的内容由系统渐隐（滚动边缘效果）。
     /// `inset`：左右留白（列表本身占满宽度时与列表行对齐）。
     func listHeader(inset: CGFloat = 0, @ViewBuilder _ content: () -> some View) -> some View {
-        safeAreaBar(edge: .top) {
-            VStack(alignment: .leading, spacing: 8) { content() }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, inset)
-                .padding(.bottom, 8)
-        }
+        scrollEdgeEffectStyle(.soft, for: .top)
+            .safeAreaBar(edge: .top) {
+                VStack(alignment: .leading, spacing: 8) { content() }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, inset)
+                    .padding(.bottom, 8)
+            }
     }
 }
 

@@ -164,6 +164,17 @@ enum DevBridge {
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return "{\"error\":\"snapshot\"}" }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        case "/scroll":
+            // 滚动主窗口中某点（窗口坐标，左上角为原点）所在的滚动区：dy 为向下滚动的点数
+            guard let window = MainWindow.window, let root = window.contentView,
+                  let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return #"{"error":"scroll"}"# }
+            let point = NSPoint(x: x, y: root.bounds.height - y)
+            guard let scroll = root.hitTest(point)?.enclosingScrollView else { return #"{"error":"no scroll view"}"# }
+            let clip = scroll.contentView
+            var origin = clip.bounds.origin
+            origin.y += CGFloat(Double(query["dy"] ?? "200") ?? 200) * (clip.isFlipped ? 1 : -1)
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
         case "/toolbar":
             // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）
             let items = MainWindow.window?.toolbar?.items.map { item in

@@ -170,8 +170,7 @@ struct WeeklyPage: View {
             ToolbarItem {
                 Button("预览并保存", systemImage: "square.and.arrow.down") { actionError = nil; confirmSave = true }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!dirty || busy)
+                    .prominentToolbarButton(dirty && !busy)
             }
         }
         .pageSubtitle(.weekly, entry?.sectionTitle ?? "")

@@ -27,6 +27,12 @@ final class PageTitles {
 }
 
 extension View {
+    /// 工具栏中的主要操作：可用时为醒目的着色按钮，不可用时为普通按钮（着色按钮不可用时是蓝底灰字，看不清）。
+    @ViewBuilder
+    func prominentToolbarButton(_ enabled: Bool) -> some View {
+        if enabled { buttonStyle(.borderedProminent) } else { disabled(true) }
+    }
+
     /// 页面的工具栏按钮：页面显示时才出现在窗口工具栏中。
     func pageToolbar<Items: ToolbarContent>(@ToolbarContentBuilder _ items: @escaping () -> Items) -> some View {
         modifier(PageToolbar(items: items))

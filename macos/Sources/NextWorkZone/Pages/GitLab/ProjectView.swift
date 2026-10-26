@@ -85,11 +85,16 @@ struct ProjectView: View {
         if !(tab == .mrs && openMr != nil) {
             if tab == .code || tab == .commits {
                 ToolbarItem {
-                    Picker(selection: Binding(get: { ref }, set: { openBranch($0) })) {
-                        ForEach(branches) { b in Text(b.name).tag(b.name) }
-                    } label: { Label("分支", systemImage: "arrow.triangle.branch") }
-                    .pickerStyle(.menu)
-                    .help("分支")
+                    // 工具栏中的菜单样式 Picker 不显示当前值，改用显示分支名的菜单
+                    Menu {
+                        ForEach(branches) { b in
+                            Toggle(b.name, isOn: Binding(get: { b.name == ref }, set: { if $0 { openBranch(b.name) } }))
+                        }
+                    } label: {
+                        Label(ref, systemImage: "arrow.triangle.branch")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .help("切换分支")
                 }
             }
             ToolbarItemGroup {
