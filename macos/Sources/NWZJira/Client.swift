@@ -38,6 +38,7 @@ public struct JiraClient: Sendable {
         request.httpBody = multipart.data; request.setValue(multipart.contentType, forHTTPHeaderField: "Content-Type"); request.setValue("no-check", forHTTPHeaderField: "X-Atlassian-Token")
         return try JSONDocument(data: await rest.http.send(request).data).list.map(Attachment.init(raw:))
     }
+    public func deleteAttachment(id: String) async throws { _ = try await rest.response("DELETE", "/rest/api/2/attachment/" + RESTClient.component(id)) }
     public func editFields(_ key: String) async throws -> [FieldMeta] {
         let raw = try await get(Self.issuePath(key), query: [("expand", "editmeta")])
         return JiraFields.parse(raw["editmeta"]["fields"]).map { field in var field = field; field.value = JiraFields.formValue(field.kind, raw["fields"][field.key]); return field }

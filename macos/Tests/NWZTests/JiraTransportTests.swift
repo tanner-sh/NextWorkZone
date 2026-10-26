@@ -20,6 +20,12 @@ struct JiraTransportTests {
         #expect(try body(requests[2]) == ["body":"修改"])
         #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer test-token" && $0.url?.path.hasPrefix("/context/rest/api/2/") == true })
     }
+    @Test func deletesAttachmentOffline() async throws {
+        let transport = OfflineTransport([.response(204, "")]), jira = client(transport)
+        try await jira.deleteAttachment(id: "10086")
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "DELETE" && request.url?.path == "/context/rest/api/2/attachment/10086")
+    }
     @Test func writesIssueAssignmentsWatchingAndLinksOffline() async throws {
         let transport = OfflineTransport(Array(repeating: .response(200, #"{"key":"PROJ-123"}"#), count: 7)), jira = client(transport)
         #expect(try await jira.createIssue(fields: ["summary":"新问题"]) == "PROJ-123")

@@ -347,12 +347,13 @@ extension BacklinksSection where Actions == EmptyView {
     }
 }
 
-/// 附件：缩略图或文件类型，点击预览，右键可用系统应用打开。
+/// 附件：缩略图或文件类型，点击预览，右键可用系统应用打开或删除。
 struct AttachmentsSection: View {
     var issueKey: String
     var attachments: [Attachment]
     var busy: String?
     var onPick: () -> Void
+    var onDelete: (Attachment) -> Void
 
     var body: some View {
         BlockSection(title: "附件", icon: "paperclip", count: attachments.isEmpty ? nil : "\(attachments.count)") {
@@ -361,9 +362,12 @@ struct AttachmentsSection: View {
             if let busy { Text(busy).font(.callout).foregroundStyle(.secondary) }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 10)], alignment: .leading, spacing: 10) {
                 ForEach(Array(attachments.enumerated()), id: \.element.id) { i, a in
-                    AttachmentTile(attachment: a, service: .jira)
+                    AttachmentTile(attachment: a, service: .jira, onDelete: busy == nil ? { if Confirm.ask(Self.confirmText(a)) { onDelete(a) } } : nil)
                         .onTapGesture { AttachmentViewer.show(attachments, index: i, service: .jira) }
-                        .contextMenu(specs: { AttachmentViewer.menu(a, preview: { AttachmentViewer.show(attachments, index: i, service: .jira) }, service: .jira) })
+                        .contextMenu(specs: {
+                            AttachmentViewer.menu(a, preview: { AttachmentViewer.show(attachments, index: i, service: .jira) }, service: .jira)
+                                + [.separator, .item("删除", icon: "trash", disabled: busy != nil, destructive: true, confirm: Self.confirmText(a)) { onDelete(a) }]
+                        })
                 }
             }
             HStack(spacing: 4) {
@@ -374,11 +378,16 @@ struct AttachmentsSection: View {
             .foregroundStyle(.secondary)
         }
     }
+
+    static func confirmText(_ a: Attachment) -> String { "确认从 Jira 删除附件“\(a.filename)”？删除后无法恢复。" }
 }
 
 struct AttachmentTile: View {
     var attachment: Attachment
     var service: Service
+    /// 有值时悬停在右上角显示删除按钮
+    var onDelete: (() -> Void)?
+    @State private var hover = false
 
     var body: some View {
         let a = attachment
@@ -399,11 +408,22 @@ struct AttachmentTile: View {
             }
             .frame(height: 80)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                if hover, let onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash").font(.caption).padding(5).background(.regularMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(4)
+                    .help("删除附件")
+                }
+            }
             Text(a.filename).font(.caption).lineLimit(1).truncationMode(.middle)
             Text(Fmt.size(a.size)).font(.caption2).foregroundStyle(.secondary)
         }
         .contentShape(Rectangle())
-        .help("\(a.filename)\n\(a.author) · \(Fmt.time(a.created))\n点击预览，右键可用系统应用打开")
+        .onHover { hover = $0 }
+        .help("\(a.filename)\n\(a.author) · \(Fmt.time(a.created))\n点击预览，右键可用系统应用打开或删除")
     }
 }
 

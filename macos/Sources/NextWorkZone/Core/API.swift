@@ -154,6 +154,7 @@ final class API: @unchecked Sendable {
     func jiraSaveToolsSettings(_ settings: JiraToolsSettings) async throws -> JiraToolsSettings { try await jira.saveToolsSettings(settings) }
     func jiraReminders() async throws -> Reminders { try await jira.reminders() }
     func jiraUploadAttachments(_ key: String, paths: [String]) async throws -> [Attachment] { try await jira.uploadAttachments(key, paths: paths) }
+    func jiraDeleteAttachment(id: String) async throws { try await jira.client().deleteAttachment(id: id) }
     func jiraOpenAttachment(url: String, filename: String, service: Service = .jira) async throws -> String { try await jira.attachments.open(service: service, url: url, filename: filename) }
     func jiraEditFields(_ key: String) async throws -> [FieldMeta] { try await jira.client().editFields(key) }
     func jiraUpdateIssue(_ key: String, fields: [String: JSONValue]) async throws -> IssueDetail { try await jira.updateIssue(key, fields: fields) }

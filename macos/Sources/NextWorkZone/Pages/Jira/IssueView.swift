@@ -187,6 +187,22 @@ struct IssueView: View {
         }
     }
 
+    private func deleteAttachment(_ a: Attachment) {
+        guard let issue else { return }
+        uploading = "正在删除 \(a.filename)…"
+        Task {
+            do {
+                try await API.shared.jiraDeleteAttachment(id: a.id)
+                self.issue?.attachments.removeAll { $0.id == a.id }
+                toast("已从 \(issue.key) 删除附件 \(a.filename)")
+            } catch {
+                guard !isCancellation(error) else { uploading = nil; return }
+                toast("删除失败：\(errorMessage(error))", error: true)
+            }
+            uploading = nil
+        }
+    }
+
     /// 问题详情空白处右键：编辑、新建子任务、刷新，以及与问题列表相同的问题菜单。
     private func issueActions(_ issue: IssueDetail) -> [MenuSpec] {
         var specs: [MenuSpec] = [.action("编辑…", icon: "pencil") { editing = true }]
@@ -306,9 +322,7 @@ struct IssueView: View {
             }
         }
         .id("workspace")
-        AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading) {
-            upload(FilePicker.pick())
-        }
+        AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading, onPick: { upload(FilePicker.pick()) }, onDelete: deleteAttachment)
         IssueActivity(issue: issue, newSince: changes?.since, onCommentsChanged: { self.issue?.comments = $0 }, onTimeChanged: reload)
     }
 
