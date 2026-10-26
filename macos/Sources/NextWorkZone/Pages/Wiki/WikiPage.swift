@@ -189,7 +189,7 @@ private struct RecentList: View {
 
     private func load() async {
         error = nil
-        do { list = try await API.shared.wikiRecent(limit: 50) } catch { self.error = errorMessage(error) }
+        do { list = try await API.shared.wikiRecent(limit: 50) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 }
 
@@ -235,7 +235,7 @@ final class SpaceTree {
         error = nil
         Task {
             if spaces == nil, let cached = try? await API.shared.wikiCachedSpaces() { spaces = cached }
-            do { spaces = try await API.shared.wikiSpaces() } catch { self.error = errorMessage(error) }
+            do { spaces = try await API.shared.wikiSpaces() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 
@@ -249,6 +249,7 @@ final class SpaceTree {
                 children[id] = .loaded(list)
             } catch {
                 requested.remove(id)
+                guard !isCancellation(error) else { return }
                 children[id] = .failed(errorMessage(error))
             }
         }
@@ -458,7 +459,8 @@ private struct WikiSearchPanel: View {
                 result = try await API.shared.wikiSearch(WikiQuery(text: q, space: space, mine: mine, days: days), server: server)
                 error = nil
             } catch {
-                if !Task.isCancelled { self.error = errorMessage(error) }
+                guard !isCancellation(error) else { return }
+                self.error = errorMessage(error)
             }
             loading = false
         }
@@ -531,6 +533,7 @@ private struct NewPageSheet: View {
                 onStart(NewPageRequest(space: space, parent: parent, parentTitle: parentTitle, title: t, template: source.hasPrefix("template:") ? String(source.dropFirst(9)) : nil, storage: storage))
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 busy = false
             }

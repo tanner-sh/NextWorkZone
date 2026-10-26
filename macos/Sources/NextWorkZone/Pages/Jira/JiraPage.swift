@@ -153,6 +153,7 @@ struct JiraPage: View {
             issues = result.issues
             total = result.total
         } catch {
+            guard !isCancellation(error) else { return }
             if id == requestId {
                 self.error = errorMessage(error)
                 if cached == nil { issues = [] }
@@ -181,6 +182,7 @@ struct JiraPage: View {
                 viewedStore.load(list.map(\.key))
                 selectFirst()
             } catch {
+                guard !isCancellation(error) else { return }
                 if id == requestId { self.error = errorMessage(error) }
             }
         }
@@ -199,6 +201,7 @@ struct JiraPage: View {
                 total = result.total
                 viewedStore.load(result.issues.map(\.key))
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             loadingMore = false
@@ -621,7 +624,7 @@ private struct FieldChooserSheet: View {
         .task {
             // 先显示缓存，再取最新的字段列表（Jira 中可能新增了字段）
             all = try? await API.shared.jiraFields()
-            do { all = try await API.shared.jiraFields(refresh: true) } catch { if all == nil { self.error = errorMessage(error) } }
+            do { all = try await API.shared.jiraFields(refresh: true) } catch { if !isCancellation(error) { if all == nil { self.error = errorMessage(error) } } }
         }
     }
 }

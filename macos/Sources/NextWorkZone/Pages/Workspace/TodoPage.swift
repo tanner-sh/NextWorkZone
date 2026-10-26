@@ -108,6 +108,7 @@ struct TodoPage: View {
             todos = try await API.shared.wsTodos()
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -549,6 +550,7 @@ private struct TodoDetail: View {
                 onSaved(try await API.shared.wsSaveTodo(TodoInput(next)))
                 error = nil
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }
@@ -599,6 +601,7 @@ struct QuickTodoSheet: View {
                 Events.workspaceChanged()
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 saving = false
             }

@@ -126,6 +126,7 @@ struct SaveTemplateSheet: View {
                 toast("已保存模板“\(n)”")
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 busy = false
             }
@@ -197,7 +198,7 @@ struct ManageTemplatesSheet: View {
 
         private func run(_ action: @escaping () async throws -> Void) {
             Task {
-                do { try await action(); error = nil } catch { self.error = errorMessage(error) }
+                do { try await action(); error = nil } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             }
         }
     }

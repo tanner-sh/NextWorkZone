@@ -55,7 +55,13 @@ struct SearchPicker<Item: Hashable>: View {
                     .onChange(of: text) { _, q in query(q) }
                     .onChange(of: focused) { _, f in
                         if f && searchOnFocus && text.isEmpty { query("") }
+                        // 焦点移走后收起；稍等一下，让点击候选项先生效
+                        if !f { Task { try? await Task.sleep(for: .milliseconds(200)); if !focused { open = false } } }
                     }
+                    // 已有焦点时再次点击也重新列出候选（焦点没变，上面的 onChange 不会触发）
+                    .simultaneousGesture(TapGesture().onEnded {
+                        if !open && (searchOnFocus || !text.isEmpty) { query(text) }
+                    })
                     .onChange(of: sourceVersion) {
                         if focused && (searchOnFocus || !text.isEmpty) { query(text) }
                     }
@@ -78,8 +84,11 @@ struct SearchPicker<Item: Hashable>: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .popover(isPresented: $open, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            // 候选列表直接展开在输入框下方：弹出框在对话框里第一次点击会被吞掉并关闭，选不中，之后也不再出现
+            if open {
                 candidates
+                    .background(.background, in: .rect(cornerRadius: Theme.controlRadius))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.controlRadius).strokeBorder(.separator))
             }
         }
     }
@@ -120,7 +129,7 @@ struct SearchPicker<Item: Hashable>: View {
                 .frame(maxHeight: 280)
             }
         }
-        .frame(width: 360)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func query(_ q: String) {
@@ -137,6 +146,7 @@ struct SearchPicker<Item: Hashable>: View {
                 results = list
                 error = nil
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 results = []
             }

@@ -84,7 +84,7 @@ struct LinksSection: View {
                             Button {
                                 guard Confirm.ask("删除与 \(l.key) 的链接？") else { return }
                                 Task {
-                                    do { onChanged(try await API.shared.jiraDeleteLink(issue.key, linkId: l.id)) } catch { self.error = errorMessage(error) }
+                                    do { onChanged(try await API.shared.jiraDeleteLink(issue.key, linkId: l.id)) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                                 }
                             } label: { Image(systemName: "xmark") }
                             .buttonStyle(.borderless)
@@ -150,6 +150,7 @@ private struct LinkForm: View {
                             for t in targets { detail = try await API.shared.jiraAddLink(issueKey, typeId: relation.typeId, other: t.key, outward: relation.outward) }
                             if let detail { onDone(detail) }
                         } catch {
+                            guard !isCancellation(error) else { return }
                             self.error = errorMessage(error)
                             saving = false
                         }
@@ -167,7 +168,7 @@ private struct LinkForm: View {
                 let list = try await API.shared.jiraLinkTypes()
                 Self.typesCache = list
                 types = list
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -208,7 +209,7 @@ struct SimilarSection: View {
         .task(id: "\(issue.key)|\(issue.summary)|\(resolvedOnly)") {
             result = nil
             error = nil
-            do { result = try await API.shared.jiraSimilarIssues(issue.key, summary: issue.summary, resolvedOnly: resolvedOnly) } catch { self.error = errorMessage(error) }
+            do { result = try await API.shared.jiraSimilarIssues(issue.key, summary: issue.summary, resolvedOnly: resolvedOnly) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }

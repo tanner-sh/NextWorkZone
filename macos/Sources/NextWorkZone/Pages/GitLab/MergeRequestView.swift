@@ -92,6 +92,7 @@ struct MergeRequestView: View {
             description = detail.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : await GitLab.markdown(detail.description, projectUrl: GitLab.projectUrl(detail))
             approvals = try? await API.shared.glMrApprovals(String(detail.projectId), iid: iid)
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -104,6 +105,7 @@ struct MergeRequestView: View {
             if tab == .commits && commits == nil { commits = try await API.shared.glMrCommits(String(mr.projectId), iid: iid) }
             if tab == .changes && changes == nil { changes = try await API.shared.glMrChanges(String(mr.projectId), iid: iid) }
         } catch {
+            guard !isCancellation(error) else { return }
             subError = errorMessage(error)
         }
     }
@@ -566,7 +568,7 @@ private struct EditNoteBox: View {
                 Button(saving ? "保存中…" : "保存") {
                     saving = true
                     Task {
-                        do { try await onSave(text) } catch { self.error = errorMessage(error) }
+                        do { try await onSave(text) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                         saving = false
                     }
                 }
@@ -615,6 +617,7 @@ private struct MergeSheet: View {
                             onMerged(try await API.shared.glMrMerge(String(mr.projectId), iid: mr.iid, squash: squash, removeSourceBranch: removeSource, sha: mr.sha))
                             dismiss()
                         } catch {
+                            guard !isCancellation(error) else { return }
                             self.error = errorMessage(error)
                             submitting = false
                         }
@@ -672,6 +675,7 @@ private struct EditMrSheet: View {
                         onSaved(try await API.shared.glMrUpdate(String(mr.projectId), iid: mr.iid, update: update))
                         dismiss()
                     } catch {
+                        guard !isCancellation(error) else { return }
                         self.error = errorMessage(error)
                         submitting = false
                     }
@@ -818,6 +822,7 @@ struct NewMergeRequestSheet: View {
                 }
             }
         } catch {
+            guard !isCancellation(error) else { return }
             compareError = errorMessage(error)
         }
     }
@@ -831,6 +836,7 @@ struct NewMergeRequestSheet: View {
                 onCreated(mr)
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 submitting = false
             }

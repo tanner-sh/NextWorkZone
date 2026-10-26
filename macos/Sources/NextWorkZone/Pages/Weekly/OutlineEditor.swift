@@ -144,7 +144,12 @@ private struct OutlineField: NSViewRepresentable {
     var onCommand: (OutlineEditor.Command, Int) -> Bool
     var onPaste: (String) -> Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        let c = Coordinator()
+        // 创建视图时设置初始文字就会触发代理回调，此时 updateNSView 还没来得及设置 parent
+        c.parent = self
+        return c
+    }
 
     func makeNSView(context: Context) -> PasteField {
         let field = PasteField()

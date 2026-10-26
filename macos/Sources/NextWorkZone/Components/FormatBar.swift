@@ -2,12 +2,13 @@ import SwiftUI
 
 /// 编辑器的格式栏：按功能分成几组玻璃胶囊，浮在正文上方（正文滚到下面时透过玻璃隐约可见）。
 /// 组与组靠得近时玻璃会融在一起，出现、消失的组（例如表格操作）带融合动画。
+/// 编辑区较窄（窗口最小宽度）时放不下的组换到下一行，不压缩、不裁掉。
 struct FormatBar<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 6) { content() }
+            FlowLayout(spacing: 6) { content() }
         }
         .buttonStyle(.borderless)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -63,6 +64,8 @@ struct FormatTextButton: View {
     var body: some View {
         Button(action: action) {
             Text(label).font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 5)
                 .frame(minWidth: 26, minHeight: 24)
                 .selectionBackground(active, radius: 12)

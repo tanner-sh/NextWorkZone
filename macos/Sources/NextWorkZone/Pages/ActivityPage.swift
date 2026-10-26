@@ -33,6 +33,7 @@ struct ActivityPage: View {
     static let mergeMs: Int64 = 10 * 60 * 1000
 
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var filter: Filter = .all
     @State private var loading = false
     @State private var error: String?
@@ -75,13 +76,13 @@ struct ActivityPage: View {
             }
         }
         .issueMenuDialogs(issueMenu)
-        .task(id: ready) { if ready { await refresh() } }
+        .task(id: "\(ready)|\(visit)") { if ready { await refresh() } }
     }
 
     private func refresh() async {
         loading = true
         error = nil
-        do { try await model.pollActivity() } catch { self.error = errorMessage(error) }
+        do { try await model.pollActivity() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         loading = false
     }
 

@@ -75,6 +75,7 @@ struct NotesPage: View {
             (notes, days) = try await (n, d)
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -89,6 +90,7 @@ struct NotesPage: View {
                 selected = doc.id
                 await load()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }

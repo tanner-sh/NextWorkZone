@@ -3,6 +3,7 @@ import SwiftUI
 /// 周报：编辑共享 Wiki 页面中自己那一行（周报内容、风险事项），旁边是按这一周的工作生成的草稿。
 struct WeeklyPage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var view: WeeklyView?
     @State private var error: String?
     @State private var loading = false
@@ -62,6 +63,8 @@ struct WeeklyPage: View {
             }
         }
         .task(id: configured) { if configured { await load(nil) } }
+        // 回到页面时重新读取正在看的小节（别人可能改过）；有未保存的修改时不动
+        .onChange(of: visit) { if configured && view != nil && !dirty && !busy { Task { await load(entry?.sectionTitle) } } }
         .onChange(of: content) { persistDraft() }
         .onChange(of: risk) { persistDraft() }
         .sheet(isPresented: $confirmSave) { saveSheet }
@@ -69,6 +72,11 @@ struct WeeklyPage: View {
     }
 
     private func apply(_ next: WeeklyView) {
+        // 内容没有变化时只更新页面信息，编辑区不重建（重建会丢掉光标）
+        if let entry = next.entry, entry == view?.entry, !dirty {
+            view = next
+            return
+        }
         view = next
         guard let entry = next.entry else {
             content = []
@@ -85,7 +93,7 @@ struct WeeklyPage: View {
     private func load(_ section: String?) async {
         loading = true
         error = nil
-        do { apply(try await API.shared.weeklyLoad(section: section)) } catch { self.error = errorMessage(error) }
+        do { apply(try await API.shared.weeklyLoad(section: section)) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         loading = false
     }
 
@@ -233,6 +241,7 @@ struct WeeklyPage: View {
                 notice = result.changed ? "已保存到 Wiki（版本 \(result.version)）" : "内容没有变化，无需保存"
                 await load(entry.sectionTitle)
             } catch {
+                guard !isCancellation(error) else { return }
                 actionError = errorMessage(error)
             }
             busy = false
@@ -249,6 +258,7 @@ struct WeeklyPage: View {
                 confirmCreate = false
                 notice = "已新建 \(title) 小节"
             } catch {
+                guard !isCancellation(error) else { return }
                 actionError = errorMessage(error)
             }
             busy = false
@@ -330,7 +340,7 @@ private struct DraftPanel: View {
         loading = true
         error = nil
         Task {
-            do { draft = try await API.shared.weeklyDraft(section: section) } catch { self.error = errorMessage(error) }
+            do { draft = try await API.shared.weeklyDraft(section: section) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             loading = false
         }
     }

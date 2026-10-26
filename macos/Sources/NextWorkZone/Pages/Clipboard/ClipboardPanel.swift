@@ -215,7 +215,7 @@ final class ClipPanelModel {
 
     func run(_ action: @escaping @MainActor () async throws -> Void) {
         Task {
-            do { try await action() } catch { flash(errorMessage(error), error: true) }
+            do { try await action() } catch { if !isCancellation(error) { flash(errorMessage(error), error: true) } }
         }
     }
 
@@ -791,7 +791,7 @@ struct ClipPreviewLayer: View {
             text = item.text
             title = item.title
             if item.truncated {
-                do { text = try await API.shared.clipText(item.id).text } catch { model.flash(errorMessage(error), error: true) }
+                do { text = try await API.shared.clipText(item.id).text } catch { if !isCancellation(error) { model.flash(errorMessage(error), error: true) } }
             }
             if edit {
                 draft = text

@@ -8,14 +8,23 @@ import SwiftUI
 /// 也不要按页面是否显示加减间隔，那样每次切换整条工具栏都会重建。
 /// 醒目的按钮用 `.borderedProminent`（工具栏中显示为着色的玻璃）；`.glassProminent` 放在工具栏中会让整个窗口的内容画不出来。
 /// 标题由 RootView 按当前页面统一设置（几个页面都设置标题时，窗口显示的是最后更新的那个，不一定是正在显示的页面）。
+/// 工具栏晚一拍更新：创建、显示和隐藏工具栏项目要在 AppKit 中逐个增删并重新排列，耗时几十毫秒，
+/// 和页面内容放在同一帧里，点击侧栏或列表后要等它们都做完才看到新内容。先显示内容，下一轮再更新工具栏：
+/// 视图出现后才创建项目（例如切换问题时新的问题详情），切换页面时下一轮才显示或隐藏。
 private struct PageToolbar<Items: ToolbarContent>: ViewModifier {
     @Environment(\.pageActive) private var active
+    @State private var shown: Bool?
     let items: () -> Items
 
     func body(content: Content) -> some View {
-        content.toolbar {
-            items().hidden(!active)
-        }
+        content
+            .toolbar {
+                if let shown { items().hidden(!shown) }
+            }
+            .task { shown = active }
+            .onChange(of: active) { _, now in
+                Task { @MainActor in shown = now }
+            }
     }
 }
 

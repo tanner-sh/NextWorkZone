@@ -56,7 +56,7 @@ final class UnifiedSearch {
                 results = Self.merge(local, remote)
                 pending = false
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 pending = false
             }

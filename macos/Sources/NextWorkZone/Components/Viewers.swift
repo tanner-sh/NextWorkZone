@@ -332,6 +332,7 @@ private struct AttachmentBody: View {
             try data.write(to: url)
             file = url
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }

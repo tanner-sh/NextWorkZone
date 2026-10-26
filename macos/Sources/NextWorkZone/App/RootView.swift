@@ -1,12 +1,15 @@
 import SwiftUI
 
-/// 主窗口：侧栏 + 内容区。待办、笔记、知识库、Jira、Wiki、GitLab 切走后只隐藏、不销毁（见 KeptPages）：
-/// 回来时滚动位置、选中项、搜索条件和展开状态都还在。其余页面每次打开时重新创建。
+/// 主窗口：侧栏 + 内容区。侧栏中的页面切走后只隐藏、不销毁（见 KeptPages）：
+/// 回来时立即显示，滚动位置、选中项、搜索条件和展开状态都还在；需要最新数据的页面按 `pageVisit` 在后台刷新。
+/// 其余页面（搜索、工具）每次打开时重新创建。
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var kept: [PageID] = []
+    /// 各保留页面第几次显示
+    @State private var visits: [PageID: Int] = [:]
 
-    static let keepAlive: Set<PageID> = [.todos, .notes, .kb, .jira, .wiki, .gitlab, .settings]
+    static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats, .settings]
 
     var body: some View {
         @Bindable var model = model
@@ -16,7 +19,7 @@ struct RootView: View {
         } detail: {
             ZStack {
                 KeptPages(pages: kept, active: model.current.page) { page, active in
-                    AnyView(pageView(page).environment(\.pageActive, active).environment(model))
+                    AnyView(pageView(page).environment(\.pageActive, active).environment(\.pageVisit, visits[page] ?? 0).environment(model))
                 }
                 if !Self.keepAlive.contains(model.current.page) {
                     pageView(model.current.page)
@@ -28,6 +31,9 @@ struct RootView: View {
             .navigationTitle(title)
             .navigationSubtitle(PageTitles.shared.subtitles[model.current.page] ?? "")
         }
+        // 窗口的最小尺寸由 SwiftUI 内容决定（NSHostingController 会覆盖 window.minSize）；
+        // 太窄时列表加详情的页面挤成一个字宽，长 Wiki 页面会排成几十万点高，画面出现黑块
+        .frame(minWidth: 960, minHeight: 600)
         .overlay { ToastOverlay() }
         .overlay {
             if model.paletteOpen {
@@ -40,7 +46,8 @@ struct RootView: View {
         // 富文本右键菜单中的问题菜单（流转、分配需要的对话框）
         .issueMenuDialogs(IssueMenu.shared)
         .onChange(of: model.current.page, initial: true) { _, page in
-            if Self.keepAlive.contains(page) && !kept.contains(page) { kept.append(page) }
+            guard Self.keepAlive.contains(page) else { return }
+            if kept.contains(page) { visits[page, default: 0] += 1 } else { kept.append(page) }
         }
     }
 
@@ -73,11 +80,21 @@ private struct PageActiveKey: EnvironmentKey {
     static let defaultValue = true
 }
 
+private struct PageVisitKey: EnvironmentKey {
+    static let defaultValue = 0
+}
+
 extension EnvironmentValues {
     /// 页面是否正在显示。切走后保留的页面隐藏时为 false：不应响应快捷键、接收拖入的文件。
     var pageActive: Bool {
         get { self[PageActiveKey.self] }
         set { self[PageActiveKey.self] = newValue }
+    }
+
+    /// 保留的页面再次显示时加一（首次显示为 0）。放进 `.task(id:)` 就能在回到页面时后台刷新，已显示的内容不清空。
+    var pageVisit: Int {
+        get { self[PageVisitKey.self] }
+        set { self[PageVisitKey.self] = newValue }
     }
 }
 

@@ -164,6 +164,7 @@ struct CommentBox: View {
                 try await onSubmit(text)
                 text = ""
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             sending = false

@@ -127,6 +127,7 @@ struct StatsPage: View {
             let (h, r, a, u, w) = try await (handled, resolved, assigned, unresolved, worklogs)
             stats = Stats(handled: h, resolved: r, assigned: a.total, unresolved: u.total, worklogSeconds: w?.reduce(0) { $0 + $1.seconds })
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
         loading = false

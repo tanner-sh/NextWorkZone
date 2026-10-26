@@ -77,6 +77,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
             }
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -106,6 +107,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                 onSaved?(saved)
                 Events.workspaceChanged()
             } catch {
+                guard !isCancellation(error) else { return }
                 saveError = errorMessage(error)
             }
         }
@@ -205,6 +207,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                 Events.workspaceChanged()
                 notice = "已创建 \(lines.count) 条待办"
             } catch {
+                guard !isCancellation(error) else { return }
                 saveError = errorMessage(error)
             }
         }
@@ -218,6 +221,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                 Events.workspaceChanged()
                 onDeleted?()
             } catch {
+                guard !isCancellation(error) else { return }
                 saveError = errorMessage(error)
             }
         }
@@ -339,6 +343,7 @@ struct WorkLogPanel: View {
             log = try await API.shared.wsWorklog(day)
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
         loading = false
@@ -357,6 +362,7 @@ struct WorkLogPanel: View {
                 Events.workspaceChanged()
                 toast("已写入日记的“工作记录”")
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }

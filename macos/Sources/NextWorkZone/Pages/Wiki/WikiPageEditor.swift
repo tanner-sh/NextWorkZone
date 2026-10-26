@@ -96,6 +96,7 @@ struct WikiPageEditor: View {
             // 草稿基于的版本与当前一致时才能恢复，否则会覆盖别人的修改
             if let saved = readDraft(), saved.version == s.version { draft = saved }
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -177,6 +178,7 @@ struct WikiPageEditor: View {
                 let result = try await API.shared.wikiPreviewSave(page: pageId, xhtml: xhtml, fragments: session.fragments)
                 preview = Preview(xhtml: xhtml, result: result)
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             checking = false
@@ -389,6 +391,7 @@ private struct SaveSheet: View {
                     onSaved(id)
                 }
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             saving = false

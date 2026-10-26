@@ -179,6 +179,7 @@ struct SettingsPage: View {
                 tests = [:]
                 notice = (true, "设置已保存")
             } catch {
+                guard !isCancellation(error) else { return }
                 notice = (false, errorMessage(error))
             }
             saving = false
@@ -195,6 +196,7 @@ struct SettingsPage: View {
                 tests = [:]
                 notice = (true, imported.isEmpty ? "tokens.env 中没有可导入的令牌" : "已从 ~/.nextworkzone/tokens.env 导入 \(imported.count) 个令牌")
             } catch {
+                guard !isCancellation(error) else { return }
                 notice = (false, errorMessage(error))
             }
         }
@@ -208,6 +210,7 @@ struct SettingsPage: View {
                 fill(next)
                 tests[service] = nil
             } catch {
+                guard !isCancellation(error) else { return }
                 notice = (false, errorMessage(error))
             }
         }
@@ -216,7 +219,7 @@ struct SettingsPage: View {
     private func test(_ service: Service) {
         tests[service] = .testing
         Task {
-            do { tests[service] = .ok(try await API.shared.testConnection(service)) } catch { tests[service] = .failed(errorMessage(error)) }
+            do { tests[service] = .ok(try await API.shared.testConnection(service)) } catch { if !isCancellation(error) { tests[service] = .failed(errorMessage(error)) } }
         }
     }
 }
@@ -297,7 +300,7 @@ private struct WorkspaceSettingsSection: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         ShortcutField(value: s.captureShortcut, defaultValue: "Alt+Space", disabled: busy) { shortcut in
                             Task {
-                                do { settings = try await API.shared.wsSaveCaptureShortcut(shortcut) } catch { self.error = errorMessage(error) }
+                                do { settings = try await API.shared.wsSaveCaptureShortcut(shortcut) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                             }
                         }
                         if let e = s.captureError { Text(e).font(.caption).foregroundStyle(.red) }
@@ -312,7 +315,7 @@ private struct WorkspaceSettingsSection: View {
             Text("待办、笔记、知识库保存在本机。设置一个同步文件夹（iCloud Drive、坚果云、NAS 等）后，多台电脑会通过它自动同步。快速记录：在任何应用中按下快捷键即可弹出，记一条待办或写一笔日记。")
         }
         .task {
-            do { settings = try await API.shared.wsSettings() } catch { self.error = errorMessage(error) }
+            do { settings = try await API.shared.wsSettings() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 
@@ -323,7 +326,7 @@ private struct WorkspaceSettingsSection: View {
             do {
                 settings = try await API.shared.wsSaveSettings(syncDir: dir, jiraTodos: jiraTodos)
                 Events.workspaceChanged()
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             busy = false
         }
     }
@@ -335,7 +338,7 @@ private struct WorkspaceSettingsSection: View {
             do {
                 _ = try await API.shared.wsSync()
                 Events.workspaceChanged()
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             settings = (try? await API.shared.wsSettings()) ?? settings
             busy = false
         }
@@ -419,7 +422,7 @@ private struct JiraToolsSettingsSection: View {
                         HStack {
                             Text(statusText(status)).foregroundStyle(status?.error != nil ? .red : .secondary).lineLimit(2)
                             Button("立即同步", systemImage: "arrow.clockwise") { Task { try? await API.shared.jiraIndexSync() } }.disabled(status?.running == true)
-                            Button("重建") { Task { do { _ = try await API.shared.jiraIndexRebuild() } catch { self.error = errorMessage(error) } } }.disabled(status?.running == true).help("清空本机数据后重新同步")
+                            Button("重建") { Task { do { _ = try await API.shared.jiraIndexRebuild() } catch { if !isCancellation(error) { self.error = errorMessage(error) } } } }.disabled(status?.running == true).help("清空本机数据后重新同步")
                         }
                     }
                     if let status, !status.projects.isEmpty {
@@ -473,7 +476,7 @@ private struct JiraToolsSettingsSection: View {
                 settings = s
                 jqlDraft = s.indexJql
                 custom = !s.indexJql.isEmpty
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             dateFields = ((try? await API.shared.jiraFields()) ?? []).filter { $0.kind == "date" || $0.kind == "datetime" }
         }
     }
@@ -496,7 +499,7 @@ private struct JiraToolsSettingsSection: View {
                 settings = saved
                 jqlDraft = saved.indexJql
                 _ = try? await model.checkReminders(withNotify: false)
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             busy = false
         }
     }
@@ -552,7 +555,7 @@ private struct WikiToolsSettingsSection: View {
                         HStack {
                             Text(statusText(status)).foregroundStyle(status?.error != nil ? .red : .secondary)
                             Button("立即同步", systemImage: "arrow.clockwise") { Task { try? await API.shared.wikiIndexSync() } }.disabled(status?.running == true)
-                            Button("重建") { Task { do { _ = try await API.shared.wikiIndexRebuild() } catch { self.error = errorMessage(error) } } }.disabled(status?.running == true).help("清空本机数据后重新同步")
+                            Button("重建") { Task { do { _ = try await API.shared.wikiIndexRebuild() } catch { if !isCancellation(error) { self.error = errorMessage(error) } } } }.disabled(status?.running == true).help("清空本机数据后重新同步")
                         }
                     }
                     Picker("范围", selection: Binding(get: { s.indexSpaces.isEmpty }, set: { all in
@@ -601,7 +604,7 @@ private struct WikiToolsSettingsSection: View {
                 let s = try await API.shared.wikiToolsSettings()
                 settings = s
                 mutedDraft = s.mutedPages.joined(separator: "\n")
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             if let cached = try? await API.shared.wikiCachedSpaces() { spaces = cached }
             if let fresh = try? await API.shared.wikiSpaces() { spaces = fresh }
         }
@@ -630,7 +633,7 @@ private struct WikiToolsSettingsSection: View {
                 let saved = try await API.shared.wikiSaveToolsSettings(next)
                 settings = saved
                 mutedDraft = saved.mutedPages.joined(separator: "\n")
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             busy = false
         }
     }

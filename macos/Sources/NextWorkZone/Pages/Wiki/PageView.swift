@@ -24,6 +24,7 @@ struct PageView: View {
     @State private var favorites = WikiFavorites.shared
     @State private var issues: [String: IssueSummary] = [:]
     @State private var issueMenu = IssueMenu()
+    @State private var width: CGFloat = 0
 
     var body: some View {
         Group {
@@ -40,12 +41,14 @@ struct PageView: View {
                     }
                     .contextMenu(specs: { pageActions(page) })
                     .pageToolbar { toolbar(page) }
-                    if headings.count >= Self.tocMin {
+                    // 正文太窄时不显示目录，留给正文
+                    if headings.count >= Self.tocMin && width >= 700 {
                         Divider()
                         TableOfContents(items: headings) { scrollTo = $0 }
                             .frame(width: 220)
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             } else {
                 LoadingView()
             }
@@ -71,6 +74,7 @@ struct PageView: View {
             issueKeys = keys
             if let anchor, let i = headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = headings[i].index }
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -115,6 +119,7 @@ struct PageView: View {
                 try await API.shared.wikiSetTask(page.id, task: id, done: done)
                 toast(done ? "已完成任务" : "已取消完成")
             } catch {
+                guard !isCancellation(error) else { return }
                 self.doc = self.doc?.settingTask(id, done: !done)
                 toast("修改任务失败：\(errorMessage(error))", error: true)
             }
@@ -321,7 +326,7 @@ private struct WikiComments: View {
 
     private func load() async {
         error = nil
-        do { comments = try await API.shared.wikiComments(pageId) } catch { self.error = errorMessage(error) }
+        do { comments = try await API.shared.wikiComments(pageId) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 }
 
@@ -401,7 +406,7 @@ struct HistorySheet: View {
         .frame(width: 980, height: 680)
         .task {
             selected = page.version
-            do { versions = try await API.shared.wikiVersions(page.id) } catch { self.error = errorMessage(error) }
+            do { versions = try await API.shared.wikiVersions(page.id) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -426,7 +431,7 @@ struct VersionDiff: View {
         .task(id: "\(from)-\(to)") {
             diff = nil
             error = nil
-            do { diff = try await API.shared.wikiDiff(pageId, from: from, to: to) } catch { self.error = errorMessage(error) }
+            do { diff = try await API.shared.wikiDiff(pageId, from: from, to: to) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -444,7 +449,7 @@ private struct VersionContent: View {
         }
         .task(id: version) {
             html = nil
-            do { html = try await API.shared.wikiVersionHtml(pageId, version: version) } catch { self.error = errorMessage(error) }
+            do { html = try await API.shared.wikiVersionHtml(pageId, version: version) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }

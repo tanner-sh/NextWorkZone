@@ -107,6 +107,7 @@ enum MenuBuilder {
                     let specs = try await load()
                     MenuBuilder.fill(menu, specs.isEmpty ? [.label("没有可用的项")] : specs)
                 } catch {
+                    guard !isCancellation(error) else { return }
                     MenuBuilder.fill(menu, [.label("加载失败：\(errorMessage(error))")])
                     started = false
                 }

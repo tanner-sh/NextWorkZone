@@ -23,8 +23,23 @@ enum Fmt {
     }()
 
     /// 解析三个系统返回的时间。Jira 使用 `+0800` 形式的时区，需要先补上冒号。
+    // 解析结果的缓存：详情、列表每次重绘都要把同一批时间解析很多遍（正则匹配和 ISO 8601 解析都不便宜）。NSCache 可以跨线程使用
+    nonisolated(unsafe) private static let parsed: NSCache<NSString, NSDate> = {
+        let c = NSCache<NSString, NSDate>()
+        c.countLimit = 20_000
+        return c
+    }()
+
     static func parse(_ value: String?) -> Date? {
-        guard var value, !value.isEmpty else { return nil }
+        guard let value, !value.isEmpty else { return nil }
+        if let hit = parsed.object(forKey: value as NSString) { return hit as Date }
+        guard let date = parseUncached(value) else { return nil }
+        parsed.setObject(date as NSDate, forKey: value as NSString)
+        return date
+    }
+
+    private static func parseUncached(_ input: String) -> Date? {
+        var value = input
         if let m = value.firstMatch(of: /([+-]\d{2})(\d{2})$/) {
             value = String(value[..<m.range.lowerBound]) + m.1 + ":" + m.2
         }

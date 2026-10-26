@@ -187,6 +187,8 @@ enum MainWindow {
 
     static func show() {
         guard let window else { return }
+        // 在窗口里点侧栏导航时窗口本来就在最前面，不必每次都和窗口服务器往返一趟
+        if NSApp.isActive && window.isKeyWindow && window.isVisible { return }
         NSApp.unhide(nil)
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)

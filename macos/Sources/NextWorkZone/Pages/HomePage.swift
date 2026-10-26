@@ -119,6 +119,7 @@ struct LoadableBody<T, Content: View>: View {
 /// 每条可以打开、标为已处理、转为待办或稍后提醒；处理之后有新变化时会再次出现。
 struct AttentionCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var todos: [Todo] = []
     @State private var loading = false
     @State private var error: String?
@@ -163,7 +164,7 @@ struct AttentionCard: View {
                 }
             }
         }
-        .task {
+        .task(id: visit) {
             await refresh()
             await loadTodos()
         }
@@ -194,6 +195,7 @@ struct AttentionCard: View {
     private func run(_ task: @escaping () async throws -> Void) {
         Task {
             do { try await task() } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 await model.refreshInbox()
             }
@@ -259,6 +261,7 @@ struct AttentionCard: View {
 /// 到期（含逾期）的待办，可直接勾选；添加和安排在“待办”页（或 ⌘⇧N）。
 struct TodayTodosCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var todos: [Todo]?
 
     var body: some View {
@@ -285,7 +288,7 @@ struct TodayTodosCard: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: visit) { await load() }
         .onWorkspaceChange { Task { await load() } }
     }
 
@@ -307,16 +310,17 @@ struct TodayTodosCard: View {
 
 struct WeeklyCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var state: Loadable<WeeklyView> = .loading
 
     var body: some View {
         Card(title: "本周周报", actions: { Button("去填写") { model.navigate(.weekly) }.buttonStyle(.borderless) }) {
             LoadableBody(state: state, offLabel: "Wiki 或周报页面") { view in status(view) }
         }
-        .task(id: "\(model.isReady(.confluence))|\(model.settings?.weeklyPageId ?? "")") {
+        .task(id: "\(model.isReady(.confluence))|\(model.settings?.weeklyPageId ?? "")|\(visit)") {
             guard model.settings != nil else { return }
             guard model.isReady(.confluence), !(model.settings?.weeklyPageId ?? "").isEmpty else { state = .off; return }
-            do { state = .ok(try await API.shared.weeklyLoad()) } catch { state = .failed(errorMessage(error)) }
+            do { state = .ok(try await API.shared.weeklyLoad()) } catch { if !isCancellation(error) { state = .failed(errorMessage(error)) } }
         }
     }
 
@@ -344,6 +348,7 @@ struct WeeklyCard: View {
 
 struct MyIssuesCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var state: Loadable<SearchResult> = .loading
     @State private var issueMenu = IssueMenu()
 
@@ -378,14 +383,14 @@ struct MyIssuesCard: View {
             }
         }
         .issueMenuDialogs(issueMenu)
-        .task(id: model.isReady(.jira)) { await load() }
+        .task(id: "\(model.isReady(.jira))|\(visit)") { await load() }
     }
 
     private func load() async {
         guard model.settings != nil else { return }
         guard model.isReady(.jira) else { state = .off; return }
         if let cached = try? await API.shared.jiraCachedSearch(JQL.myUnresolved), state.value == nil { state = .ok(cached) }
-        do { state = .ok(try await API.shared.jiraSearch(JQL.myUnresolved)) } catch { if state.value == nil { state = .failed(errorMessage(error)) } }
+        do { state = .ok(try await API.shared.jiraSearch(JQL.myUnresolved)) } catch { if !isCancellation(error) { if state.value == nil { state = .failed(errorMessage(error)) } } }
     }
 
     /// 通过右键菜单修改过的问题，覆盖列表中的旧数据
@@ -401,6 +406,7 @@ struct MyIssuesCard: View {
 /// 今天的工作记录：最近几件事，可直接生成日报。
 struct WorkLogCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var state: Loadable<WorkLog> = .loading
     @State private var report: String?
 
@@ -428,8 +434,8 @@ struct WorkLogCard: View {
                 }
             }
         }
-        .task {
-            do { state = .ok(try await API.shared.wsWorklog(day)) } catch { state = .failed(errorMessage(error)) }
+        .task(id: visit) {
+            do { state = .ok(try await API.shared.wsWorklog(day)) } catch { if !isCancellation(error) { state = .failed(errorMessage(error)) } }
         }
         .sheet(item: Binding(get: { report.map { ReportText(text: $0) } }, set: { report = $0?.text })) { r in
             ReportSheet(day: day, text: r.text)
@@ -473,6 +479,7 @@ struct ReportSheet: View {
 
 struct WikiRecentCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var state: Loadable<[WikiRecent]> = .loading
 
     var body: some View {
@@ -494,16 +501,17 @@ struct WikiRecentCard: View {
                 }
             }
         }
-        .task(id: model.isReady(.confluence)) {
+        .task(id: "\(model.isReady(.confluence))|\(visit)") {
             guard model.settings != nil else { return }
             guard model.isReady(.confluence) else { state = .off; return }
-            do { state = .ok(try await API.shared.wikiRecent(limit: 8)) } catch { state = .failed(errorMessage(error)) }
+            do { state = .ok(try await API.shared.wikiRecent(limit: 8)) } catch { if !isCancellation(error) { state = .failed(errorMessage(error)) } }
         }
     }
 }
 
 struct ProjectsCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pageVisit) private var visit
     @State private var state: Loadable<[Project]> = .loading
 
     var body: some View {
@@ -521,11 +529,11 @@ struct ProjectsCard: View {
                 }
             }
         }
-        .task(id: model.isReady(.gitlab)) {
+        .task(id: "\(model.isReady(.gitlab))|\(visit)") {
             guard model.settings != nil else { return }
             guard model.isReady(.gitlab) else { state = .off; return }
             if let cached = try? await API.shared.glCachedProjects() { state = .ok(cached) }
-            do { state = .ok(try await API.shared.glProjects()) } catch { if state.value == nil { state = .failed(errorMessage(error)) } }
+            do { state = .ok(try await API.shared.glProjects()) } catch { if !isCancellation(error) { if state.value == nil { state = .failed(errorMessage(error)) } } }
         }
     }
 }

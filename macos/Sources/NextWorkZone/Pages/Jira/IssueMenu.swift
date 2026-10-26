@@ -273,6 +273,7 @@ struct TransitionSheet: View {
                 onDone(detail)
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = FieldForm.explain(errorMessage(error), transition.fields)
                 submitting = false
             }
@@ -352,6 +353,7 @@ struct AssignSheet: View {
                             onDone(try await API.shared.jiraAssign(key, assignee: user == Self.unassigned ? nil : user.name))
                             dismiss()
                         } catch {
+                            guard !isCancellation(error) else { return }
                             self.error = errorMessage(error)
                             busy = false
                         }

@@ -21,6 +21,14 @@ func errorMessage(_ error: Error) -> String {
     return error.localizedDescription
 }
 
+/// 任务被取消（切换了条目、关闭了对话框）：不是失败，结果也已过时，不应写入界面状态。
+/// URLSession 被取消时抛出的是 URLError.cancelled（中文描述“已取消”），不是 CancellationError。
+func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if (error as? URLError)?.code == .cancelled { return true }
+    return Task.isCancelled
+}
+
 /// 界面的类型化入口：各方法直接调用 Swift 服务。
 final class API: @unchecked Sendable {
     nonisolated(unsafe) static var shared: API!

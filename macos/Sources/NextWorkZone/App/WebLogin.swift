@@ -24,6 +24,7 @@ enum WebLogin {
                 windows[service] = login
                 login.show()
             } catch {
+                guard !isCancellation(error) else { return }
                 toast("无法打开登录窗口：\(errorMessage(error))", error: true)
             }
         }

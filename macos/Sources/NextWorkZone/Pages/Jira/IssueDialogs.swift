@@ -45,6 +45,7 @@ struct EditIssueSheet: View {
             initial = FieldForm.initialValues(meta)
             values = initial
         } catch {
+            guard !isCancellation(error) else { return }
             loadError = errorMessage(error)
         }
     }
@@ -62,6 +63,7 @@ struct EditIssueSheet: View {
                 onDone(try await API.shared.jiraUpdateIssue(issueKey, fields: changes))
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = FieldForm.explain(errorMessage(error), fields)
                 saving = false
             }
@@ -175,7 +177,7 @@ struct CreateIssueSheet: View {
                 projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? AppPreferences.shared.dictionary(forKey: Self.lastKey)?["project"] as? String
             }
             if let cached = try? await API.shared.jiraCachedCreateProjects(), projects == nil { projects = cached }
-            do { projects = try await API.shared.jiraCreateProjects() } catch { projectsError = errorMessage(error) }
+            do { projects = try await API.shared.jiraCreateProjects() } catch { if !isCancellation(error) { projectsError = errorMessage(error) } }
             chooseType()
         }
         .onChange(of: projectKey) { chooseType() }
@@ -205,6 +207,7 @@ struct CreateIssueSheet: View {
             fields = meta
             values = next
         } catch {
+            guard !isCancellation(error) else { return }
             fieldsError = errorMessage(error)
         }
     }
@@ -226,6 +229,7 @@ struct CreateIssueSheet: View {
                 onCreated(created.key)
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = FieldForm.explain(errorMessage(error), fields)
                 submitting = false
             }

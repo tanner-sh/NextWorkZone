@@ -129,6 +129,7 @@ struct JiraTextEditor: View {
             warning = unsupported ? "内容包含可视化模式无法完整保留的格式（宏或插件内容），在此模式下修改可能丢失这些格式，建议切换到文本模式编辑。" : nil
             doc = rendered
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = "无法显示可视化内容：\(errorMessage(error))"
             doc = doc ?? .empty
         }
@@ -144,6 +145,7 @@ struct JiraTextEditor: View {
                 emitted = wiki
                 text = wiki
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }
@@ -373,7 +375,12 @@ struct MarkupTextView: NSViewRepresentable {
 
     private static let mentionPattern = try! NSRegularExpression(pattern: "(?:^|[\\s\u{00a0}(（])@([^\\s\u{00a0}@\\[\\]]{0,20})$")
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        let c = Coordinator()
+        // 创建视图时设置初始文字就会触发代理回调，此时 updateNSView 还没来得及设置 parent
+        c.parent = self
+        return c
+    }
 
     func makeNSView(context: Context) -> KeyTextView {
         let tv = KeyTextView(usingTextLayoutManager: false)

@@ -128,6 +128,7 @@ struct KnowledgePage: View {
             pages = try await API.shared.wsDocs("page")
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -153,6 +154,7 @@ struct KnowledgePage: View {
                 await load()
                 selected = doc.id
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }
@@ -399,6 +401,7 @@ private struct ClipStatus: View {
                 _ = try await KBImport.reclip(doc)
                 latest = nil
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             busy = false
@@ -457,6 +460,7 @@ private struct MoveSheet: View {
                 onMoved()
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }
@@ -564,6 +568,7 @@ private struct PublishSheet: View {
                 published = try await API.shared.wsPublishToWiki(docId: doc.id, mode: mode == "create" ? "create" : overwrite ? "overwrite" : "update", parent: parent?.id ?? "", title: title.trimmingCharacters(in: .whitespaces), storage: converted.storage, assets: converted.assets)
                 Events.workspaceChanged()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             publishing = false
@@ -635,6 +640,7 @@ private struct ImportSheet: View {
                 onImported(doc)
                 dismiss()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 busy = false
             }

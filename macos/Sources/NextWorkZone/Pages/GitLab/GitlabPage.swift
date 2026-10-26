@@ -39,6 +39,7 @@ final class MrListModel {
             hasMore = list.count == Self.pageSize
             page = p
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
         loading = false
@@ -171,7 +172,7 @@ struct GitlabPage: View {
         loading = true
         error = nil
         if projects == nil, let cached = try? await API.shared.glCachedProjects() { projects = cached }
-        do { projects = try await API.shared.glProjects() } catch { self.error = errorMessage(error) }
+        do { projects = try await API.shared.glProjects() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         loading = false
         // 记住上次打开的项目；没有指定项目时打开它（不在列表里就打开第一个），右侧不留空
         if selected == nil && pendingPath == nil, let list = projects, !list.isEmpty {

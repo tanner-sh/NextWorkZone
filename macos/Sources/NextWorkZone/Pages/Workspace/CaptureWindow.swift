@@ -121,6 +121,7 @@ final class CaptureModel {
                 try? await Task.sleep(for: .milliseconds(500))
                 CaptureWindow.shared.hide()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 busy = false
             }

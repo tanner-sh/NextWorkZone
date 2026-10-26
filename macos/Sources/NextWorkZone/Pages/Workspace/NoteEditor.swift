@@ -28,6 +28,7 @@ struct NoteEditor<Footer: View>: View {
     @State private var emitted: String?
     @State private var saving = Task<Void, Never> {}
     @State private var docPicker = false
+    @State private var docPickerAnchor: CGRect?
     @State private var error: String?
 
     var body: some View {
@@ -47,9 +48,13 @@ struct NoteEditor<Footer: View>: View {
                         let asset = try await API.shared.wsSaveAsset(base64: data.base64EncodedString(), mime: mime)
                         return RichImage(src: "ws://asset/\(asset.id)")
                     },
-                    onDocLinkTrigger: { _ in docPicker = true }
+                    onDocLinkTrigger: { rect in
+                        docPickerAnchor = rect
+                        docPicker = true
+                    }
                 )
-                .popover(isPresented: $docPicker, arrowEdge: .bottom) {
+                // 弹出框指向刚输入的 [[（长笔记中编辑器很高，指向整个编辑器时会出现在看不到的地方）
+                .popover(isPresented: $docPicker, attachmentAnchor: .rect(docPickerAnchor.map { .rect($0) } ?? .bounds), arrowEdge: .bottom) {
                     DocLinkPicker(currentId: docId) { id, title in
                         docPicker = false
                         controller.insertLink(text: title.isEmpty ? "无标题" : title, href: "ws://doc/\(id)", replacing: 2)
@@ -75,6 +80,7 @@ struct NoteEditor<Footer: View>: View {
             doc = try await Rich.fromMarkdown(value)
             emitted = value
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = "内容解析失败：\(errorMessage(error))"
             doc = doc ?? .empty
         }
@@ -91,6 +97,7 @@ struct NoteEditor<Footer: View>: View {
                 emitted = md
                 onChange(md)
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = "保存失败：\(errorMessage(error))"
             }
         }

@@ -18,6 +18,7 @@ import NWZServices
 /// - `/palette`、`/quick-todo`、`/capture`、`/clipboard`：打开对应的浮层或窗口；
 /// - `/theme?mode=dark|light|system`：切换外观；
 /// - `/key?chars=<文字>`：向主窗口发送按键（测试键盘操作）。
+/// - `/hit?x=&y=`：主窗口中某点（窗口坐标，左上角为原点）所在的视图及其各级上层（排查绘制问题）。
 @MainActor
 enum DevBridge {
     static func findEditor(_ view: NSView?) -> EditorTextView? {
@@ -175,6 +176,13 @@ enum DevBridge {
             origin.y += CGFloat(Double(query["dy"] ?? "200") ?? 200) * (clip.isFlipped ? 1 : -1)
             clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
             scroll.reflectScrolledClipView(clip)
+        case "/hit":
+            guard let window = MainWindow.window, let root = window.contentView?.superview,
+                  let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return "{}" }
+            var v = root.hitTest(NSPoint(x: x, y: root.bounds.height - y))
+            var chain: [String] = []
+            while let cur = v { chain.append("\(type(of: cur)) \(cur.frame)"); v = cur.superview }
+            return String(data: (try? JSONSerialization.data(withJSONObject: chain)) ?? Data(), encoding: .utf8) ?? "[]"
         case "/toolbar":
             // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）
             let items = MainWindow.window?.toolbar?.items.map { item in

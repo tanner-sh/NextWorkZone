@@ -26,28 +26,36 @@ struct KeptPages: NSViewRepresentable {
                     // 隐藏的页面中的输入框不应继续接收键盘输入
                     container.window?.makeFirstResponder(nil)
                 }
-                host.isHidden = !isActive
+                Self.track(host, in: container, active: isActive)
             } else {
-                let host = NSHostingView(rootView: content(page, isActive))
-                host.translatesAutoresizingMaskIntoConstraints = false
+                let host = PageHost(rootView: content(page, isActive))
                 container.addSubview(host)
-                NSLayoutConstraint.activate([
-                    host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                    host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                    host.topAnchor.constraint(equalTo: container.topAnchor),
-                    host.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                ])
-                host.isHidden = !isActive
+                Self.track(host, in: container, active: isActive)
                 c.hosts[page] = host
             }
             c.shown[page] = isActive
         }
     }
 
+    /// 只有显示的页面跟随窗口大小。隐藏的页面也跟着缩放的话，拖动窗口边框时每一帧都要重新排版所有打开过的页面
+    /// （打开过长 Wiki 页面后尤其卡）；隐藏的页面保持原来的大小，再显示时调整一次。
+    private static func track(_ host: NSView, in container: NSView, active: Bool) {
+        host.autoresizingMask = active ? [.width, .height] : []
+        if active && host.frame != container.bounds { host.frame = container.bounds }
+        host.isHidden = !active
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    /// 页面的宿主视图。窗口每次重新计算标题栏的可拖动区域（切换页面、工具栏变化时）都会问各个宿主视图能否获得焦点，
+    /// SwiftUI 为了回答要把整个页面的可聚焦控件遍历一遍；隐藏的页面也被遍历的话，打开过的页面越多切换越慢。
+    /// 隐藏的页面本来就不该获得焦点，直接回答不能。
+    final class PageHost: NSHostingView<AnyView> {
+        override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
+    }
+
     final class Coordinator {
-        var hosts: [PageID: NSHostingView<AnyView>] = [:]
+        var hosts: [PageID: PageHost] = [:]
         var shown: [PageID: Bool] = [:]
     }
 }

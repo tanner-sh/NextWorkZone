@@ -68,6 +68,7 @@ struct ProjectView: View {
             }
             ref = wanted?.name ?? proj.defaultBranch ?? list.first?.name ?? ""
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -221,6 +222,7 @@ private struct CodeTab: View {
             do {
                 if isFile { file = try await API.shared.glFile(projectId, ref: ref, path: path) } else { entries = try await API.shared.glTree(projectId, ref: ref, path: path) }
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
         }
@@ -280,6 +282,7 @@ private struct CommitsTab: View {
             hasMore = list.count == 50
             page = p
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
         loading = false
@@ -324,7 +327,7 @@ struct CommitDetailView: View {
             .padding(.vertical, 8)
         }
         .task(id: sha) {
-            do { detail = try await API.shared.glCommit(projectId, sha: sha) } catch { self.error = errorMessage(error) }
+            do { detail = try await API.shared.glCommit(projectId, sha: sha) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -435,7 +438,7 @@ private struct CompareTab: View {
         error = nil
         result = nil
         Task {
-            do { result = try await API.shared.glCompare(projectId, from: from, to: to) } catch { self.error = errorMessage(error) }
+            do { result = try await API.shared.glCompare(projectId, from: from, to: to) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
             loading = false
         }
     }

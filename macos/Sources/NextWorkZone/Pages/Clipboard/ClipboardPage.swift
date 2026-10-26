@@ -477,7 +477,7 @@ struct ClipboardSettingsForm: View {
     }
 
     private func refresh() async {
-        do { settings = try await API.shared.clipSettings() } catch { self.error = errorMessage(error) }
+        do { settings = try await API.shared.clipSettings() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 
     private func bind<T>(_ key: WritableKeyPath<ClipboardConfig, T>) -> Binding<T> {
@@ -488,7 +488,7 @@ struct ClipboardSettingsForm: View {
         guard var config = settings?.config else { return }
         patch(&config)
         Task {
-            do { settings = try await API.shared.clipSaveSettings(config) } catch { self.error = errorMessage(error) }
+            do { settings = try await API.shared.clipSaveSettings(config) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 

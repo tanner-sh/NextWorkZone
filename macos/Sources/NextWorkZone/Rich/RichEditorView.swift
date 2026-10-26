@@ -102,7 +102,7 @@ struct RichEditorView: NSViewRepresentable {
     var onImage: ((Data, String, Int) async throws -> RichImage)? = nil
     /// 拖入的其他文件：返回要插入的内容（例如附件引用），nil 表示不接受
     var onFile: ((URL) -> RichInline?)? = nil
-    /// 输入 [[ 时（光标处的矩形，屏幕坐标）
+    /// 输入 [[ 时（光标处的矩形，编辑器自己的坐标：左上角为原点，可直接作为弹出框的位置）
     var onDocLinkTrigger: ((NSRect) -> Void)? = nil
     /// ⌘↩
     var submit: (() -> Void)? = nil
@@ -183,7 +183,7 @@ struct RichEditorView: NSViewRepresentable {
             debounce.run(after: .milliseconds(400)) { [weak self] in self?.flush() }
             parent.controller.canUndo = tv.undoManager?.canUndo ?? false
             if let trigger = parent.onDocLinkTrigger, tv.justTypedDocLinkTrigger() {
-                trigger(tv.caretScreenRect())
+                trigger(tv.caretRect())
             }
             parent.onMention?(tv.mentionQuery())
         }
@@ -869,9 +869,11 @@ final class EditorTextView: NSTextView {
         return (string as NSString).substring(with: NSRange(location: sel.location - 2, length: 2)) == "[["
     }
 
-    func caretScreenRect() -> NSRect {
-        let r = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
-        return r
+    /// 光标处的矩形（本视图的坐标）。
+    func caretRect() -> NSRect {
+        let screen = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
+        guard let window else { return .zero }
+        return convert(window.convertFromScreen(screen), from: nil)
     }
 
     // MARK: 粘贴与拖入
@@ -918,6 +920,7 @@ final class EditorTextView: NSTextView {
                     let image = try await onImage(data, mime, i)
                     self.insertImage(src: image.src, file: image.file)
                 } catch {
+                    guard !isCancellation(error) else { return }
                     toast("图片保存失败：\(errorMessage(error))", error: true)
                 }
             }

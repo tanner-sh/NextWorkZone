@@ -27,6 +27,17 @@ struct IssueView: View {
     @State private var issueMenu = IssueMenu()
     @State private var dropping = false
     @State private var uploading: String?
+    /// 下面的区块（子任务、关联、相似问题、评论等）晚一帧再创建：先尽快显示标题、字段和描述
+    @State private var showRest = false
+
+    init(issueKey: String, onChanged: @escaping (IssueSummary) -> Void) {
+        self.issueKey = issueKey
+        self.onChanged = onChanged
+        // 看过的问题先显示上次的内容，后台再刷新：在列表里来回点时不必每次都等网络
+        let cached = IssueCache.shared.get(issueKey)
+        _issue = State(initialValue: cached?.detail)
+        _transitions = State(initialValue: cached?.transitions ?? [])
+    }
 
     var body: some View {
         Group {
@@ -128,6 +139,7 @@ struct IssueView: View {
             let (detail, available) = try await (detailTask, transitionsTask)
             issue = detail
             transitions = available ?? []
+            IssueCache.shared.put(detail, transitions: transitions)
             // 记录查看；上次查看之后有更新时找出具体变化
             let previous = await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
             if let since = ViewedStore.lastSeen(local: previous, issue: detail.summaryValue), Fmt.ms(detail.updated) > since {
@@ -136,6 +148,7 @@ struct IssueView: View {
                 changes = (since, list.filter { Fmt.ms($0.created) > since })
             }
         } catch {
+            guard !isCancellation(error) else { return }
             self.error = errorMessage(error)
         }
     }
@@ -143,10 +156,12 @@ struct IssueView: View {
     private func apply(_ detail: IssueDetail) {
         issue = detail
         onChanged(detail.summaryValue)
+        IssueCache.shared.put(detail, transitions: transitions)
         // 自己的修改不算新变化
         Task {
             await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
             transitions = (try? await API.shared.jiraTransitions(issueKey)) ?? []
+            IssueCache.shared.put(detail, transitions: transitions)
         }
     }
 
@@ -165,6 +180,7 @@ struct IssueView: View {
                 self.issue?.attachments += added
                 toast("已上传 \(added.count) 个附件到 \(issue.key)")
             } catch {
+                guard !isCancellation(error) else { return }
                 toast("上传失败：\(errorMessage(error))", error: true)
             }
             uploading = nil
@@ -256,38 +272,44 @@ struct IssueView: View {
                 BlockSection(title: f.name) { RichHTML(html: f.html!, service: .jira) }
             }
 
-            SubtasksSection(issue: issue, menu: issueMenu) { creatingSubtask = true }
-            LinksSection(issue: issue, menu: issueMenu, onChanged: apply)
-            SimilarSection(issue: issue, menu: issueMenu)
-            WikiPagesSection(issueKey: issue.key) { related["wiki"] = $0 }.id("wiki")
-            IssueCodeSection(issue: issue, onCount: { related["code"] = $0 }, onComment: { id in withAnimation { proxy.scrollTo("comment-\(id)", anchor: .center) } }).id("code")
-            BacklinksSection(system: "jira", itemKey: issue.key, title: "工作空间", onCount: { related["workspace"] = $0 }) {
-                Button("添加待办", systemImage: "checkmark.square") {
-                    Task {
-                        do {
-                            try await TodoActions.addIssueTodo(key: issue.key, summary: issue.summary)
-                            toast("已添加待办")
-                        } catch { notice = errorMessage(error) }
-                    }
-                }
-                Button("写笔记", systemImage: "note.text") {
-                    Task {
-                        do { model.navigate(NavTarget(.notes, docId: try await DocActions.createIssueNote(key: issue.key, summary: issue.summary).id)) } catch { notice = errorMessage(error) }
-                    }
-                }
-                Button("沉淀到知识库", systemImage: "book") {
-                    Task {
-                        do { model.navigate(NavTarget(.kb, docId: try await KBImport.issueToPage(issue.key).id)) } catch { notice = errorMessage(error) }
-                    }
-                }
-            }
-            .id("workspace")
-            AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading) {
-                upload(FilePicker.pick())
-            }
-            IssueActivity(issue: issue, newSince: changes?.since, onCommentsChanged: { self.issue?.comments = $0 }, onTimeChanged: reload)
+            if showRest { rest(issue, proxy: proxy) }
         }
         .controlSize(.regular)
+        .task { showRest = true }
+    }
+
+    @ViewBuilder
+    private func rest(_ issue: IssueDetail, proxy: ScrollViewProxy) -> some View {
+        SubtasksSection(issue: issue, menu: issueMenu) { creatingSubtask = true }
+        LinksSection(issue: issue, menu: issueMenu, onChanged: apply)
+        SimilarSection(issue: issue, menu: issueMenu)
+        WikiPagesSection(issueKey: issue.key) { related["wiki"] = $0 }.id("wiki")
+        IssueCodeSection(issue: issue, onCount: { related["code"] = $0 }, onComment: { id in withAnimation { proxy.scrollTo("comment-\(id)", anchor: .center) } }).id("code")
+        BacklinksSection(system: "jira", itemKey: issue.key, title: "工作空间", onCount: { related["workspace"] = $0 }) {
+            Button("添加待办", systemImage: "checkmark.square") {
+                Task {
+                    do {
+                        try await TodoActions.addIssueTodo(key: issue.key, summary: issue.summary)
+                        toast("已添加待办")
+                    } catch { if !isCancellation(error) { notice = errorMessage(error) } }
+                }
+            }
+            Button("写笔记", systemImage: "note.text") {
+                Task {
+                    do { model.navigate(NavTarget(.notes, docId: try await DocActions.createIssueNote(key: issue.key, summary: issue.summary).id)) } catch { if !isCancellation(error) { notice = errorMessage(error) } }
+                }
+            }
+            Button("沉淀到知识库", systemImage: "book") {
+                Task {
+                    do { model.navigate(NavTarget(.kb, docId: try await KBImport.issueToPage(issue.key).id)) } catch { if !isCancellation(error) { notice = errorMessage(error) } }
+                }
+            }
+        }
+        .id("workspace")
+        AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading) {
+            upload(FilePicker.pick())
+        }
+        IssueActivity(issue: issue, newSince: changes?.since, onCommentsChanged: { self.issue?.comments = $0 }, onTimeChanged: reload)
     }
 
     /// 与网页一致只显示问题界面上的字段；“显示全部”时再加上界面外的隐藏字段。
@@ -543,4 +565,22 @@ func loadURLs(_ providers: [NSItemProvider], completion: @escaping @MainActor ([
         }
     }
     group.notify(queue: .main) { MainActor.assumeIsolated { completion(paths.withLock { $0 }) } }
+}
+
+/// 最近看过的问题详情（只在内存中，最多几十个），切换问题时先显示，再从服务器刷新。
+@MainActor
+final class IssueCache {
+    static let shared = IssueCache()
+    private var entries: [String: (detail: IssueDetail, transitions: [Transition])] = [:]
+    private var order: [String] = []
+    private let limit = 40
+
+    func get(_ key: String) -> (detail: IssueDetail, transitions: [Transition])? { entries[key] }
+
+    func put(_ detail: IssueDetail, transitions: [Transition]) {
+        entries[detail.key] = (detail, transitions)
+        order.removeAll { $0 == detail.key }
+        order.append(detail.key)
+        if order.count > limit { entries[order.removeFirst()] = nil }
+    }
 }

@@ -583,6 +583,7 @@ struct ClipMouse: NSViewRepresentable {
                 }
                 beginDraggingSession(with: dragItems, event: start, source: self)
             } catch {
+                guard !isCancellation(error) else { return }
                 owner.onDragError(errorMessage(error))
             }
         }
@@ -657,7 +658,7 @@ struct BoardSheet: View {
             do {
                 onSaved(try await API.shared.clipSavePinboard(id: board?.id, name: name, color: color))
                 dismiss()
-            } catch { self.error = errorMessage(error) }
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -705,6 +706,7 @@ final class ClipListModel {
             hasMore = l.count == Self.page && board == nil
             error = nil
         } catch {
+            guard !isCancellation(error) else { return }
             if my == seq { self.error = errorMessage(error) }
         }
     }

@@ -83,6 +83,7 @@ private struct Comments: View {
                 draft = ""
                 images = []
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             sending = false
@@ -177,6 +178,7 @@ private struct CommentItem: View {
                 try await API.shared.jiraDeleteComment(issueKey, id: comment.id)
                 onDeleted()
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
                 busy = false
             }
@@ -196,6 +198,7 @@ private struct CommentItem: View {
                 editing = nil
                 images = []
             } catch {
+                guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
             busy = false
@@ -241,7 +244,7 @@ private struct Worklogs: View {
                                     do {
                                         logs = try await API.shared.jiraDeleteWorklog(issueKey, id: w.id)
                                         onChanged()
-                                    } catch { self.error = errorMessage(error) }
+                                    } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                                 }
                             } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除")
                         }
@@ -263,7 +266,7 @@ private struct Worklogs: View {
 
     private func load() async {
         error = nil
-        do { logs = try await API.shared.jiraWorklogs(issueKey) } catch { self.error = errorMessage(error) }
+        do { logs = try await API.shared.jiraWorklogs(issueKey) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 }
 
@@ -306,6 +309,7 @@ private struct WorklogForm: View {
                     let input = WorklogInput(started: FieldForm.jiraDateTime(f.string(from: started)), timeSpent: timeSpent.trimmingCharacters(in: .whitespaces), comment: comment)
                     Task {
                         do { onSaved(try await API.shared.jiraSaveWorklog(issueKey, id: worklog?.id, input: input)) } catch {
+                            guard !isCancellation(error) else { return }
                             self.error = errorMessage(error)
                             saving = false
                         }
@@ -404,7 +408,7 @@ private struct StatusFlow: View {
 
     private func load() async {
         error = nil
-        do { entries = try await API.shared.jiraHistory(issue.key) } catch { self.error = errorMessage(error) }
+        do { entries = try await API.shared.jiraHistory(issue.key) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 }
 
@@ -461,6 +465,6 @@ private struct HistoryList: View {
     private func load() async {
         error = nil
         // 最近的变更排在前面
-        do { entries = try await API.shared.jiraHistory(issueKey).reversed() } catch { self.error = errorMessage(error) }
+        do { entries = try await API.shared.jiraHistory(issueKey).reversed() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
     }
 }
