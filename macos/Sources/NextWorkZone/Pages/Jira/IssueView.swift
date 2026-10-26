@@ -50,7 +50,7 @@ struct IssueView: View {
                 }
                 .overlay {
                     if dropping {
-                        RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                        RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
                             .overlay(Text("上传到 \(issue.key) 的附件").font(.headline).padding(10).glassEffect())
                             .padding(8)
                             .allowsHitTesting(false)

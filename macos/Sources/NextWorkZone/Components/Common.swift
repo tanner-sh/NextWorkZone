@@ -278,8 +278,7 @@ struct ToastOverlay: View {
                     .font(.callout)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .foregroundStyle(t.error ? Color.red : Color.primary)
-                    .glassEffect(.regular, in: Capsule())
+                    .glassEffect(t.error ? .regular.tint(.red.opacity(0.35)) : .regular, in: Capsule())
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

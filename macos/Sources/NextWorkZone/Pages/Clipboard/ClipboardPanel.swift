@@ -453,7 +453,7 @@ struct ClipPanelView: View {
                 ClipPreviewLayer(model: model, item: current, edit: mode == .edit).id("\(current.id)-\(mode == .edit)")
             }
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
         .onChange(of: model.opening) {
             searchFocused = true
             entering = true
@@ -481,7 +481,7 @@ struct ClipPanelView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(width: 260)
-            .background(Color.primary.opacity(0.06), in: Capsule())
+            .background(Theme.fieldFill, in: Capsule())
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
@@ -528,7 +528,7 @@ struct ClipPanelView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(list.board == id ? Color.primary.opacity(0.12) : .clear, in: Capsule())
+            .background(list.board == id ? AnyShapeStyle(Theme.chipFill) : AnyShapeStyle(.clear), in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -785,7 +785,8 @@ struct ClipPreviewLayer: View {
             .padding(14)
             .frame(width: 300)
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+        // 盖在面板上的同一种玻璃（两层叠起来更不透明，预览的文字更好读）
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
         .task {
             text = item.text
             title = item.title

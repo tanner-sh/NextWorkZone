@@ -210,7 +210,7 @@ struct CaptureView: View {
             .controlSize(.small)
         }
         .padding(18)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
         .onChange(of: model.opening) { focused = true }
         .onChange(of: model.mode) { focused = true }
     }

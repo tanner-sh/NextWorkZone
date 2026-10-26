@@ -114,6 +114,8 @@ struct CommandPalette: View {
     @State private var search = UnifiedSearch(limit: 8)
     @State private var active = 0
     @FocusState private var focused: Bool
+    /// 选中项的底色在行之间滑动
+    @Namespace private var selection
 
     private var searchable: Bool {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -194,7 +196,8 @@ struct CommandPalette: View {
     var body: some View {
         let list = items
         ZStack(alignment: .top) {
-            Color.black.opacity(0.12).ignoresSafeArea().onTapGesture { close() }
+            // 点击面板外关闭；只淡淡压暗，面板本身的玻璃有阴影
+            Color.black.opacity(0.06).ignoresSafeArea().onTapGesture { close() }
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
                     if search.pending { ProgressView().controlSize(.small) } else { Image(systemName: "magnifyingglass").font(.title3).foregroundStyle(.secondary) }
@@ -232,8 +235,14 @@ struct CommandPalette: View {
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .selectionBackground(index == active, radius: Theme.controlRadius)
-                                    .padding(.horizontal, 4)
+                                    .background {
+                                        if index == active {
+                                            RoundedRectangle(cornerRadius: Theme.panelRadius - 8)
+                                                .fill(Color.accentColor.opacity(0.18))
+                                                .matchedGeometryEffect(id: "active", in: selection)
+                                        }
+                                    }
+                                    .padding(.horizontal, 6)
                                     .contentShape(Rectangle())
                                     .onHover { if $0 { active = index } }
                                     .onTapGesture { item.run() }
@@ -244,6 +253,7 @@ struct CommandPalette: View {
                         .padding(.vertical, 4)
                     }
                     .frame(maxHeight: 420)
+                    .animation(.snappy(duration: 0.18), value: active)
                     .onChange(of: active) { _, a in proxy.scrollTo(a) }
                 }
                 Divider()
@@ -264,8 +274,7 @@ struct CommandPalette: View {
                 .padding(.vertical, 8)
             }
             .frame(width: 640)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.18), radius: 24, y: 12)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
             .padding(.top, 80)
         }
         .onAppear { focused = true }

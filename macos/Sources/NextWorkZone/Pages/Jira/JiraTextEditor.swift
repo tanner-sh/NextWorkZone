@@ -273,8 +273,7 @@ struct JiraTextEditor: View {
         }
         .padding(4)
         .frame(width: 280)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .shadow(radius: 4, y: 2)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
     }
 
     // MARK: 工具栏
