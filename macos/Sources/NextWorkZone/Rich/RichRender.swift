@@ -273,6 +273,17 @@ struct RichRenderer {
             positions.append(list)
         }
         guard columns > 0 else { return }
+        // 列宽按内容估算（网页由浏览器自动排版）：每列取单元格中最长一行的宽度（汉字算两个字符），
+        // 限定在一定范围内，避免短列太窄、长链接把别的列挤没
+        var weights = [Double](repeating: 6, count: columns)
+        for list in positions {
+            for (col, cell) in list where cell.colspan <= 1 {
+                let text = RichDoc(blocks: cell.blocks).plainText
+                let longest = text.split(separator: "\n").map { line in line.reduce(0) { $0 + ($1.isASCII ? 1 : 2) } }.max() ?? 0
+                weights[col] = max(weights[col], min(Double(longest), 48) + 3)
+            }
+        }
+        let total = weights.reduce(0, +)
         let table = NSTextTable()
         table.numberOfColumns = columns
         table.collapsesBorders = true
@@ -285,6 +296,8 @@ struct RichRenderer {
                 block.setWidth(0.5, type: .absoluteValueType, for: .border)
                 block.setBorderColor(.separatorColor)
                 block.setWidth(6, type: .absoluteValueType, for: .padding)
+                let span = weights[col..<min(col + max(cell.colspan, 1), columns)].reduce(0, +)
+                block.setValue(span / total * 100, type: .percentageValueType, for: .width)
                 if cell.head { block.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.1) }
                 var f = frame
                 f.blocks = frame.blocks + [block]

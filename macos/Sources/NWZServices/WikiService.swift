@@ -83,6 +83,14 @@ public actor WikiService {
         }
     }
     public func search(_ query: WikiQuery, server: Bool, start: Int) async throws -> WikiSearchResult {
+        // “label:名称”按标签查找（本机库没有标签，总是查服务器）
+        let text = query.text.trimmingCharacters(in: .whitespaces)
+        if text.lowercased().hasPrefix("label:") {
+            var q = query
+            q.text = ""
+            let name = (try? await me().username) ?? ""
+            return try await client().cqlSearch(q, me: name, start: start, label: String(text.dropFirst(6)).trimmingCharacters(in: .whitespaces))
+        }
         if settings.configuration.snapshot().wikiTools.indexEnabled, !server, try await !index.isEmpty() {
             let key = (try? await me().key) ?? ""
             let hits = try await index.search(query, me: key)

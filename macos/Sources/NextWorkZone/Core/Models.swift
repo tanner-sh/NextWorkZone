@@ -331,6 +331,7 @@ typealias WikiNode = NWZWiki.WikiNode
 typealias WikiAncestor = NWZWiki.WikiAncestor
 
 typealias WikiPageDetail = NWZWiki.WikiPageDetail
+typealias WikiPageMeta = NWZWiki.WikiPageMeta
 
 typealias WikiRecent = NWZWiki.WikiRecent
 

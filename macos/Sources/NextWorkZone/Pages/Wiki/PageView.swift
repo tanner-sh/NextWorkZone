@@ -29,6 +29,12 @@ struct PageView: View {
     @State private var issues: [String: IssueSummary] = [:]
     @State private var issueMenu = IssueMenu()
     @State private var width: CGFloat = 0
+    /// 观看、点赞、访问限制
+    @State private var meta: WikiPageMeta?
+    @State private var info = false
+    @State private var source: String?
+    @State private var copying = false
+    @State private var attachmentsVersion = 0
 
     var body: some View {
         Group {
@@ -64,6 +70,18 @@ struct PageView: View {
         }
         .task(id: pageId) { await load() }
         .sheet(isPresented: $history) { if let page { HistorySheet(page: page) } }
+        .sheet(isPresented: $info) { if let page { PageInfoSheet(page: page, meta: meta) } }
+        .sheet(isPresented: $copying) { if let page { CopyPageSheet(page: page) { onOpen($0) } } }
+        .sheet(item: Binding(get: { source.map { SourceText(text: $0) } }, set: { source = $0?.text })) { s in
+            DialogFrame(title: "存储格式", width: 820) {
+                CodeView(code: s.text, path: "page.xml").frame(height: 520)
+            } footer: {
+                Button("复制") { Pasteboard.copy(s.text); toast("已复制") }
+                Spacer()
+                Button("关闭") { source = nil }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .task(id: pageId) { meta = try? await API.shared.wikiPageMeta(pageId) }
         .issueMenuDialogs(issueMenu)
     }
 
@@ -114,6 +132,11 @@ struct PageView: View {
             .tint(favorite ? .yellow : nil)
             .help(favorite ? "取消收藏" : "收藏")
         }
+        ToolbarItem {
+            Button(meta?.watching == true ? "停止观看" : "观看", systemImage: meta?.watching == true ? "eye.fill" : "eye") { toggleWatch() }
+                .disabled(meta == nil)
+                .help(meta?.watching == true ? "停止观看（不再收到这个页面的更新通知）" : "观看（页面更新时通知我）")
+        }
         ToolbarSpacer(.fixed)
         ToolbarItemGroup {
             if page.canEdit { Button("编辑", systemImage: "pencil", action: onEdit).help("编辑页面") }
@@ -128,9 +151,53 @@ struct PageView: View {
         var specs: [MenuSpec] = []
         if page.canEdit { specs.append(.action("编辑", icon: "pencil") { onEdit() }) }
         specs.append(.action("历史版本", icon: "clock.arrow.circlepath") { history = true })
+        if let meta {
+            specs.append(.action(meta.liked ? "取消赞" : "赞", icon: meta.liked ? "hand.thumbsup.fill" : "hand.thumbsup") { toggleLike() })
+            specs.append(.action(meta.watching ? "停止观看" : "观看", icon: meta.watching ? "eye.slash" : "eye") { toggleWatch() })
+        }
+        specs.append(.action("上传附件…", icon: "paperclip") { upload(FilePicker.pick()) })
+        specs.append(.action("页面信息…", icon: "info.circle") { info = true })
+        specs.append(.action("复制页面…", icon: "plus.square.on.square") { copying = true })
+        specs.append(.separator)
+        specs.append(.action("导出为 PDF", icon: "doc.richtext") { export(page, word: false) })
+        specs.append(.action("导出为 Word", icon: "doc") { export(page, word: true) })
+        specs.append(.action("查看存储格式", icon: "chevron.left.forwardslash.chevron.right") { guarded { source = try await API.shared.wikiStorage(page.id) } })
+        specs.append(.separator)
         specs.append(.action("刷新", icon: "arrow.clockwise") { Task { await load() } })
         specs.append(.separator)
         return specs + WikiMenus.page(id: page.id, title: page.title, space: page.spaceName, current: true, onNewChild: { onNewChild() })
+    }
+
+    private func toggleWatch() {
+        guard let meta else { return }
+        guarded {
+            try await API.shared.wikiSetWatching(pageId, watching: !meta.watching)
+            self.meta?.watching = !meta.watching
+            toast(meta.watching ? "已停止观看" : "已开始观看，页面更新时会通知你")
+        }
+    }
+
+    private func toggleLike() {
+        guard meta != nil else { return }
+        guarded {
+            try await API.shared.wikiSetLiked(pageId, liked: !(meta?.liked ?? false))
+            meta = try await API.shared.wikiPageMeta(pageId)
+        }
+    }
+
+    private func upload(_ paths: [String]) {
+        guard !paths.isEmpty else { return }
+        toast("正在上传 \(paths.count) 个文件…")
+        guarded {
+            try await API.shared.wikiUpload(pageId, paths: paths)
+            attachmentsVersion += 1
+            toast("已上传 \(paths.count) 个附件")
+        }
+    }
+
+    private func export(_ page: WikiPageDetail, word: Bool) {
+        toast(word ? "正在导出 Word…" : "正在导出 PDF（页面较长时需要一会儿）…")
+        guarded { toast("已保存到 \(try await API.shared.wikiExport(page, word: word))") }
     }
 
     /// 点击任务的勾选框：勾选或取消（写入 Wiki）。
@@ -207,8 +274,10 @@ struct PageView: View {
                     }
                 }
             }
+            PageFooter(page: page, meta: meta, onLike: toggleLike) { await load() }
+                .padding(.bottom, 22)
             ChildPages(pageId: page.id, onOpen: onOpen)
-            WikiAttachments(pageId: page.id)
+            WikiAttachments(pageId: page.id, version: attachmentsVersion) { upload(FilePicker.pick()) }
             BacklinksSection(system: "wiki", itemKey: page.id, title: "工作空间", hideEmpty: true)
             WikiComments(pageId: page.id)
         }
@@ -264,6 +333,8 @@ private struct ChildPages: View {
 
 private struct WikiAttachments: View {
     var pageId: String
+    var version: Int
+    var onUpload: () -> Void
     @State private var list: [Attachment]?
 
     var body: some View {
@@ -272,6 +343,8 @@ private struct WikiAttachments: View {
             if let list, !list.isEmpty {
                 let sorted = list.sorted { $0.created > $1.created }
                 BlockSection(title: "附件", icon: "paperclip", count: "\(list.count)") {
+                    Button("上传附件", systemImage: "square.and.arrow.up", action: onUpload)
+                } content: {
                     VStack(spacing: 6) {
                         ForEach(Array(sorted.enumerated()), id: \.element.id) { i, a in
                             HStack(spacing: 6) {
@@ -288,7 +361,7 @@ private struct WikiAttachments: View {
                 }
             }
         }
-        .task(id: pageId) { list = (try? await API.shared.wikiAttachments(pageId)) ?? [] }
+        .task(id: "\(pageId)|\(version)") { list = (try? await API.shared.wikiAttachments(pageId)) ?? [] }
     }
 }
 
@@ -479,5 +552,157 @@ private struct VersionContent: View {
             html = nil
             do { html = try await API.shared.wikiVersionHtml(pageId, version: version) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
         }
+    }
+}
+
+private struct SourceText: Identifiable {
+    var text: String
+    var id: Int { text.hashValue }
+}
+
+/// 页面底部（与网页一致）：点赞和标签。
+private struct PageFooter: View {
+    var page: WikiPageDetail
+    var meta: WikiPageMeta?
+    var onLike: () -> Void
+    var onChanged: () async -> Void
+    @State private var adding = false
+    @State private var input = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let meta {
+                HStack(spacing: 8) {
+                    Button(meta.liked ? "已赞" : "赞", systemImage: meta.liked ? "hand.thumbsup.fill" : "hand.thumbsup", action: onLike)
+                        .controlSize(.small)
+                    Text(meta.likes.isEmpty ? "成为第一个赞同者" : meta.likes.count <= 3 ? "\(meta.likes.joined(separator: "、")) 赞了" : "\(meta.likes.prefix(3).joined(separator: "、")) 等 \(meta.likes.count) 人赞了")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .help(meta.likes.joined(separator: "、"))
+                }
+            }
+            FlowLayout(spacing: 6) {
+                Image(systemName: "tag").foregroundStyle(.secondary)
+                if page.labels.isEmpty && !adding { Text("无标签").font(.callout).foregroundStyle(.secondary) }
+                ForEach(page.labels, id: \.self) { label in
+                    HStack(spacing: 3) {
+                        Button(label) { AppModel.shared.navigate(NavTarget(.wiki, wikiSearch: "label:\(label)")) }.buttonStyle(.plain).help("查看带这个标签的页面")
+                        if page.canEdit {
+                            Button { remove(label) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).help("移除标签")
+                        }
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
+                }
+                if page.canEdit {
+                    if adding {
+                        TextField("标签，空格分隔，回车添加", text: $input)
+                            .textFieldStyle(.roundedBorder).frame(width: 220)
+                            .onSubmit(add)
+                            .onExitCommand { adding = false; input = "" }
+                    } else {
+                        Button("编辑标签", systemImage: "plus") { adding = true }.buttonStyle(.borderless).font(.callout)
+                    }
+                }
+            }
+        }
+    }
+
+    private func add() {
+        // Wiki 标签不能有空格，统一小写（与网页一致）
+        let names = input.split(whereSeparator: { $0 == " " || $0 == "," || $0 == "，" }).map { $0.lowercased() }.filter { !$0.isEmpty && !page.labels.contains($0) }
+        adding = false
+        input = ""
+        guard !names.isEmpty else { return }
+        guarded {
+            try await API.shared.wikiAddLabels(page.id, names: names)
+            await onChanged()
+        }
+    }
+
+    private func remove(_ label: String) {
+        guarded {
+            try await API.shared.wikiRemoveLabel(page.id, name: label)
+            await onChanged()
+        }
+    }
+}
+
+/// 页面信息（网页“更多 → 页面信息”）：创建、修改、版本、标签、访问限制、链接。
+private struct PageInfoSheet: View {
+    var page: WikiPageDetail
+    var meta: WikiPageMeta?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        DialogFrame(title: "页面信息", width: 520) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
+                row("标题", page.title)
+                row("空间", "\(page.spaceName)（\(page.spaceKey)）")
+                row("位置", ([page.spaceName] + page.ancestors.map(\.title)).joined(separator: " / "))
+                row("创建", "\(page.createdBy) · \(Fmt.time(page.created))")
+                row("最后修改", "\(page.modifiedBy) · \(Fmt.time(page.modified))")
+                row("版本", "第 \(page.version) 版\(page.versionMessage.isEmpty ? "" : "：\(page.versionMessage)")")
+                row("标签", page.labels.isEmpty ? "无" : page.labels.joined(separator: "、"))
+                if let meta {
+                    row("查看限制", meta.readRestrictions.isEmpty ? "无限制" : meta.readRestrictions.joined(separator: "、"))
+                    row("编辑限制", meta.updateRestrictions.isEmpty ? "无限制" : meta.updateRestrictions.joined(separator: "、"))
+                    row("赞", meta.likes.isEmpty ? "无" : meta.likes.joined(separator: "、"))
+                    row("观看", meta.watching ? "正在观看" : "未观看")
+                }
+                row("页面 ID", page.id)
+                row("链接", page.url)
+            }
+        } footer: {
+            Button("复制链接") { Pasteboard.copy(page.url); toast("已复制") }
+            Spacer()
+            Button("关闭") { dismiss() }.keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private func row(_ name: String, _ value: String) -> some View {
+        GridRow {
+            Text(name).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+            Text(value).textSelection(.enabled)
+        }
+    }
+}
+
+/// 复制页面（网页“更多 → 复制”）：正文复制到同一位置下的新页面，附件不复制。
+private struct CopyPageSheet: View {
+    var page: WikiPageDetail
+    var onCreated: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        DialogFrame(title: "复制页面", width: 480) {
+            Text("在「\(page.ancestors.last?.title ?? page.spaceName)」下创建一份正文相同的新页面（不复制附件和评论）。").font(.callout).foregroundStyle(.secondary)
+            TextField("新页面标题", text: $title).textFieldStyle(.roundedBorder)
+            if let error { ErrorBox(message: error) }
+        } footer: {
+            Spacer()
+            Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+            Button(busy ? "复制中…" : "复制") {
+                busy = true
+                error = nil
+                Task {
+                    do {
+                        let id = try await API.shared.wikiCopyPage(page, title: title.trimmingCharacters(in: .whitespaces))
+                        toast("已复制为「\(title)」")
+                        dismiss()
+                        onCreated(id)
+                    } catch {
+                        guard !isCancellation(error) else { return }
+                        self.error = errorMessage(error)
+                        busy = false
+                    }
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(busy || title.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .onAppear { title = "\(page.title) 的副本" }
     }
 }

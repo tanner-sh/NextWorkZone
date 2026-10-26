@@ -25,6 +25,10 @@ public struct AttachmentService: Sendable {
     }
     public func open(service: Service, url: String, filename: String) async throws -> String {
         let (data, _) = try await fetch(service: service, url: url)
+        return try save(data: data, filename: filename)
+    }
+    /// 保存到“下载”文件夹（重名时加序号）并用系统应用打开。
+    public func save(data: Data, filename: String) throws -> String {
         let directory = settings.paths.home.appendingPathComponent("Downloads", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let name = URL(fileURLWithPath: filename).lastPathComponent

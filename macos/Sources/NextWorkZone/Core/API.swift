@@ -301,6 +301,37 @@ final class API: @unchecked Sendable {
     func wikiSpaceRoots(_ space: String) async throws -> [WikiNode] { try await wiki.client().spaceRoots(space) }
     func wikiChildren(_ page: String) async throws -> [WikiNode] { try await wiki.client().children(page) }
     func wikiPage(_ page: String) async throws -> WikiPageDetail { try await wiki.page(page) }
+    func wikiPageMeta(_ page: String) async throws -> WikiPageMeta { try await wiki.client().pageMeta(page) }
+    func wikiSetWatching(_ page: String, watching: Bool) async throws { try await wiki.client().setWatching(page, watching: watching) }
+    func wikiSetLiked(_ page: String, liked: Bool) async throws { try await wiki.client().setLiked(page, liked: liked) }
+    func wikiAddLabels(_ page: String, names: [String]) async throws { try await wiki.client().addLabels(page, names: names) }
+    func wikiRemoveLabel(_ page: String, name: String) async throws { try await wiki.client().removeLabel(page, name: name) }
+    func wikiStorage(_ page: String) async throws -> String { try await wiki.client().page(page).storage }
+    func wikiUpload(_ page: String, paths: [String]) async throws {
+        let client = try await wiki.client()
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            try await client.attach(page, filename: url.lastPathComponent, mime: AttachmentViewer.guessMime(url.lastPathComponent), data: Data(contentsOf: url))
+        }
+    }
+    /// 复制页面（不含附件）到同一位置，返回新页面 id
+    func wikiCopyPage(_ page: WikiPageDetail, title: String) async throws -> String {
+        let client = try await wiki.client()
+        let storage = try await client.page(page.id).storage
+        return try await client.createIn(space: page.spaceKey, parent: page.ancestors.last?.id, title: title, storage: storage)
+    }
+    /// 导出 PDF / Word：使用网页端的导出地址（需要网页登录），保存到“下载”并打开
+    func wikiExport(_ page: WikiPageDetail, word: Bool) async throws -> String {
+        let path = word ? "/exportword?pageId=\(page.id)" : "/spaces/flyingpdf/pdfpageexport.action?pageId=\(page.id)"
+        let name = page.title.replacingOccurrences(of: "/", with: "_") + (word ? ".doc" : ".pdf")
+        let (data, type) = try await wiki.attachments.fetch(service: .confluence, url: path)
+        // 网页登录失效时拿到的是登录页
+        let head = String(decoding: data.prefix(64 * 1024), as: UTF8.self)
+        if type?.contains("text/html") == true, head.contains("os_username") || head.contains("login.action") {
+            throw APIError(message: "导出需要网页登录，请先在设置中登录 Wiki 网页")
+        }
+        return try await wiki.attachments.save(data: data, filename: name)
+    }
     func wikiResolve(_ input: String) async throws -> String? { try await wiki.client().resolvePage(input) }
     func wikiAttachments(_ page: String) async throws -> [Attachment] { try await wiki.pageAttachments(page) }
     func wikiRecent(limit: Int = 30) async throws -> [WikiRecent] { try await wiki.recent(limit: limit) }
