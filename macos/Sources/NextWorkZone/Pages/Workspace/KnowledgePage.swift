@@ -218,7 +218,7 @@ struct KnowledgePage: View {
                 }
             }
         }
-        .listStyle(.sidebar)
+        .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .listHeader {
             FilterField(prompt: "筛选页面", text: $filter)

@@ -20,30 +20,46 @@ enum Theme {
     static var chipFill: some ShapeStyle { .quaternary.opacity(0.6) }
 }
 
+/// 淡色底：开启“增强对比度”时加深并加一圈分隔线（玻璃由系统处理，这里只管自己画的底色）。
+private struct ThemeFill<S: Shape>: ViewModifier {
+    var style: AnyShapeStyle
+    var opacity: Double
+    var shape: S
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let high = contrast == .increased
+        content.background {
+            shape.fill(style.opacity(high ? min(opacity * 2.5, 1) : opacity))
+                .overlay { if high { shape.stroke(Color(nsColor: .separatorColor)) } }
+        }
+    }
+}
+
 extension View {
     /// 输入区域的底色：多行输入框、自己画的输入框。
     func fieldBackground() -> some View {
-        background(Theme.fieldFill, in: RoundedRectangle(cornerRadius: Theme.controlRadius))
+        modifier(ThemeFill(style: AnyShapeStyle(.quaternary), opacity: 0.5, shape: RoundedRectangle(cornerRadius: Theme.controlRadius)))
     }
 
     /// 分组、卡片的底色。
     func groupBackground(radius: CGFloat = Theme.cardRadius) -> some View {
-        background(Theme.groupFill, in: RoundedRectangle(cornerRadius: radius))
+        modifier(ThemeFill(style: AnyShapeStyle(.quaternary), opacity: 0.35, shape: RoundedRectangle(cornerRadius: radius)))
     }
 
     /// 带颜色的分组底色（未读、新评论、已解决等需要区分的分组）；`tint` 为 nil 时与 `groupBackground` 相同。
     func groupBackground(tint: Color?, radius: CGFloat = Theme.cardRadius) -> some View {
-        background(tint.map { AnyShapeStyle($0.opacity(0.07)) } ?? AnyShapeStyle(Theme.groupFill), in: RoundedRectangle(cornerRadius: radius))
+        modifier(ThemeFill(style: tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.quaternary), opacity: tint == nil ? 0.35 : 0.07, shape: RoundedRectangle(cornerRadius: radius)))
     }
 
     /// 提示、警告、错误条的底色。
     func noticeBackground(_ tint: Color) -> some View {
-        background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        modifier(ThemeFill(style: AnyShapeStyle(tint), opacity: 0.1, shape: RoundedRectangle(cornerRadius: Theme.cardRadius)))
     }
 
     /// 小标签的胶囊底色。
     func chipBackground() -> some View {
-        background(Theme.chipFill, in: Capsule())
+        modifier(ThemeFill(style: AnyShapeStyle(.quaternary), opacity: 0.6, shape: Capsule()))
     }
 
     /// 选中项的底色（候选列表、格式按钮的开启状态）。
@@ -90,7 +106,7 @@ struct FilterField: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Theme.fieldFill, in: Capsule())
+        .modifier(ThemeFill(style: AnyShapeStyle(.quaternary), opacity: 0.5, shape: Capsule()))
     }
 
     @ViewBuilder

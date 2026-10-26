@@ -115,7 +115,7 @@ private struct ClipHistory: View {
                     Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 30)
                 }
             }
-            .listStyle(.sidebar)
+            .listStyle(.inset)
             .scrollContentBackground(.hidden)
             .listHeader(inset: 12) {
                 FilterField(prompt: "搜索文字、文件名、应用", text: $input)

@@ -125,7 +125,7 @@ struct NotesPage: View {
                 }
             }
         }
-        .listStyle(.sidebar)
+        .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .listHeader {
             if tab == .daily {
