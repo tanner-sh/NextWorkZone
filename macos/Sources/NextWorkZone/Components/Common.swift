@@ -300,6 +300,29 @@ enum Pasteboard {
     static func text() -> String? {
         NSPasteboard.general.string(forType: .string)
     }
+
+    /// 复制文件（访达、聊天、邮件中粘贴为文件）；`image` 有值时同一项中再放入图像数据。
+    static func copyFile(_ url: URL, image: NSImage? = nil) {
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .fileURL)
+        if let image { addImage(image, to: item) }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([item])
+    }
+
+    static func copyImage(_ image: NSImage) {
+        let item = NSPasteboardItem()
+        addImage(image, to: item)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([item])
+    }
+
+    /// PNG 和 TIFF 都放：不少应用只认其中一种。
+    private static func addImage(_ image: NSImage, to item: NSPasteboardItem) {
+        guard let tiff = image.tiffRepresentation else { return }
+        item.setData(tiff, forType: .tiff)
+        if let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) { item.setData(png, forType: .png) }
+    }
 }
 
 // MARK: - 小部件

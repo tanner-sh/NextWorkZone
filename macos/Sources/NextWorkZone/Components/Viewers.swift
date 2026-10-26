@@ -80,10 +80,18 @@ private struct ImageViewerView: View {
             if let image {
                 ZoomableImage(image: image, actualSize: actualSize) { actualSize.toggle() }
                     .overlay(alignment: .topTrailing) {
-                        Button(actualSize ? "适应窗口" : "原始大小", systemImage: actualSize ? "arrow.down.right.and.arrow.up.left" : "1.magnifyingglass") { actualSize.toggle() }
+                        HStack(spacing: 8) {
+                            Button("复制图片", systemImage: "doc.on.doc") {
+                                Pasteboard.copyImage(image)
+                                toast("已复制图片")
+                            }
                             .buttonStyle(.glass)
-                            .padding(.top, 34).padding(.trailing, 14)
-                            .help("也可以双击图片切换；按住 ⌥ 滚动或双指捏合缩放")
+                            .help("复制图片，可以粘贴到聊天、文档或笔记中")
+                            Button(actualSize ? "适应窗口" : "原始大小", systemImage: actualSize ? "arrow.down.right.and.arrow.up.left" : "1.magnifyingglass") { actualSize.toggle() }
+                                .buttonStyle(.glass)
+                                .help("也可以双击图片切换；按住 ⌥ 滚动或双指捏合缩放")
+                        }
+                        .padding(.top, 34).padding(.trailing, 14)
                     }
             } else if failed {
                 ContentUnavailableView("无法加载图片", systemImage: "photo", description: Text("可能需要先网页登录"))
@@ -210,6 +218,7 @@ enum AttachmentViewer {
     static func menu(_ a: Attachment, preview: @escaping @MainActor () -> Void, service: Service) -> [MenuSpec] {
         [
             .action("预览", icon: "eye", preview),
+            .action("复制文件", icon: "doc.on.doc") { copy(a, service: service) },
             .action("用系统应用打开", icon: "arrow.up.forward.app") { openExternal(a, service: service) },
             .separator,
             .action("复制文件名", icon: "doc.on.doc") {
@@ -217,6 +226,29 @@ enum AttachmentViewer {
                 toast("已复制")
             },
         ]
+    }
+
+    /// 复制附件本身：下载到临时文件夹后把文件放进剪贴板，可以粘贴到访达、聊天、邮件中；
+    /// 图片同时放入图像数据，只接受图片的应用也能粘贴。
+    static func copy(_ a: Attachment, service: Service) {
+        guard a.size <= 200 * 1024 * 1024 else {
+            toast("文件较大（\(Fmt.size(a.size))），请用系统应用打开后再复制", error: true)
+            return
+        }
+        guard let path = ImageCache.path(service: service, src: a.contentUrl) else {
+            toast("附件地址不属于已配置的系统", error: true)
+            return
+        }
+        if a.size > 5 * 1024 * 1024 { toast("正在下载 \(a.filename)…") }
+        guarded {
+            let (data, _) = try await API.shared.asset(path)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NextWorkZone/copied/\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(a.filename.replacingOccurrences(of: "/", with: "_"))
+            try data.write(to: url)
+            Pasteboard.copyFile(url, image: NSImage(data: data))
+            toast("已复制 \(a.filename)")
+        }
     }
 
     /// 下载到“下载”文件夹并用系统应用打开。
@@ -245,6 +277,8 @@ private struct AttachmentViewerView: View {
                 Text(a.filename).font(.headline).lineLimit(1)
                 if a.size > 0 { Text("\(Fmt.size(a.size)) · \(a.author) · \(Fmt.time(a.created))").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
+                Button("复制", systemImage: "doc.on.doc") { AttachmentViewer.copy(a, service: service) }
+                    .help("复制文件，可以粘贴到访达、聊天或邮件中")
                 Button("用系统应用打开", systemImage: "arrow.up.forward.app") { AttachmentViewer.openExternal(a, service: service) }
                     .help("下载到“下载”文件夹并用系统应用打开")
             }

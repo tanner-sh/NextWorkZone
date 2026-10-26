@@ -347,13 +347,7 @@ private struct WikiAttachments: View {
                 } content: {
                     VStack(spacing: 6) {
                         ForEach(Array(sorted.enumerated()), id: \.element.id) { i, a in
-                            HStack(spacing: 6) {
-                                Image(systemName: "paperclip").foregroundStyle(.secondary)
-                                Text(a.filename).lineLimit(1)
-                                Spacer()
-                                Text("\(Fmt.size(a.size)) · \(a.author) · \(Fmt.time(a.created))").font(.caption).foregroundStyle(.secondary)
-                            }
-                            .help("在应用内预览")
+                            WikiAttachmentRow(attachment: a)
                             .rowTap { AttachmentViewer.show(sorted, index: i, service: .confluence) }
                             .contextMenu(specs: { AttachmentViewer.menu(a, preview: { AttachmentViewer.show(sorted, index: i, service: .confluence) }, service: .confluence) })
                         }
@@ -362,6 +356,29 @@ private struct WikiAttachments: View {
             }
         }
         .task(id: "\(pageId)|\(version)") { list = (try? await API.shared.wikiAttachments(pageId)) ?? [] }
+    }
+}
+
+/// 附件的一行：悬停时显示复制按钮。
+private struct WikiAttachmentRow: View {
+    var attachment: Attachment
+    @State private var hover = false
+
+    var body: some View {
+        let a = attachment
+        HStack(spacing: 6) {
+            Image(systemName: "paperclip").foregroundStyle(.secondary)
+            Text(a.filename).lineLimit(1)
+            Spacer()
+            Text("\(Fmt.size(a.size)) · \(a.author) · \(Fmt.time(a.created))").font(.caption).foregroundStyle(.secondary)
+            Button { AttachmentViewer.copy(a, service: .confluence) } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(.borderless)
+                .opacity(hover ? 1 : 0)
+                .help("复制文件，可以粘贴到访达、聊天或邮件中")
+        }
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+        .help("点击在应用内预览，右键可复制、用系统应用打开")
     }
 }
 

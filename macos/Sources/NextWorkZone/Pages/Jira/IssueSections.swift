@@ -389,7 +389,7 @@ struct AttachmentsSection: View {
 struct AttachmentTile: View {
     var attachment: Attachment
     var service: Service
-    /// 有值时悬停在右上角显示删除按钮
+    /// 有值时悬停在右上角显示删除按钮（复制按钮总是显示）
     var onDelete: (() -> Void)?
     @State private var hover = false
 
@@ -413,13 +413,22 @@ struct AttachmentTile: View {
             .frame(height: 80)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(alignment: .topTrailing) {
-                if hover, let onDelete {
-                    Button(action: onDelete) {
-                        Image(systemName: "trash").font(.caption).padding(5).background(.regularMaterial, in: Circle())
+                if hover {
+                    HStack(spacing: 4) {
+                        Button { AttachmentViewer.copy(a, service: service) } label: {
+                            Image(systemName: "doc.on.doc").font(.caption).padding(5).background(.regularMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("复制文件，可以粘贴到访达、聊天或邮件中")
+                        if let onDelete {
+                            Button(action: onDelete) {
+                                Image(systemName: "trash").font(.caption).padding(5).background(.regularMaterial, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("删除附件")
+                        }
                     }
-                    .buttonStyle(.plain)
                     .padding(4)
-                    .help("删除附件")
                 }
             }
             Text(a.filename).font(.caption).lineLimit(1).truncationMode(.middle)
@@ -427,7 +436,7 @@ struct AttachmentTile: View {
         }
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .help("\(a.filename)\n\(a.author) · \(Fmt.time(a.created))\n点击预览，右键可用系统应用打开或删除")
+        .help("\(a.filename)\n\(a.author) · \(Fmt.time(a.created))\n点击预览，右键可复制、用系统应用打开或删除")
     }
 }
 
