@@ -176,6 +176,12 @@ enum DevBridge {
             origin.y += CGFloat(Double(query["dy"] ?? "200") ?? 200) * (clip.isFlipped ? 1 : -1)
             clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
             scroll.reflectScrolledClipView(clip)
+        case "/wheel":
+            // 模拟鼠标滚轮在横向滚动区上纵向滚动（合成的滚轮事件送不进应用）：x、y 为屏幕坐标（左上角为原点），dy 为点数
+            let point = NSPoint(x: Double(query["x"] ?? "") ?? 0, y: (NSScreen.screens.first?.frame.height ?? 0) - (Double(query["y"] ?? "") ?? 0))
+            guard let window = NSApp.windows.filter({ $0.isVisible && $0.frame.contains(point) }).max(by: { $0.level.rawValue < $1.level.rawValue }) else { return #"{"error":"no window"}"# }
+            let done = VerticalWheelScrollsHorizontally.scroll(in: window, at: window.convertPoint(fromScreen: point), dy: CGFloat(Double(query["dy"] ?? "-90") ?? -90))
+            return "{\"scrolled\":\(done)}"
         case "/hit":
             guard let window = MainWindow.window, let root = window.contentView?.superview,
                   let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return "{}" }

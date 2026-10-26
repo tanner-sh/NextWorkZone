@@ -497,6 +497,7 @@ struct ClipPanelView: View {
                     }
                 }
             }
+            .verticalWheelScrollsHorizontally()
             HStack(spacing: 2) {
                 ForEach(ClipKinds.all, id: \.self) { k in
                     let meta = ClipKinds.of(k)
@@ -553,6 +554,7 @@ struct ClipPanelView: View {
                 .padding(.vertical, 6)
             }
             .frame(maxHeight: .infinity)
+            .verticalWheelScrollsHorizontally()
             .onChange(of: model.current?.id) { _, id in
                 guard let id else { return }
                 withAnimation(.snappy) { proxy.scrollTo(id) }

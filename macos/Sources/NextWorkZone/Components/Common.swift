@@ -383,3 +383,51 @@ final class Debouncer {
 
     func cancel() { task?.cancel() }
 }
+
+/// 横向滚动区中，鼠标滚轮（纵向）也能左右滚动：SwiftUI 的横向 ScrollView 只响应横向滚动，
+/// 只有纵向滚轮的鼠标滚不动。鼠标在这个区域内且纵向滚动为主时，直接横向滚动鼠标下方的滚动区。
+struct VerticalWheelScrollsHorizontally: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WheelView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    /// 横向滚动 `point`（窗口坐标）下方的滚动区；`dy` 为纵向滚动量（点，向下为负）。滚动了返回真。
+    @MainActor
+    static func scroll(in window: NSWindow, at point: NSPoint, dy: CGFloat) -> Bool {
+        guard let root = window.contentView?.superview ?? window.contentView,
+              let scroll = root.hitTest(root.convert(point, from: nil))?.enclosingScrollView,
+              let document = scroll.documentView, document.frame.width > scroll.contentView.bounds.width + 1 else { return false }
+        let clip = scroll.contentView
+        var origin = clip.bounds.origin
+        origin.x -= dy
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+        scroll.reflectScrolledClipView(clip)
+        return true
+    }
+
+    final class WheelView: NSView {
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // 离开窗口时（视图移除）取消监听
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let window = self.window, event.window === window, !self.isHiddenOrHasHiddenAncestor,
+                      self.convert(self.bounds, to: nil).contains(event.locationInWindow),
+                      abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) else { return event }
+                // 鼠标滚轮按行计数，换算成点
+                let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 30
+                return VerticalWheelScrollsHorizontally.scroll(in: window, at: event.locationInWindow, dy: dy) ? nil : event
+            }
+        }
+    }
+}
+
+extension View {
+    /// 见 VerticalWheelScrollsHorizontally。
+    func verticalWheelScrollsHorizontally() -> some View { background(VerticalWheelScrollsHorizontally()) }
+}
