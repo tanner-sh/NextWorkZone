@@ -14,10 +14,12 @@ macos/build.sh             # 开发版：macos/build.noindex/NextWorkZone.app
 macos/build.sh release     # 正式版（同一位置）
 ditto macos/build.noindex/NextWorkZone.app /Applications/NextWorkZone.app   # 安装正式版
 macos/test.sh              # 测试（swift-testing）
+macos/icon.sh              # 重新生成应用图标（需要 Xcode）
 ```
 
 只需要命令行工具，不需要 Xcode。脚本固定使用 macOS 26 SDK（命令行工具中 27 的 SDK 缺少 SwiftUI 的宏插件），
 并选择 SwiftPM 的原生构建引擎（默认引擎会忽略外部 SDK 路径）。
+应用图标的源文件是 `macos/Icon/AppIcon.icon`（用 Icon Composer 编辑），修改后运行 `macos/icon.sh` 重新生成 `Resources` 中的图标文件。
 
 开发版与正式版的数据互不共享，可以同时运行：
 
