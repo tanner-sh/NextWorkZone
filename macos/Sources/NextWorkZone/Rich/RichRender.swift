@@ -292,7 +292,8 @@ struct RichRenderer {
                 f.list = []
                 f.font = cell.head ? .systemFont(ofSize: baseSize - 0.5, weight: .semibold) : .systemFont(ofSize: baseSize - 0.5)
                 f.path.append(.cell(row: r, col: col, head: cell.head, colspan: cell.colspan, rowspan: cell.rowspan))
-                let blocks = cell.blocks.isEmpty ? [RichBlock.para([])] : cell.blocks
+                // 只读时空单元格放一个零宽空格：只有换行符的单元格在行尾时会被 TextKit 丢掉，这一行就少一列、列宽也乱了
+                let blocks = cell.blocks.isEmpty ? [RichBlock.para(editing ? [] : [.text("\u{200B}", [], link: nil, color: nil)])] : cell.blocks
                 let start = out.length
                 renderBlocks(blocks, f, out)
                 // 单元格中段落的间距小一些，最后一段不留间距

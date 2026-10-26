@@ -11,6 +11,7 @@ struct IssueActivity: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("", selection: $tab) {
+                Text("全部").tag("all")
                 Text(issue.comments.isEmpty ? "评论" : "评论 \(issue.comments.count)").tag("comments")
                 Text(issue.timeTracking?.timeSpent.map { "工作日志 \($0)" } ?? "工作日志").tag("worklogs")
                 Text("历史记录").tag("history")
@@ -23,6 +24,7 @@ struct IssueActivity: View {
             case "worklogs": Worklogs(issueKey: issue.key, onChanged: onTimeChanged)
             case "history": HistoryList(issueKey: issue.key, created: issue.created, reporter: issue.reporter)
             case "flow": StatusFlow(issue: issue)
+            case "all": AllActivity(issue: issue, newSince: newSince, onCommentsChanged: onCommentsChanged) { tab = "comments" }
             default: Comments(issue: issue, newSince: newSince, onChange: onCommentsChanged)
             }
         }
@@ -427,27 +429,7 @@ private struct HistoryList: View {
                 ErrorBox(message: error) { Task { await load() } }
             } else if let entries {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(entries) { h in
-                        HStack(alignment: .top, spacing: 10) {
-                            Avatar(name: h.author, size: 24)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(h.author).fontWeight(.semibold)
-                                    Text(Fmt.time(h.created)).font(.caption).foregroundStyle(.secondary)
-                                }
-                                ForEach(Array(h.items.enumerated()), id: \.offset) { _, item in
-                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                        Text(item.field).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-                                        if let f = item.from { Text(f).strikethrough().foregroundStyle(.secondary).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
-                                        Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
-                                        if let t = item.to { Text(t).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
-                                    }
-                                    .font(.callout)
-                                    .textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
+                    ForEach(entries) { h in HistoryRow(entry: h) }
                     // 与网页一致，最后一条是创建问题
                     HStack(spacing: 10) {
                         Avatar(name: reporter ?? "?", size: 24)
@@ -466,5 +448,79 @@ private struct HistoryList: View {
         error = nil
         // 最近的变更排在前面
         do { entries = try await API.shared.jiraHistory(issueKey).reversed() } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+    }
+}
+
+/// 一次变更：谁在什么时候改了哪些字段。
+private struct HistoryRow: View {
+    var entry: HistoryEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Avatar(name: entry.author, size: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(entry.author).fontWeight(.semibold)
+                    Text("修改了 · \(Fmt.time(entry.created))").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(Array(entry.items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(item.field).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
+                        if let f = item.from { Text(f).strikethrough().foregroundStyle(.secondary).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
+                        Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
+                        if let t = item.to { Text(t).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
+                    }
+                    .font(.callout)
+                    .textSelection(.enabled)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 全部
+
+/// 与网页“全部”标签一致：评论和变更按时间先后排在一起。
+private struct AllActivity: View {
+    var issue: IssueDetail
+    var newSince: Int64?
+    var onCommentsChanged: ([Comment]) -> Void
+    /// 引用回复在评论标签中进行
+    var onQuote: () -> Void
+    @State private var history: [HistoryEntry]?
+    @State private var error: String?
+
+    private enum Item: Identifiable {
+        case comment(Comment)
+        case change(HistoryEntry)
+        var id: String { switch self { case .comment(let c): "c\(c.id)"; case .change(let h): "h\(h.id)" } }
+        var time: Int64 { switch self { case .comment(let c): Fmt.ms(c.created); case .change(let h): Fmt.ms(h.created) } }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let error { ErrorBox(message: error) }
+            HStack(spacing: 10) {
+                Avatar(name: issue.reporter ?? "?", size: 24)
+                Text(issue.reporter ?? "未知").fontWeight(.semibold)
+                Text("创建了问题 · \(Fmt.time(issue.created))").font(.caption).foregroundStyle(.secondary)
+            }
+            if history == nil && error == nil { ProgressView().controlSize(.small) }
+            let items = (issue.comments.map(Item.comment) + (history ?? []).map(Item.change)).sorted { $0.time < $1.time }
+            ForEach(items) { item in
+                switch item {
+                case .comment(let c):
+                    CommentItem(issueKey: issue.key, comment: c, isNew: newSince.map { !c.mine && Fmt.ms(c.created) > $0 } ?? false, onQuote: onQuote) { updated in
+                        onCommentsChanged(issue.comments.map { $0.id == updated.id ? updated : $0 })
+                    } onDeleted: {
+                        onCommentsChanged(issue.comments.filter { $0.id != c.id })
+                    }
+                case .change(let h): HistoryRow(entry: h)
+                }
+            }
+        }
+        .task(id: issue.updated) {
+            do { history = try await API.shared.jiraHistory(issue.key) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+        }
     }
 }
