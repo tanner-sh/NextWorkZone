@@ -184,9 +184,17 @@ struct RichRenderer {
         }
     }
 
-    /// 占满可用宽度的块（不设宽度时，编辑中排版可能按很窄的宽度计算）。
+    /// 占满可用宽度的块（引用、代码、面板、折叠区）。不设宽度时，编辑中排版可能按很窄的宽度计算。
+    ///
+    /// 用一行一列的表格的单元格，不用普通的 NSTextBlock：表格放在普通块里面时（例如 Wiki 折叠区中的表格），
+    /// TextKit 画表格背景时会向普通块要所属的表格（`-[NSTextBlock table]: unrecognized selector`），应用直接崩溃；
+    /// 表格套表格则没有问题。
     private static func fullWidthBlock() -> NSTextBlock {
-        let block = NSTextBlock()
+        let table = NSTextTable()
+        table.numberOfColumns = 1
+        table.layoutAlgorithm = .fixedLayoutAlgorithm
+        table.setValue(100, type: .percentageValueType, for: .width)
+        let block = NSTextTableBlock(table: table, startingRow: 0, rowSpan: 1, startingColumn: 0, columnSpan: 1)
         block.setValue(100, type: .percentageValueType, for: .width)
         return block
     }
