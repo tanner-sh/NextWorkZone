@@ -11,6 +11,8 @@ struct SearchPicker<Item: Hashable>: View {
     var multiple = false
     /// 获得焦点时（还没有输入）就列出候选
     var searchOnFocus = false
+    /// 为假时，对话框打开时自动获得焦点不弹出候选（候选会盖住下面的表单），点击或输入后再列出
+    var openOnAutoFocus = true
     /// 未输入时候选列表的标题，例如“建议”
     var idleHeading: String? = nil
     /// 允许直接使用输入的文字（例如新标签）
@@ -26,6 +28,9 @@ struct SearchPicker<Item: Hashable>: View {
     @State private var active = 0
     @State private var debouncer = Debouncer()
     @FocusState private var focused: Bool
+    /// 用户是否点过或输入过（见 openOnAutoFocus）
+    @State private var appeared = Date.distantFuture
+    @State private var engaged = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -52,18 +57,23 @@ struct SearchPicker<Item: Hashable>: View {
                 TextField(!multiple && !selected.isEmpty ? label(selected[0]) : placeholder, text: $text)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
-                    .onChange(of: text) { _, q in query(q) }
+                    .onChange(of: text) { _, q in
+                        engaged = true
+                        query(q)
+                    }
+                    .onAppear { appeared = Date() }
                     .onChange(of: focused) { _, f in
-                        if f && searchOnFocus && text.isEmpty { query("") }
+                        if f && searchOnFocus && text.isEmpty && (openOnAutoFocus || engaged || Date().timeIntervalSince(appeared) > 0.5) { query("") }
                         // 焦点移走后收起；稍等一下，让点击候选项先生效
                         if !f { Task { try? await Task.sleep(for: .milliseconds(200)); if !focused { open = false } } }
                     }
                     // 已有焦点时再次点击也重新列出候选（焦点没变，上面的 onChange 不会触发）
                     .simultaneousGesture(TapGesture().onEnded {
+                        engaged = true
                         if !open && (searchOnFocus || !text.isEmpty) { query(text) }
                     })
                     .onChange(of: sourceVersion) {
-                        if focused && (searchOnFocus || !text.isEmpty) { query(text) }
+                        if focused && (openOnAutoFocus || engaged) && (searchOnFocus || !text.isEmpty) { query(text) }
                     }
                     .onKeyPress(.downArrow) { active = min(active + 1, max(results.count - 1, 0)); return .handled }
                     .onKeyPress(.upArrow) { active = max(active - 1, 0); return .handled }

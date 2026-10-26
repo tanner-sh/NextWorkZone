@@ -595,7 +595,7 @@ private struct FieldChooserSheet: View {
                     }
                 }
             }
-            TextField("搜索字段名称", text: $filter).textFieldStyle(.roundedBorder)
+            FilterField(prompt: "搜索字段名称", text: $filter)
             if let error { ErrorBox(message: error) }
             List(candidates.prefix(200)) { f in
                 Button {

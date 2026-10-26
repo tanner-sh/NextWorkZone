@@ -154,6 +154,7 @@ struct CreateIssueSheet: View {
                             label: { "\($0.name)（\($0.key)）" },
                             placeholder: projects == nil ? "正在加载项目…" : "搜索项目名称或键",
                             searchOnFocus: true,
+                            openOnAutoFocus: false,
                             sourceVersion: projects?.count ?? -1
                         )
                     }

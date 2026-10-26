@@ -447,7 +447,7 @@ struct TextPreview: View {
         let query = filter.trimmingCharacters(in: .whitespaces)
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                TextField("只看包含这段文字的行，例如 ERROR、Exception", text: $filter).textFieldStyle(.roundedBorder).frame(maxWidth: 360)
+                FilterField(prompt: "只看包含这段文字的行，例如 ERROR、Exception", text: $filter).frame(maxWidth: 360)
                 if !query.isEmpty, let shown {
                     Text(shown.matches > Self.maxLines ? "\(shown.matches) 行匹配，只显示前 \(Self.maxLines) 行" : "\(shown.matches) 行匹配").font(.caption).foregroundStyle(.secondary)
                 }

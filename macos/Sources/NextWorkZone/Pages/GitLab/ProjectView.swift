@@ -211,7 +211,6 @@ private struct CodeTab: View {
                         }
                         if entries.isEmpty { Text("空目录").foregroundStyle(.secondary).padding(8) }
                     }
-                    .groupBackground(radius: Theme.controlRadius)
                     if let readme {
                         VStack(alignment: .leading, spacing: 8) {
                             Label((readme.path as NSString).lastPathComponent, systemImage: "book").font(.headline)
@@ -510,7 +509,7 @@ private struct BranchesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("筛选分支", text: $filter).textFieldStyle(.roundedBorder).frame(maxWidth: 320)
+            FilterField(prompt: "筛选分支", text: $filter).frame(maxWidth: 320)
             List {
                 ForEach(branches.filter { filter.isEmpty || $0.name.lowercased().contains(filter.lowercased()) }) { b in
                     HStack(spacing: 8) {
