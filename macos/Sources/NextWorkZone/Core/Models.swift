@@ -51,6 +51,7 @@ typealias Comment = NWZJira.Comment
 typealias CommentLevel = NWZJira.CommentLevel
 
 typealias Watchers = NWZJira.Watchers
+typealias Votes = NWZJira.Votes
 
 typealias BriefComment = NWZJira.BriefComment
 

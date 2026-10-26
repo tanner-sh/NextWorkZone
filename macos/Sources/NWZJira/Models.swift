@@ -211,9 +211,12 @@ public struct CommentLevel: Codable, Hashable, Sendable {
 public struct Watchers: Codable, Hashable, Sendable {
     public var watching: Bool
     public var count: Int
-    public init(watching: Bool, count: Int) {
+    /// 关注者（有“查看关注者”权限时才有）
+    public var users: [UserRef]
+    public init(watching: Bool, count: Int, users: [UserRef] = []) {
         self.watching = watching
         self.count = count
+        self.users = users
     }
 }
 
@@ -546,6 +549,18 @@ public struct FieldOption: Codable, Hashable, Sendable, Identifiable {
         self.name = name
         self.children = children
         self.disabled = disabled
+    }
+}
+
+public struct Votes: Codable, Hashable, Sendable {
+    public var voted: Bool
+    public var count: Int
+    /// 投票人的显示名（有“查看投票人”权限时才有）
+    public var voters: [String]
+    public init(voted: Bool, count: Int, voters: [String] = []) {
+        self.voted = voted
+        self.count = count
+        self.voters = voters
     }
 }
 

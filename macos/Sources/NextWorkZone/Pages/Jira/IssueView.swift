@@ -19,6 +19,11 @@ struct IssueView: View {
     @State private var showAllFields = false
     @State private var editing = false
     @State private var creatingSubtask = false
+    /// 克隆或创建链接的问题
+    @State private var creatingFrom: CreateFrom?
+    @State private var managingWatchers = false
+    @State private var votes: Votes?
+    @State private var watchers: Watchers?
     @State private var assigning = false
     @State private var notice: String?
     @State private var me: String?
@@ -82,6 +87,15 @@ struct IssueView: View {
         }
         .sheet(isPresented: $editing) { EditIssueSheet(issueKey: issueKey) { apply($0) } }
         .sheet(isPresented: $assigning) { AssignSheet(key: issueKey, assignee: issue?.assignee) { apply($0) } }
+        .sheet(item: $creatingFrom) { from in
+            CreateIssueSheet(source: from.source) { model.navigate(NavTarget(.jira, issueKey: $0)) }
+        }
+        .sheet(isPresented: $managingWatchers) { WatchersSheet(issueKey: issueKey, watchers: $watchers) }
+        .task(id: issueKey) {
+            async let v = try? API.shared.jiraVotes(issueKey)
+            async let w = try? API.shared.jiraWatchers(issueKey)
+            (votes, watchers) = await (v, w)
+        }
         .sheet(isPresented: $creatingSubtask) {
             if let issue {
                 CreateIssueSheet(parent: IssueRef(key: issue.key, summary: issue.summary, status: issue.status, issueType: issue.issueType)) { _ in reload() }
@@ -125,7 +139,8 @@ struct IssueView: View {
         }
         ToolbarItemGroup {
             Button("编辑", systemImage: "pencil") { editing = true }.help("编辑问题")
-            WatchButton(issueKey: issue.key)
+            WatchButton(issueKey: issue.key, watchers: $watchers)
+            Button("更多操作", systemImage: "ellipsis") { MenuBuilder.popUp(issueActions(issue)) }.help("更多操作（与网页的“更多”一致）")
         }
     }
 
@@ -162,6 +177,16 @@ struct IssueView: View {
             await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
             transitions = (try? await API.shared.jiraTransitions(issueKey)) ?? []
             IssueCache.shared.put(detail, transitions: transitions)
+        }
+    }
+
+    private func toggleVote() {
+        guard let votes else { return }
+        Task {
+            do { self.votes = try await API.shared.jiraSetVote(issueKey, voted: !votes.voted) } catch {
+                // Jira 不允许给自己报告的问题投票，错误原文已能说明原因
+                if !isCancellation(error) { toast("投票失败：\(errorMessage(error))", error: true) }
+            }
         }
     }
 
@@ -205,8 +230,22 @@ struct IssueView: View {
 
     /// 问题详情空白处右键：编辑、新建子任务、刷新，以及与问题列表相同的问题菜单。
     private func issueActions(_ issue: IssueDetail) -> [MenuSpec] {
-        var specs: [MenuSpec] = [.action("编辑…", icon: "pencil") { editing = true }]
+        var specs: [MenuSpec] = [
+            .action("编辑…", icon: "pencil") { editing = true },
+            .action("分配…", icon: "person") { assigning = true },
+            .action("上传附件…", icon: "paperclip") { upload(FilePicker.pick()) },
+            .separator,
+        ]
+        if let votes {
+            specs.append(.action(votes.voted ? "取消投票" : "投票", icon: votes.voted ? "hand.thumbsup.fill" : "hand.thumbsup") { toggleVote() })
+        }
+        specs.append(.action("管理关注者…", icon: "eye") { managingWatchers = true })
+        specs.append(.separator)
         if issue.parent == nil { specs.append(.action("新建子任务…", icon: "plus") { creatingSubtask = true }) }
+        specs.append(.action("创建链接的问题…", icon: "link.badge.plus") { creatingFrom = CreateFrom(source: .linked(issue)) })
+        specs.append(.action("克隆…", icon: "plus.square.on.square") { creatingFrom = CreateFrom(source: .clone(issue)) })
+        specs.append(.action("打印…", icon: "printer") { IssuePrint.print(issue) })
+        specs.append(.separator)
         specs.append(.action("刷新", icon: "arrow.clockwise") { reload() })
         specs.append(.separator)
         return specs + issueMenu.specs(.summary(issue.summaryValue), current: true, onUpdated: apply)
@@ -397,6 +436,31 @@ struct IssueView: View {
                     .help(f.hidden ? "不在问题界面上（网页中不显示）" : "")
                 }
             }
+            // 与网页“人员”一栏一致：投票、关注
+            if let votes {
+                GridRow {
+                    FieldName(name: "投票")
+                    HStack(spacing: 6) {
+                        Text("\(votes.count)").monospacedDigit().padding(.horizontal, 6).chipBackground()
+                        Button(votes.voted ? "取消投票" : "为此问题投票") { toggleVote() }.buttonStyle(.borderless)
+                    }
+                    .help(votes.voters.isEmpty ? "" : "投票人：\(votes.voters.joined(separator: "、"))")
+                }
+            }
+            if let watchers {
+                GridRow {
+                    FieldName(name: "关注")
+                    HStack(spacing: 6) {
+                        Text("\(watchers.count)").monospacedDigit().padding(.horizontal, 6).chipBackground()
+                        Button(watchers.watching ? "停止关注" : "开始关注此问题") {
+                            guarded { self.watchers = try await API.shared.jiraSetWatching(issue.key, watching: !watchers.watching) }
+                        }
+                        .buttonStyle(.borderless)
+                        Button("管理") { managingWatchers = true }.buttonStyle(.borderless)
+                    }
+                    .help(watchers.users.isEmpty ? "" : "关注者：\(watchers.users.map(\.displayName).joined(separator: "、"))")
+                }
+            }
             if let tt = issue.timeTracking {
                 GridRow {
                     FieldName(name: "时间跟踪")
@@ -476,34 +540,101 @@ private struct IssueKeyValue: View {
     }
 }
 
-/// 关注 / 取消关注，显示关注人数。
+/// 关注 / 取消关注，显示关注人数（与详情中的“关注”一行共用数据）。
 private struct WatchButton: View {
     var issueKey: String
-    @State private var watchers: Watchers?
+    @Binding var watchers: Watchers?
     @State private var busy = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // 内容为空时也要执行 task
-            Color.clear.frame(width: 0, height: 0)
+        Button {
+            guard let w = watchers else { return }
+            busy = true
+            Task {
+                do { watchers = try await API.shared.jiraSetWatching(issueKey, watching: !w.watching) } catch { toast("操作失败：\(errorMessage(error))", error: true) }
+                busy = false
+            }
+        } label: {
+            Label(watchers?.watching == true ? "取消关注" : "关注", systemImage: watchers?.watching == true ? "eye.fill" : "eye")
+        }
+        .disabled(busy || watchers == nil)
+        .help(watchers.map { "\($0.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\($0.count > 0 ? "\n\($0.count) 人关注" : "")" } ?? "")
+    }
+}
+
+/// 克隆、创建链接的问题（sheet 的标识）。
+private struct CreateFrom: Identifiable {
+    var source: CreateIssueSheet.Source
+    var id: String { source.issue.key }
+}
+
+/// 管理关注者：列出关注者，添加、移除。
+private struct WatchersSheet: View {
+    var issueKey: String
+    @Binding var watchers: Watchers?
+    @Environment(\.dismiss) private var dismiss
+    @State private var adding: [UserRef] = []
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        DialogFrame(title: "\(issueKey) 的关注者", width: 460) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("添加关注者").font(.callout).foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    SearchPicker<UserRef>(selected: adding, onChange: { adding = $0 }, search: { q in
+                        q.isEmpty ? [] : try await API.shared.jiraFindUsers(q, field: "watcher", issueKey: issueKey, projectKey: nil)
+                    }, label: { $0.displayName }, detail: { $0.name }, placeholder: "输入姓名或用户名搜索", multiple: true)
+                    Button("添加") { add() }.disabled(adding.isEmpty || busy)
+                }
+            }
+            if let error { ErrorBox(message: error) }
             if let w = watchers {
-                Button {
-                    busy = true
-                    Task {
-                        do { watchers = try await API.shared.jiraSetWatching(issueKey, watching: !w.watching) } catch { toast("操作失败：\(errorMessage(error))", error: true) }
-                        busy = false
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: w.watching ? "eye.fill" : "eye")
-                        if w.count > 0 { Text("\(w.count)").foregroundStyle(.secondary) }
+                if w.users.isEmpty {
+                    Text(w.count > 0 ? "共 \(w.count) 人关注（没有查看关注者的权限）" : "还没有人关注").foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 4) {
+                        ForEach(w.users) { u in
+                            HStack(spacing: 8) {
+                                Avatar(name: u.displayName, size: 20)
+                                Text(u.displayName)
+                                Text(u.name).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button { remove(u) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("移除").disabled(busy)
+                            }
+                            .padding(.vertical, 3)
+                        }
                     }
                 }
-                .disabled(busy)
-                .help("\(w.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\(w.count > 0 ? "\n\(w.count) 人关注" : "")")
+            } else {
+                LoadingView()
             }
+        } footer: {
+            Spacer()
+            Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
         }
-        .task(id: issueKey) { watchers = try? await API.shared.jiraWatchers(issueKey) }
+        .task { if let w = try? await API.shared.jiraWatchers(issueKey) { watchers = w } }
+    }
+
+    private func add() {
+        busy = true
+        error = nil
+        Task {
+            do {
+                for u in adding { watchers = try await API.shared.jiraSetWatcher(issueKey, username: u.name, watching: true) }
+                adding = []
+            } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+            busy = false
+        }
+    }
+
+    private func remove(_ u: UserRef) {
+        busy = true
+        error = nil
+        Task {
+            do { watchers = try await API.shared.jiraSetWatcher(issueKey, username: u.name, watching: false) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+            busy = false
+        }
     }
 }
 
@@ -596,5 +727,40 @@ final class IssueCache {
         order.removeAll { $0 == detail.key }
         order.append(detail.key)
         if order.count > limit { entries[order.removeFirst()] = nil }
+    }
+}
+
+/// 打印问题（网页“导出 → 打印”）：概要、字段、描述和评论。图片需要网页登录，打印时不显示。
+@MainActor
+enum IssuePrint {
+    static func print(_ issue: IssueDetail) {
+        func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
+        var html = "<html><body style=\"font-family: -apple-system; font-size: 11pt\">"
+        html += "<p style=\"color:#666\">\(esc(issue.key)) · \(esc(issue.project.name))</p><h2>\(esc(issue.summary))</h2>"
+        html += "<table cellpadding=3>"
+        var rows = [("状态", issue.status.name), ("类型", issue.issueType.name), ("优先级", issue.priority?.name ?? "无"), ("经办人", issue.assignee ?? "未分配"), ("报告人", issue.reporter ?? ""), ("创建", Fmt.time(issue.created)), ("更新", Fmt.time(issue.updated))]
+        if let r = issue.resolution { rows.append(("解决结果", r)) }
+        rows += issue.fields.filter { !$0.hidden && $0.html == nil && !["assignee", "reporter", "priority"].contains($0.id) }.map { ($0.name, $0.text) }
+        for (k, v) in rows where !v.isEmpty { html += "<tr><td style=\"color:#666\" valign=top>\(esc(k))</td><td>\(esc(v))</td></tr>" }
+        html += "</table><h3>描述</h3>\(issue.descriptionHtml ?? "<p>无描述</p>")"
+        for f in issue.fields where !f.hidden { if let h = f.html { html += "<h3>\(esc(f.name))</h3>\(h)" } }
+        if !issue.comments.isEmpty {
+            html += "<h3>评论（\(issue.comments.count)）</h3>"
+            for c in issue.comments { html += "<p style=\"color:#666\"><b>\(esc(c.author))</b> · \(esc(Fmt.time(c.created)))</p>\(c.bodyHtml)<hr>" }
+        }
+        html += "</body></html>"
+        // 去掉图片：附件地址需要网页登录，打印时取不到
+        html = html.replacing(/<img[^>]*>/, with: "")
+        guard let text = try? NSAttributedString(data: Data(html.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) else { return }
+        let info = NSPrintInfo.shared.copy() as! NSPrintInfo
+        info.horizontalPagination = .fit
+        info.isVerticallyCentered = false
+        let width = info.paperSize.width - info.leftMargin - info.rightMargin
+        let view = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
+        view.textStorage?.setAttributedString(text)
+        view.sizeToFit()
+        let op = NSPrintOperation(view: view, printInfo: info)
+        op.jobTitle = "\(issue.key) \(issue.summary)"
+        op.runModal(for: MainWindow.window ?? NSApp.keyWindow ?? NSWindow(), delegate: nil, didRun: nil, contextInfo: nil)
     }
 }

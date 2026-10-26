@@ -136,6 +136,17 @@ final class API: @unchecked Sendable {
     func jiraAssign(_ key: String, assignee: String?) async throws -> IssueDetail { try await jira.assign(key, assignee: assignee) }
     func jiraWatchers(_ key: String) async throws -> Watchers { try await jira.client().watchers(key) }
     func jiraSetWatching(_ key: String, watching: Bool) async throws -> Watchers { try await jira.setWatching(key, watching: watching) }
+    func jiraSetWatcher(_ key: String, username: String, watching: Bool) async throws -> Watchers {
+        let client = try await jira.client()
+        try await client.setWatcher(key, username: username, watching: watching)
+        return try await client.watchers(key)
+    }
+    func jiraVotes(_ key: String) async throws -> Votes { try await jira.client().votes(key) }
+    func jiraSetVote(_ key: String, voted: Bool) async throws -> Votes {
+        let client = try await jira.client()
+        try await client.setVote(key, voted: voted)
+        return try await client.votes(key)
+    }
     func jiraPriorities() async throws -> [Priority] { try await jira.priorities() }
     func jiraSetPriority(_ key: String, priorityId: String) async throws -> IssueDetail { try await jira.updateIssue(key, fields: ["priority": ["id": .string(priorityId)]]) }
     func jiraActivity() async throws -> ActivityFeed { try await jira.activity() }

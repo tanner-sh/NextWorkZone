@@ -88,11 +88,18 @@ public struct JiraClient: Sendable {
     public func assign(_ key: String, username: String?) async throws { _ = try await rest.response("PUT", Self.issuePath(key) + "/assignee", body: ["name": username.map(JSONValue.string) ?? .null]) }
     public func watchers(_ key: String) async throws -> Watchers {
         let raw = try await get(Self.issuePath(key) + "/watchers")
-        return Watchers(watching: raw["isWatching"].bool ?? false, count: raw["watchCount"].int)
+        return Watchers(watching: raw["isWatching"].bool ?? false, count: raw["watchCount"].int, users: raw["watchers"].list.map { UserRef(name: $0["name"].text, displayName: JiraFields.text($0)) })
     }
     public func setWatching(_ key: String, me: String, watching: Bool) async throws {
         _ = try await rest.response(watching ? "POST" : "DELETE", Self.issuePath(key) + "/watchers", query: watching ? [] : [("username", me)], body: watching ? .string(me) : nil)
     }
+    /// 添加或移除关注者（管理关注列表）
+    public func setWatcher(_ key: String, username: String, watching: Bool) async throws { try await setWatching(key, me: username, watching: watching) }
+    public func votes(_ key: String) async throws -> Votes {
+        let raw = try await get(Self.issuePath(key) + "/votes")
+        return Votes(voted: raw["hasVoted"].bool ?? false, count: raw["votes"].int, voters: raw["voters"].list.map { JiraFields.text($0) })
+    }
+    public func setVote(_ key: String, voted: Bool) async throws { _ = try await rest.response(voted ? "POST" : "DELETE", Self.issuePath(key) + "/votes") }
     public func priorities() async throws -> [Priority] { try await get("/rest/api/2/priority").list.map { Priority(id: JiraFields.text($0["id"]), name: $0["name"].text, iconUrl: $0["iconUrl"].string) } }
     public func favouriteFilters() async throws -> [JiraFilter] { try await get("/rest/api/2/filter/favourite").list.map { JiraFilter(id: JiraFields.text($0["id"]), name: $0["name"].text, jql: $0["jql"].text) } }
     public func wikiPageLinks(_ key: String) async throws -> [String] {

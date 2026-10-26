@@ -98,12 +98,21 @@ struct LinksSection: View {
 }
 
 /// 链接关系：每种链接类型按方向拆成两种可选的关系。
-private struct Relation: Hashable {
+struct LinkRelation: Hashable {
     var id: String
     var typeId: String
     var outward: Bool
     var label: String
     var typeName: String
+
+    static func all(_ types: [LinkType]) -> [LinkRelation] {
+        types.flatMap { t -> [LinkRelation] in
+            var both = [LinkRelation(id: "\(t.id):out", typeId: t.id, outward: true, label: t.outward, typeName: t.name)]
+            // 双向描述相同的类型（如“相关”）只列一次
+            if t.inward != t.outward { both.append(LinkRelation(id: "\(t.id):in", typeId: t.id, outward: false, label: t.inward, typeName: t.name)) }
+            return both
+        }
+    }
 }
 
 private struct LinkForm: View {
@@ -112,23 +121,18 @@ private struct LinkForm: View {
     var onDone: (IssueDetail) -> Void
     nonisolated(unsafe) private static var typesCache: [LinkType]?
     @State private var types: [LinkType]?
-    @State private var relation: Relation?
+    @State private var relation: LinkRelation?
     @State private var targets: [IssueChoice] = []
     @State private var saving = false
     @State private var error: String?
 
     var body: some View {
-        let relations: [Relation] = (types ?? []).flatMap { t -> [Relation] in
-            var both = [Relation(id: "\(t.id):out", typeId: t.id, outward: true, label: t.outward, typeName: t.name)]
-            // 双向描述相同的类型（如“相关”）只列一次
-            if t.inward != t.outward { both.append(Relation(id: "\(t.id):in", typeId: t.id, outward: false, label: t.inward, typeName: t.name)) }
-            return both
-        }
+        let relations = LinkRelation.all(types ?? [])
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(issueKey) 的关系").font(.callout).foregroundStyle(.secondary)
-                    SearchPicker<Relation>(selected: relation.map { [$0] } ?? [], onChange: { relation = $0.first }, search: { q in relations.filter { q.isEmpty || $0.label.lowercased().contains(q.lowercased()) } }, label: { $0.label }, detail: { $0.typeName }, placeholder: types == nil ? "正在加载链接类型…" : "搜索关系，例如“阻塞”", searchOnFocus: true, sourceVersion: types?.count ?? -1)
+                    SearchPicker<LinkRelation>(selected: relation.map { [$0] } ?? [], onChange: { relation = $0.first }, search: { q in relations.filter { q.isEmpty || $0.label.lowercased().contains(q.lowercased()) } }, label: { $0.label }, detail: { $0.typeName }, placeholder: types == nil ? "正在加载链接类型…" : "搜索关系，例如“阻塞”", searchOnFocus: true, sourceVersion: types?.count ?? -1)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("问题").font(.callout).foregroundStyle(.secondary)

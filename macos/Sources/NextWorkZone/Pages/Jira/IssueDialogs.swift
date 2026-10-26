@@ -78,7 +78,15 @@ struct CreateIssueSheet: View {
     /// 预先填好的概要和描述（例如从待办、笔记创建）
     var initialSummary = ""
     var initialDescription = ""
+    /// 从已有问题出发：克隆（复制字段并加“克隆”链接），或创建与它链接的问题
+    var source: Source? = nil
     var onCreated: (String) -> Void
+
+    enum Source {
+        case clone(IssueDetail)
+        case linked(IssueDetail)
+        var issue: IssueDetail { switch self { case .clone(let i), .linked(let i): i } }
+    }
 
     private static let lastKey = "nextworkzone.jira.lastCreate"
 
@@ -94,22 +102,45 @@ struct CreateIssueSheet: View {
     @State private var images: [PendingImage] = []
     @State private var submitting = false
     @State private var error: String?
+    /// 克隆时源问题的字段值
+    @State private var sourceValues: FieldValues?
+    @State private var linkTypes: [LinkType]?
+    @State private var relation: LinkRelation?
 
-    init(parent: IssueRef? = nil, initialSummary: String = "", initialDescription: String = "", onCreated: @escaping (String) -> Void) {
+    init(parent: IssueRef? = nil, initialSummary: String = "", initialDescription: String = "", source: Source? = nil, onCreated: @escaping (String) -> Void) {
         self.parent = parent
         self.initialSummary = initialSummary
         self.initialDescription = initialDescription
+        self.source = source
         self.onCreated = onCreated
     }
 
+    private var title: String {
+        switch source {
+        case .clone(let i): "克隆 \(i.key)"
+        case .linked(let i): "创建与 \(i.key) 链接的问题"
+        case nil: parent.map { "为 \($0.key) 新建子任务" } ?? "新建问题"
+        }
+    }
+
     private var project: CreateProject? { projects?.first { $0.key == projectKey } }
+    private var isLinked: Bool { if case .linked = source { true } else { false } }
     private var issueTypes: [CreateIssueType] { project?.issueTypes.filter { $0.subtask == (parent != nil) } ?? [] }
 
     var body: some View {
         let missing = fields.map { FieldForm.missingRequired($0, values) } ?? []
         let blocked = fields.map { !FieldForm.unsupportedRequired($0).isEmpty } ?? false
-        DialogFrame(title: parent.map { "为 \($0.key) 新建子任务" } ?? "新建问题", width: 720) {
+        DialogFrame(title: title, width: 720) {
             if let projectsError, projects == nil { ErrorBox(message: projectsError) }
+            if case .linked(let i) = source {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(i.key) 与新问题的关系").font(.callout).foregroundStyle(.secondary)
+                    SearchPicker<LinkRelation>(selected: relation.map { [$0] } ?? [], onChange: { relation = $0.first }, search: { q in LinkRelation.all(linkTypes ?? []).filter { q.isEmpty || $0.label.lowercased().contains(q.lowercased()) } }, label: { $0.label }, detail: { $0.typeName }, placeholder: linkTypes == nil ? "正在加载链接类型…" : "搜索关系，例如“阻塞”", searchOnFocus: true, sourceVersion: linkTypes?.count ?? -1)
+                }
+            }
+            if case .clone = source {
+                Text("复制原问题的字段（不含附件和评论），创建后与原问题建立“克隆”链接。").font(.callout).foregroundStyle(.secondary)
+            }
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Label { Text("项目") } icon: { Text("*").foregroundStyle(.red) }.labelStyle(.titleOnly).font(.callout).foregroundStyle(.secondary)
@@ -170,24 +201,35 @@ struct CreateIssueSheet: View {
             if !missing.isEmpty { Text("请填写：\(missing.map(\.name).joined(separator: "、"))").font(.caption).foregroundStyle(.red) }
             Spacer()
             Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-            Button(submitting ? "创建中…" : "创建", action: submit).keyboardShortcut(.defaultAction).disabled(fields == nil || submitting || !missing.isEmpty || blocked)
+            Button(submitting ? "创建中…" : "创建", action: submit).keyboardShortcut(.defaultAction).disabled(fields == nil || submitting || !missing.isEmpty || blocked || (isLinked && relation == nil))
         }
         .task {
             if projectKey == nil {
-                projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? AppPreferences.shared.dictionary(forKey: Self.lastKey)?["project"] as? String
+                projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? source.map { JQL.projectKey(of: $0.issue.key) } ?? AppPreferences.shared.dictionary(forKey: Self.lastKey)?["project"] as? String
+            }
+            if source != nil {
+                async let types = try? API.shared.jiraLinkTypes()
+                if case .clone(let i) = source, let meta = try? await API.shared.jiraEditFields(i.key) { sourceValues = FieldForm.initialValues(meta) }
+                linkTypes = await types ?? []
+                if case .linked = source { relation = LinkRelation.all(linkTypes ?? []).first }
             }
             if let cached = try? await API.shared.jiraCachedCreateProjects(), projects == nil { projects = cached }
             do { projects = try await API.shared.jiraCreateProjects() } catch { if !isCancellation(error) { projectsError = errorMessage(error) } }
             chooseType()
         }
         .onChange(of: projectKey) { chooseType() }
-        .task(id: "\(projectKey ?? "")|\(issueTypeId ?? "")") { await loadFields() }
+        .task(id: "\(projectKey ?? "")|\(issueTypeId ?? "")|\(sourceValues?.count ?? -1)") { await loadFields() }
     }
 
     /// 项目变化后选择问题类型：优先沿用上次的类型。
     private func chooseType() {
         guard !issueTypes.isEmpty else { return }
         if let current = issueTypeId, issueTypes.contains(where: { $0.id == current }) { return }
+        // 克隆、创建链接的问题时沿用原问题的类型
+        if let name = source?.issue.issueType.name, let t = issueTypes.first(where: { $0.name == name }) {
+            issueTypeId = t.id
+            return
+        }
         let last = AppPreferences.shared.dictionary(forKey: Self.lastKey)?["issueType"] as? String
         issueTypeId = issueTypes.first { $0.id == last }?.id ?? issueTypes[0].id
     }
@@ -204,6 +246,12 @@ struct CreateIssueSheet: View {
             if let parent, meta.contains(where: { $0.key == "parent" }) { next["parent"] = ["key": .string(parent.key), "summary": .string(parent.summary)] }
             if FieldForm.isEmpty(next["summary"]), !initialSummary.isEmpty, meta.contains(where: { $0.key == "summary" }) { next["summary"] = .string(initialSummary) }
             if FieldForm.isEmpty(next["description"]), !initialDescription.isEmpty, meta.contains(where: { $0.key == "description" }) { next["description"] = .string(initialDescription) }
+            if case .clone(let i) = source, let sourceValues {
+                for f in meta where !["attachment", "issuelinks", "comment", "worklog", "parent", "project", "issuetype"].contains(f.key) && !FieldForm.isEmpty(sourceValues[f.key]) {
+                    next[f.key] = sourceValues[f.key]
+                }
+                next["summary"] = .string("克隆 - \(i.summary)")
+            }
             fields = meta
             values = next
         } catch {
@@ -225,7 +273,22 @@ struct CreateIssueSheet: View {
                 // 正文中粘贴的图片随附件一起在创建后上传
                 let created = try await API.shared.jiraCreateIssue(fields: payload, attachments: files + pasted)
                 AppPreferences.shared.set(["project": projectKey, "issueType": issueTypeId], forKey: Self.lastKey)
-                if let warn = created.attachmentError { toast("已创建 \(created.key)，但附件上传失败：\(warn)", error: true) } else { toast("已创建 \(created.key)") }
+                var linkError: String?
+                do {
+                    switch source {
+                    case .linked(let i):
+                        if let relation { _ = try await API.shared.jiraAddLink(i.key, typeId: relation.typeId, other: created.key, outward: relation.outward) }
+                    case .clone(let i):
+                        // 与网页一致：新问题“克隆”原问题（找不到这种链接类型时不加）
+                        if let t = linkTypes?.first(where: { $0.name.lowercased() == "cloners" || $0.outward.lowercased() == "clones" }) {
+                            _ = try await API.shared.jiraAddLink(created.key, typeId: t.id, other: i.key, outward: true)
+                        }
+                    case nil: break
+                    }
+                } catch { linkError = errorMessage(error) }
+                if let warn = created.attachmentError { toast("已创建 \(created.key)，但附件上传失败：\(warn)", error: true) }
+                else if let linkError { toast("已创建 \(created.key)，但添加链接失败：\(linkError)", error: true) }
+                else { toast("已创建 \(created.key)") }
                 onCreated(created.key)
                 dismiss()
             } catch {
