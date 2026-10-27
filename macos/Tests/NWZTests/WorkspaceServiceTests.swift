@@ -61,6 +61,31 @@ struct WorkspaceServiceTests {
         await remote.setItems([.init(id: "due:ABC-1", source: "due", title: "ABC-1", at: now + 86_400_000)])
         #expect(try await service.inbox().items.count == 1)
     }
+    @Test func inboxMergesJiraIssueAndSkipsDueForTodos() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let remote = WorkspaceTestRemote(), store = try await Workspace()
+        let service = WorkspaceService(store: store, settings: try settings(directory), host: WorkspaceTestHost(), remote: remote)
+        let now = Workspace.now()
+        func iso(_ ms: Int64) -> String { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(ms) / 1_000)) }
+        let assigned = ActivityEvent(id: "e1", issueKey: "ABC-1", kind: "assigned", at: iso(now - 60_000), system: "jira")
+        let activity = InboxItem(id: "activity:jira:ABC-1", source: "activity", title: "ABC-1 标题", at: now - 60_000, system: "jira", key: "ABC-1", events: [assigned])
+        let due = InboxItem(id: "due:ABC-1", source: "due", title: "ABC-1 标题", detail: "处理中", at: now - 120_000, system: "jira", key: "ABC-1", dueKind: "overdue", dueDays: 2)
+        await remote.setItems([activity, due])
+        let merged = try await service.inbox().items
+        #expect(merged.map(\.id) == ["activity:jira:ABC-1"])
+        #expect(merged.first?.dueKind == "overdue" && merged.first?.detail == "处理中")
+        // 处理合并后的一行，两边都不再出现
+        try await service.handleInbox(.init(id: "activity:jira:ABC-1", title: "ABC-1", eventIds: ["e1"]))
+        #expect(try await service.inbox().items.isEmpty)
+        // 放进待办后不再提醒到期，但之后的新评论照常出现
+        _ = try await store.saveTodo(TodoInput(title: "标题", refSystem: "jira", refKey: "ABC-1"))
+        let comment = ActivityEvent(id: "e2", issueKey: "ABC-1", kind: "comment", at: iso(now + 60_000), system: "jira")
+        await remote.setItems([InboxItem(id: "activity:jira:ABC-1", source: "activity", title: "ABC-1 标题", at: now + 60_000, system: "jira", key: "ABC-1", events: [assigned, comment]), InboxItem(id: "due:ABC-1", source: "due", title: "ABC-1 标题", at: now + 86_400_000, system: "jira", key: "ABC-1", dueKind: "overdue", dueDays: 3)])
+        let after = try await service.inbox().items
+        #expect(after.map(\.id) == ["activity:jira:ABC-1"])
+        #expect(after.first?.events.map(\.id) == ["e2"] && after.first?.dueKind == nil)
+    }
     @Test func wikiTaskChangesBeforeLocalCompletion() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -372,7 +372,10 @@ enum InboxText {
             guard let e = item.events.first else { return "" }
             let d = ActivityText.detail(e)
             let text = "\(e.actor) \(ActivityText.action(e))\(d.isEmpty ? "" : "：\(d)")"
-            return item.events.count > 1 ? "\(text)（共 \(item.events.count) 条）" : text
+            let activity = item.events.count > 1 ? "\(text)（共 \(item.events.count) 条）" : text
+            // 合并了到期提醒的问题，后面接上到期和状态
+            let due = item.dueKind.map { AppModel.reminderLabel($0, item.dueDays ?? 0) } ?? ""
+            return [activity, due, due.isEmpty ? "" : item.detail].filter { !$0.isEmpty }.joined(separator: " · ")
         case "due":
             return [item.dueKind.map { AppModel.reminderLabel($0, item.dueDays ?? 0) } ?? "", item.detail].filter { !$0.isEmpty }.joined(separator: " · ")
         default:

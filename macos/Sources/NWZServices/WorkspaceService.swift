@@ -96,9 +96,11 @@ public actor WorkspaceService {
         if try await store.capturesToTodos() > 0 { host.emit(.init("workspace-synced")) }
         let source = try await remote?.inboxSources() ?? InboxView()
         let entries = Dictionary(uniqueKeysWithValues: try await store.inbox().map { ($0.id, $0) })
-        var ready: [InboxItem] = [], snoozed: [InboxItem] = []
-        let now = Workspace.now()
+        // 已在待办中的 Jira 问题由待办管日期，不再提醒到期；新的动态照常出现
+        let todoKeys = Set(try await store.todos().filter { !$0.done && !$0.deleted && $0.refSystem == "jira" }.compactMap(\.refKey))
+        var pending: [InboxItem] = []
         for var item in source.items + source.snoozed {
+            if item.source == "due", let key = item.key, todoKeys.contains(key) { continue }
             let entry = entries[item.id], handled = entry?.handledAt ?? 0
             if item.source == "activity" {
                 item.events.removeAll { Self.eventTime($0.at) <= handled }
@@ -106,6 +108,11 @@ public actor WorkspaceService {
                 item.at = item.events.map { Self.eventTime($0.at) }.max() ?? item.at
             } else if handled >= item.at { continue }
             item.snoozeUntil = entry?.snoozeUntil
+            pending.append(item)
+        }
+        var ready: [InboxItem] = [], snoozed: [InboxItem] = []
+        let now = Workspace.now()
+        for item in Self.mergeJira(pending) {
             if let until = item.snoozeUntil, until > now { snoozed.append(item) } else { ready.append(item) }
         }
         ready.sort { $0.at > $1.at }; snoozed.sort { ($0.snoozeUntil ?? 0) < ($1.snoozeUntil ?? 0) }
@@ -113,10 +120,33 @@ public actor WorkspaceService {
     }
     public func handleInbox(_ input: InboxHandleInput) async throws {
         if let ids = input.eventIds, !ids.isEmpty { try await remote?.markActivityRead(ids) }
-        _ = try await store.setInboxState(input.id, title: input.title, handledAt: Workspace.now(), snoozeUntil: nil)
+        let now = Workspace.now()
+        for id in Self.linkedIds(input.id) { _ = try await store.setInboxState(id, title: input.title, handledAt: now, snoozeUntil: nil) }
     }
     public func snoozeInbox(_ id: String, title: String, until: Int64?) async throws {
-        _ = try await store.setInboxState(id, title: title, handledAt: nil, snoozeUntil: until)
+        for id in Self.linkedIds(id) { _ = try await store.setInboxState(id, title: title, handledAt: nil, snoozeUntil: until) }
+    }
+    /// 同一个 Jira 问题的动态和到期提醒合并为一行：沿用动态的 id，带上到期信息。
+    static func mergeJira(_ items: [InboxItem]) -> [InboxItem] {
+        var dues: [String: InboxItem] = [:]
+        for item in items where item.source == "due" { if let key = item.key { dues[key] = item } }
+        var merged: Set<String> = []
+        var result: [InboxItem] = []
+        for var item in items {
+            if item.source == "activity", item.system == "jira", let key = item.key, let due = dues[key] {
+                item.dueKind = due.dueKind; item.dueDays = due.dueDays; item.detail = due.detail
+                if let a = item.snoozeUntil, let b = due.snoozeUntil { item.snoozeUntil = max(a, b) } else { item.snoozeUntil = item.snoozeUntil ?? due.snoozeUntil }
+                merged.insert(key)
+            }
+            result.append(item)
+        }
+        return result.filter { !($0.source == "due" && $0.key.map(merged.contains) == true) }
+    }
+    /// 合并后的一行同时代表动态和到期提醒，处理和稍后提醒要两边一起记。
+    static func linkedIds(_ id: String) -> [String] {
+        if id.hasPrefix("due:") { return [id, "activity:jira:" + id.dropFirst(4)] }
+        if id.hasPrefix("activity:jira:") { return [id, "due:" + id.dropFirst(14)] }
+        return [id]
     }
     public func worklog(_ day: String) async throws -> WorkLog {
         let formatter = DateFormatter()
