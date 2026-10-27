@@ -885,11 +885,21 @@ final class EditorTextView: NSTextView {
     override func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
         if pasteImages(from: pb) { return }
-        pasteAsPlainText(sender)
+        pastePlain(from: pb)
     }
 
     override func pasteAsRichText(_ sender: Any?) {
         paste(sender)
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        pastePlain(from: NSPasteboard.general)
+    }
+
+    /// 文字按纯文本插入。系统的 pasteAsPlainText 在这个编辑器里不插入任何内容，所以自己读出来插入（和打字走同一条路，可撤销）。
+    private func pastePlain(from pb: NSPasteboard) {
+        guard let text = pb.string(forType: .string), !text.isEmpty else { return }
+        insertText(text.replacingOccurrences(of: "\r\n", with: "\n"), replacementRange: selectedRange())
     }
 
     /// 剪贴板或拖入的图片：保存后插入；其他文件交给 `onFile`（插入附件引用）。

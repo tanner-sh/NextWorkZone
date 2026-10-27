@@ -217,6 +217,14 @@ enum DevBridge {
                 }
             case "op":
                 tv.debugOp(query["name"] ?? "")
+            case "responder":
+                // 键盘焦点和“粘贴”菜单命令的去向
+                let target = NSApp.target(forAction: #selector(NSText.paste(_:)), to: nil, from: nil)
+                var info: [String: String] = ["editorWindow": String(window.windowNumber)]
+                info["keyWindow"] = NSApp.keyWindow.map { String(describing: type(of: $0)) + " " + String($0.windowNumber) } ?? "nil"
+                info["firstResponder"] = NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
+                info["pasteTarget"] = target.map { String(describing: type(of: $0)) } ?? "nil"
+                return String(data: (try? JSONSerialization.data(withJSONObject: info)) ?? Data(), encoding: .utf8) ?? "{}"
             case "dump":
                 let doc = RichFlat.build(RichFlat.parse(tv.textStorage!).paras)
                 let data = (try? JSONEncoder().encode(doc)) ?? Data()

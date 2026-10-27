@@ -15,6 +15,7 @@ final class MrListModel {
     var error: String?
     private var page = 1
     private var key = ""
+    private var state = ""
 
     /// 每页条数，与应用层一致。
     static let pageSize = 30
@@ -23,6 +24,7 @@ final class MrListModel {
         let k = "\(source)|\(state)|\(search)"
         if p == 1 && k != key { items = nil }
         key = k
+        self.state = state
         loading = true
         error = nil
         do {
@@ -54,7 +56,8 @@ final class MrListModel {
     /// 用详情里的最新数据更新列表中的一项。
     func replace(_ mr: MergeRequest) {
         guard var list = items, let i = list.firstIndex(where: { $0.id == mr.id }) else { return }
-        list[i] = mr
+        // 按状态筛选时，合并、关闭或重新打开后不再符合的移出列表
+        if state != "all" && !state.isEmpty && mr.state != state { list.remove(at: i) } else { list[i] = mr }
         items = list
     }
 }
@@ -118,7 +121,6 @@ struct GitlabPage: View {
                     detail
                 }
                 .pageToolbar { toolbar }
-                .pageSubtitle(.gitlab, subtitle)
             }
         }
         .onAppear { takeTarget() }
@@ -224,6 +226,7 @@ struct GitlabPage: View {
         }
     }
 
+    /// 列表条数，显示在筛选框右侧（窗口不显示 GitLab 页面的标题）。
     private var subtitle: String {
         if mode == .mrs { return mrList.items.map { "\($0.count)\(mrList.hasMore ? "+" : "") 个合并请求" } ?? "" }
         return projects.map { "\($0.count) 个项目" } ?? ""
@@ -243,7 +246,7 @@ struct GitlabPage: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            FilterField(prompt: "搜索标题，回车", text: $mrInput) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
+            FilterField(prompt: "搜索标题，回车", text: $mrInput, trailing: subtitle) { mrSearch = mrInput.trimmingCharacters(in: .whitespaces) }
         }
     }
 
@@ -275,7 +278,7 @@ struct GitlabPage: View {
         .listStyle(.inset)
         .overlay { if projects == nil && error == nil { ProgressView() } }
         .listHeader {
-            FilterField(prompt: "筛选项目（收藏的项目置顶）", text: $filter)
+            FilterField(prompt: "筛选项目（收藏的项目置顶）", text: $filter, trailing: subtitle)
             if let error { ErrorBox(message: error) { Task { await loadProjects() } } }
         }
     }

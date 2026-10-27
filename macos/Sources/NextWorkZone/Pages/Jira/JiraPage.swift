@@ -77,7 +77,6 @@ struct JiraPage: View {
                     detailPane
                 }
                 .pageToolbar { toolbar }
-                .pageSubtitle(.jira, subtitle)
             }
         }
         .issueMenuDialogs(issueMenu)
@@ -244,14 +243,31 @@ struct JiraPage: View {
 
     private func onIssueChanged(_ updated: IssueSummary) {
         guard var list = issues, let i = list.firstIndex(where: { $0.key == updated.key }) else { return }
+        // 只列未解决问题时，刚解决的问题立即移出列表（右侧详情保持不变）
+        if updated.resolution != nil, query.jql.contains(/(?i)resolution\s*=\s*unresolved/) {
+            list.remove(at: i)
+            issues = list
+            total = max(total - 1, list.count)
+            return
+        }
         var u = updated
         u.extra = list[i].extra
         list[i] = u
         issues = list
+        // 只列分配给我的问题时，分配给别人后同样移出
+        if query.jql.contains(/(?i)assignee\s*=\s*currentUser\(\)/) {
+            Task {
+                guard let me = try? await API.shared.jiraMe(), updated.assigneeName != me, var list = issues, let i = list.firstIndex(where: { $0.key == updated.key }) else { return }
+                list.remove(at: i)
+                issues = list
+                total = max(total - 1, list.count)
+            }
+        }
     }
 
     private func menuUpdated(_ detail: IssueDetail) {
         onIssueChanged(detail.summaryValue)
+        model.issueChanged()
         Task { await viewedStore.markViewed(key: detail.key, updated: detail.updated) }
         if detail.key == selected { detailVersion += 1 }
     }
@@ -336,9 +352,11 @@ struct JiraPage: View {
         }
     }
 
-    /// 副标题：常用查询的名称和条数（只加载了一部分、本机搜索时说明）。
-    private var subtitle: String {
+    /// 筛选框右侧的说明：常用查询的名称和条数（只加载了一部分、本机搜索时说明；筛选时为筛出的条数）。
+    /// 窗口不显示 Jira 页面的标题（侧栏已经标明），条数放在列表上方。
+    private var listSummary: String {
         guard let issues, !(mode == .search && JQL.search(form) == nil) else { return "" }
+        if !filter.trimmingCharacters(in: .whitespaces).isEmpty { return "\(visible.count) / \(issues.count) 条" }
         let count = localSearch ? "本机问题库中找到 \(total >= 200 ? "200+" : "\(total)") 条"
             : total > issues.count ? "共 \(total) 条，已显示 \(issues.count) 条" : "\(total) 条"
         return [query.label, count].compactMap { $0 }.joined(separator: " · ")
@@ -380,7 +398,7 @@ struct JiraPage: View {
                     if !j.isEmpty { query = (j, nil) }
                 }
         }
-        FilterField(prompt: "筛选当前列表", text: $filter)
+        FilterField(prompt: "筛选当前列表", text: $filter, trailing: listSummary)
         if let error { ErrorBox(message: error) { Task { await load() } } }
         if let createWarning { ErrorBox(message: createWarning) }
     }

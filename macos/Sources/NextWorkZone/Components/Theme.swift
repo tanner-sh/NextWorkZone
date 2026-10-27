@@ -88,12 +88,17 @@ struct FilterField: View {
     @Binding var text: String
     var loading = false
     var focus: FocusState<Bool>.Binding? = nil
+    /// 右侧的说明，例如列表条数
+    var trailing = ""
     var onSubmit: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             if loading { ProgressView().controlSize(.small) } else { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }
             field
+            if !trailing.isEmpty {
+                Text(trailing).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            }
             if !text.isEmpty {
                 Button {
                     text = ""

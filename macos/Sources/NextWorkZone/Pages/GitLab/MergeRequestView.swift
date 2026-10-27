@@ -113,6 +113,7 @@ struct MergeRequestView: View {
     private func updated(_ next: MergeRequest) {
         mr = next
         onChanged?(next)
+        model.mergeRequestChanged()
     }
 
     private func run(_ action: @escaping () async throws -> Void) {
@@ -166,11 +167,11 @@ struct MergeRequestView: View {
     private func toolbar(_ mr: MergeRequest) -> some ToolbarContent {
         ToolbarItemGroup {
             if mr.state == "opened", let a = approvals, a.userCanApprove, !a.userHasApproved {
-                Button("批准", systemImage: "hand.thumbsup") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: true); toast("已批准") } }
+                Button("批准", systemImage: "hand.thumbsup") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: true); model.mergeRequestChanged(); toast("已批准") } }
                     .labelStyle(.titleAndIcon).disabled(busy)
             }
             if mr.state == "opened", approvals?.userHasApproved == true {
-                Button("取消批准", systemImage: "arrow.uturn.backward") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: false); toast("已取消批准") } }
+                Button("取消批准", systemImage: "arrow.uturn.backward") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: false); model.mergeRequestChanged(); toast("已取消批准") } }
                     .labelStyle(.titleAndIcon).disabled(busy)
             }
             if mr.state == "closed" { Button("重新打开") { setState("reopen") }.disabled(busy) }

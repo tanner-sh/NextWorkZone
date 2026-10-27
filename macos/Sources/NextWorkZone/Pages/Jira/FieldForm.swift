@@ -1,4 +1,5 @@
 import SwiftUI
+import NWZCore
 
 /// 编辑、创建、流转界面共用的字段表单：按字段类型生成控件，并把表单取值转换为 Jira REST API 的格式。
 /// 字段元数据（editmeta / createmeta）的读取见 NWZJira 的 `Fields.swift`。
@@ -120,6 +121,77 @@ enum FieldForm {
     static func explain(_ message: String, _ fields: [FieldMeta]) -> String {
         fields.reduce(message) { $0.replacingOccurrences(of: "\($1.key)：", with: "\($1.name)：") }
     }
+
+    /// 把提交失败的原因分到字段上：Jira 按字段返回的（`字段键：原因`），或原因里提到了字段名的（如工作流校验的“必填缺陷类型”）。
+    static func problem(_ error: Error, _ fields: [FieldMeta]) -> SubmitProblem {
+        guard case NWZError.http(_, let body)? = error as? NWZError else { return SubmitProblem(general: [errorMessage(error)]) }
+        let list = editable(fields)
+        // 名字长的先匹配，避免“类型”抢在“缺陷类型”前面
+        let byName = list.filter { $0.name.count >= 2 }.sorted { $0.name.count > $1.name.count }
+        var result = SubmitProblem()
+        for part in body.components(separatedBy: "；").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
+            let keyed = list.first { part.hasPrefix("\($0.key)：") }
+            if let field = keyed ?? byName.first(where: { part.contains($0.name) }) {
+                let text = keyed == nil ? part : String(part.dropFirst(field.key.count + 1))
+                result.fields[field.key] = result.fields[field.key].map { $0 + "；" + text } ?? text
+            } else {
+                result.general.append(explain(part, fields))
+            }
+        }
+        result.order = list.filter { result.fields[$0.key] != nil }.map { ($0.key, $0.name) }
+        if result.general.isEmpty && result.fields.isEmpty { result.general = [errorMessage(error)] }
+        return result
+    }
+}
+
+/// 提交失败的原因：对应到字段的显示在字段下面，其余显示在底部的提示条里。
+struct SubmitProblem: Equatable {
+    var general: [String] = []
+    /// 字段键 → 原因
+    var fields: [String: String] = [:]
+    /// 出错的字段（键、名称），按表单顺序
+    var order: [(key: String, name: String)] = []
+    /// 每次提交失败都不同，用来触发滚动
+    var id = UUID()
+
+    static func == (a: SubmitProblem, b: SubmitProblem) -> Bool { a.id == b.id && a.general == b.general && a.fields == b.fields }
+
+    /// 修改了出错的字段后去掉它的提示；什么都不剩时返回 nil。
+    func clearing(from old: FieldValues, to new: FieldValues) -> SubmitProblem? {
+        var next = self
+        next.fields = fields.filter { old[$0.key] == new[$0.key] }
+        guard next.fields.count != fields.count else { return self }
+        next.order = order.filter { next.fields[$0.key] != nil }
+        return next.general.isEmpty && next.fields.isEmpty ? nil : next
+    }
+}
+
+/// 固定在对话框底部按钮上方的提交失败提示：不用滚动就能看到；点字段名跳到该字段。
+struct SubmitProblemBar: View {
+    var problem: SubmitProblem
+    var jump: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(problem.general, id: \.self) { Text($0).textSelection(.enabled) }
+                if !problem.order.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("请检查标红的字段：")
+                        ForEach(problem.order, id: \.key) { f in
+                            Button(f.name) { jump(f.key) }.buttonStyle(.link)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.callout)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .noticeBackground(.red)
+        .padding(.horizontal, 20).padding(.vertical, 8)
+    }
 }
 
 // MARK: - 表单
@@ -128,6 +200,8 @@ struct FieldList: View {
     var fields: [FieldMeta]
     @Binding var values: FieldValues
     var context: FieldContext
+    /// 提交失败时各字段的原因
+    var errors: [String: String] = [:]
 
     var body: some View {
         let list = FieldForm.editable(fields)
@@ -135,11 +209,15 @@ struct FieldList: View {
             ForEach(list) { field in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 2) {
-                        Text(field.name).font(.callout).foregroundStyle(.secondary)
+                        Text(field.name).font(.callout).foregroundStyle(errors[field.key] == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
                         if field.required { Text("*").foregroundStyle(.red) }
                     }
                     FieldInput(field: field, value: Binding(get: { values[field.key] ?? .null }, set: { values[field.key] = $0 }), context: context)
+                    if let error = errors[field.key] {
+                        Label(error, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    }
                 }
+                .id(field.key)
             }
         }
     }

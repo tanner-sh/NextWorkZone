@@ -11,21 +11,20 @@ struct EditIssueSheet: View {
     @State private var values: FieldValues = [:]
     @State private var loadError: String?
     @State private var saving = false
-    @State private var error: String?
+    @State private var problem: SubmitProblem?
     @State private var images: [PendingImage] = []
 
     var body: some View {
         let changes = fields.map { FieldForm.payload($0, values, initial: initial) } ?? [:]
         let missing = fields.map { FieldForm.missingRequired($0, values) } ?? []
-        DialogFrame(title: "编辑 \(issueKey)", width: 720) {
+        DialogFrame(title: "编辑 \(issueKey)", width: 720, problem: problem) {
             if let loadError { ErrorBox(message: loadError) { Task { await load() } } }
             if fields == nil && loadError == nil { LoadingView().frame(height: 200) }
             if let fields {
                 // 必填但无法编辑的字段并不妨碍修改其他字段，这里只做提示
                 UnsupportedNotice(fields: fields, issueKey: issueKey)
-                FieldList(fields: fields, values: $values, context: FieldContext(issueKey: issueKey, projectKey: JQL.projectKey(of: issueKey), onImage: { images.append($0) }))
+                FieldList(fields: fields, values: $values, context: FieldContext(issueKey: issueKey, projectKey: JQL.projectKey(of: issueKey), onImage: { images.append($0) }), errors: problem?.fields ?? [:])
             }
-            if let error { ErrorBox(message: error) }
         } footer: {
             if !changes.isEmpty { Text("已修改 \(changes.count) 个字段").font(.caption).foregroundStyle(.secondary) }
             if !missing.isEmpty { Text("请填写：\(missing.map(\.name).joined(separator: "、"))").font(.caption).foregroundStyle(.red) }
@@ -34,6 +33,7 @@ struct EditIssueSheet: View {
             Button(saving ? "保存中…" : "保存") { save(changes) }.keyboardShortcut(.defaultAction).disabled(fields == nil || saving || !missing.isEmpty)
         }
         .interactiveDismissDisabled(!changes.isEmpty)
+        .onChange(of: values) { old, new in problem = problem?.clearing(from: old, to: new) }
         .task { await load() }
     }
 
@@ -54,7 +54,7 @@ struct EditIssueSheet: View {
         guard let fields else { return }
         if changes.isEmpty { dismiss(); return }
         saving = true
-        error = nil
+        problem = nil
         Task {
             do {
                 // 先上传正文中引用的粘贴图片，保存后 !文件名! 才能显示
@@ -64,7 +64,7 @@ struct EditIssueSheet: View {
                 dismiss()
             } catch {
                 guard !isCancellation(error) else { return }
-                self.error = FieldForm.explain(errorMessage(error), fields)
+                problem = FieldForm.problem(error, fields)
                 saving = false
             }
         }
@@ -101,7 +101,7 @@ struct CreateIssueSheet: View {
     @State private var files: [String] = []
     @State private var images: [PendingImage] = []
     @State private var submitting = false
-    @State private var error: String?
+    @State private var problem: SubmitProblem?
     /// 克隆时源问题的字段值
     @State private var sourceValues: FieldValues?
     @State private var linkTypes: [LinkType]?
@@ -130,7 +130,7 @@ struct CreateIssueSheet: View {
     var body: some View {
         let missing = fields.map { FieldForm.missingRequired($0, values) } ?? []
         let blocked = fields.map { !FieldForm.unsupportedRequired($0).isEmpty } ?? false
-        DialogFrame(title: title, width: 720) {
+        DialogFrame(title: title, width: 720, problem: problem) {
             if let projectsError, projects == nil { ErrorBox(message: projectsError) }
             if case .linked(let i) = source {
                 VStack(alignment: .leading, spacing: 4) {
@@ -178,7 +178,7 @@ struct CreateIssueSheet: View {
             if projectKey != nil && issueTypeId != nil && fields == nil && fieldsError == nil { LoadingView().frame(height: 160) }
             if let fields {
                 UnsupportedNotice(fields: fields)
-                FieldList(fields: fields, values: $values, context: FieldContext(issueKey: nil, projectKey: projectKey, onImage: { images.append($0) }))
+                FieldList(fields: fields, values: $values, context: FieldContext(issueKey: nil, projectKey: projectKey, onImage: { images.append($0) }), errors: problem?.fields ?? [:])
                 // 附件在问题创建成功后再上传
                 VStack(alignment: .leading, spacing: 4) {
                     Text("附件").font(.callout).foregroundStyle(.secondary)
@@ -197,7 +197,6 @@ struct CreateIssueSheet: View {
                     }
                 }
             }
-            if let error { ErrorBox(message: error) }
         } footer: {
             if !missing.isEmpty { Text("请填写：\(missing.map(\.name).joined(separator: "、"))").font(.caption).foregroundStyle(.red) }
             Spacer()
@@ -219,6 +218,7 @@ struct CreateIssueSheet: View {
             chooseType()
         }
         .onChange(of: projectKey) { chooseType() }
+        .onChange(of: values) { old, new in problem = problem?.clearing(from: old, to: new) }
         .task(id: "\(projectKey ?? "")|\(issueTypeId ?? "")|\(sourceValues?.count ?? -1)") { await loadFields() }
     }
 
@@ -264,7 +264,7 @@ struct CreateIssueSheet: View {
     private func submit() {
         guard let fields, let projectKey, let issueTypeId else { return }
         submitting = true
-        error = nil
+        problem = nil
         Task {
             do {
                 var payload = FieldForm.payload(fields, values)
@@ -294,7 +294,7 @@ struct CreateIssueSheet: View {
                 dismiss()
             } catch {
                 guard !isCancellation(error) else { return }
-                self.error = FieldForm.explain(errorMessage(error), fields)
+                problem = FieldForm.problem(error, fields)
                 submitting = false
             }
         }
@@ -305,17 +305,30 @@ struct CreateIssueSheet: View {
 struct DialogFrame<Content: View, Footer: View>: View {
     var title: String
     var width: CGFloat = 520
+    /// 提交失败的原因：提示条固定在底部按钮上方，并滚动到第一个出错的字段（字段需带 `.id(字段键)`）
+    var problem: SubmitProblem? = nil
     @ViewBuilder var content: () -> Content
     @ViewBuilder var footer: () -> Footer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).font(.headline).padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 10)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) { content() }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) { content() }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let problem {
+                    Divider()
+                    SubmitProblemBar(problem: problem) { key in withAnimation { proxy.scrollTo(key, anchor: .center) } }
+                }
+                Color.clear.frame(height: 0)
+                    .onChange(of: problem?.id) {
+                        guard let key = problem?.order.first?.key else { return }
+                        withAnimation { proxy.scrollTo(key, anchor: .center) }
+                    }
             }
             Divider()
             HStack(spacing: 10) { footer() }.padding(14)

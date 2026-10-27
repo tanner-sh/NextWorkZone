@@ -222,6 +222,7 @@ final class API: @unchecked Sendable {
     func glMrEditNote(_ project: String, iid: Int, note: Int, body: String) async throws -> MrNote { try await gitlab.client().mrEditNote(project, iid: iid, note: note, body: body) }
     func glMrDeleteNote(_ project: String, iid: Int, note: Int) async throws { try await gitlab.client().mrDeleteNote(project, iid: iid, note: note) }
     func glMrResolve(_ project: String, iid: Int, discussion: String, resolved: Bool) async throws -> Discussion { try await gitlab.client().mrResolve(project, iid: iid, discussion: discussion, resolved: resolved) }
+    func glInboxChanged() async { await gitlab.inboxChanged() }
     func glMrApprove(_ project: String, iid: Int, approve: Bool) async throws -> Approvals { try await gitlab.client().mrApprove(project, iid: iid, approve: approve) }
     func glMrMerge(_ project: String, iid: Int, squash: Bool, removeSourceBranch: Bool, sha: String?) async throws -> MergeRequest { try await gitlab.client().mrMerge(project, iid: iid, options: MergeOptions(squash: squash, removeSourceBranch: removeSourceBranch, sha: sha)) }
     func glMrUpdate(_ project: String, iid: Int, update: MrUpdate) async throws -> MergeRequest { try await gitlab.client().mrUpdate(project, iid: iid, update: update) }

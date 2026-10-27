@@ -189,7 +189,7 @@ struct TransitionSheet: View {
     @State private var applied: String?
     @State private var savingTemplate = false
     @State private var submitting = false
-    @State private var error: String?
+    @State private var problem: SubmitProblem?
     @State private var images: [PendingImage] = []
     @State private var store = TemplateStore.shared
 
@@ -204,51 +204,41 @@ struct TransitionSheet: View {
         let templates = store.list.filter { $0.kind == "transition" && $0.transition == transition.name }
         let blocked = !FieldForm.unsupportedRequired(transition.fields).isEmpty
         let missing = FieldForm.missingRequired(transition.fields, values)
-        VStack(alignment: .leading, spacing: 0) {
-            Text("\(issueKey) · \(transition.name)").font(.headline).padding(20)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("流转后状态：").foregroundStyle(.secondary)
-                        StatusPill(status: transition.to)
-                    }
-                    if !templates.isEmpty {
-                        HStack {
-                            Text("模板").font(.caption).foregroundStyle(.secondary)
-                            ForEach(templates) { t in
-                                Button(t.name) {
-                                    values = templateValues(t)
-                                    comment = fill(t.body)
-                                    applied = t.id
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(applied == t.id ? .accentColor : nil)
-                            }
-                        }
-                    }
-                    UnsupportedNotice(fields: transition.fields, issueKey: issueKey)
-                    FieldList(fields: transition.fields, values: $values, context: FieldContext(issueKey: issueKey, projectKey: JQL.projectKey(of: issueKey), onImage: { images.append($0) }))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("评论（可选）").font(.callout).foregroundStyle(.secondary)
-                        JiraTextEditor(text: $comment, issueKey: issueKey, onImage: { images.append($0) }, minHeight: 80)
-                        VisibilitySelect(issueKey: issueKey, value: $visibility)
-                    }
-                    if let error { ErrorBox(message: error) }
-                }
-                .padding(.horizontal, 20)
-            }
-            Divider()
+        DialogFrame(title: "\(issueKey) · \(transition.name)", width: 620, problem: problem) {
             HStack {
-                Button("存为模板") { savingTemplate = true }.help("保存这次填写的字段和评论，下次一键填好")
-                Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(submitting ? "提交中…" : "确认\(transition.name)", action: submit)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(submitting || !missing.isEmpty || blocked)
+                Text("流转后状态：").foregroundStyle(.secondary)
+                StatusPill(status: transition.to)
             }
-            .padding(16)
+            if !templates.isEmpty {
+                HStack {
+                    Text("模板").font(.caption).foregroundStyle(.secondary)
+                    ForEach(templates) { t in
+                        Button(t.name) {
+                            values = templateValues(t)
+                            comment = fill(t.body)
+                            applied = t.id
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(applied == t.id ? .accentColor : nil)
+                    }
+                }
+            }
+            UnsupportedNotice(fields: transition.fields, issueKey: issueKey)
+            FieldList(fields: transition.fields, values: $values, context: FieldContext(issueKey: issueKey, projectKey: JQL.projectKey(of: issueKey), onImage: { images.append($0) }), errors: problem?.fields ?? [:])
+            VStack(alignment: .leading, spacing: 4) {
+                Text("评论（可选）").font(.callout).foregroundStyle(.secondary)
+                JiraTextEditor(text: $comment, issueKey: issueKey, onImage: { images.append($0) }, minHeight: 80)
+                VisibilitySelect(issueKey: issueKey, value: $visibility)
+            }
+        } footer: {
+            Button("存为模板") { savingTemplate = true }.help("保存这次填写的字段和评论，下次一键填好")
+            Spacer()
+            Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+            Button(submitting ? "提交中…" : "确认\(transition.name)", action: submit)
+                .keyboardShortcut(.defaultAction)
+                .disabled(submitting || !missing.isEmpty || blocked)
         }
-        .frame(width: 620, height: 600)
+        .onChange(of: values) { old, new in problem = problem?.clearing(from: old, to: new) }
         .onAppear {
             store.load()
             values = templateValues(template)
@@ -262,7 +252,7 @@ struct TransitionSheet: View {
 
     private func submit() {
         submitting = true
-        error = nil
+        problem = nil
         Task {
             do {
                 let payload = FieldForm.payload(transition.fields, values)
@@ -274,7 +264,7 @@ struct TransitionSheet: View {
                 dismiss()
             } catch {
                 guard !isCancellation(error) else { return }
-                self.error = FieldForm.explain(errorMessage(error), transition.fields)
+                problem = FieldForm.problem(error, transition.fields)
                 submitting = false
             }
         }

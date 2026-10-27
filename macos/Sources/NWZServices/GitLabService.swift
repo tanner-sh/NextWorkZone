@@ -17,6 +17,8 @@ public actor GitLabService {
     }
     public func client() async throws -> GitLabClient { try await GitLabClient(rest: settings.restClient(.gitlab)) }
     public func configurationChanged() { inboxCache = nil; projectNames = [:] }
+    /// 在应用里改了合并请求：下次汇总需要处理的事时重新查询。
+    public func inboxChanged() { inboxCache = nil }
     public func cachedProjects() async throws -> [Project]? { await cache.get(try client().rest.cacheIdentity + ":gitlab:projects", as: [Project].self) }
     public func projects(search: String? = nil) async throws -> [Project] {
         let client = try await client(), projects = try await client.projects(search: search)

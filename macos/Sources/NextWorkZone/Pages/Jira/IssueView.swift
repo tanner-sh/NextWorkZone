@@ -155,6 +155,8 @@ struct IssueView: View {
             issue = detail
             transitions = available ?? []
             IssueCache.shared.put(detail, transitions: transitions)
+            // 在别处（如网页）改过的问题，到期提醒可能已过时
+            if let r = model.reminders?.items.first(where: { $0.key == detail.key }), r.updated != detail.updated { model.issueChanged() }
             // 记录查看；上次查看之后有更新时找出具体变化
             let previous = await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
             if let since = ViewedStore.lastSeen(local: previous, issue: detail.summaryValue), Fmt.ms(detail.updated) > since {
@@ -172,6 +174,7 @@ struct IssueView: View {
         issue = detail
         onChanged(detail.summaryValue)
         IssueCache.shared.put(detail, transitions: transitions)
+        model.issueChanged()
         // 自己的修改不算新变化
         Task {
             await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)

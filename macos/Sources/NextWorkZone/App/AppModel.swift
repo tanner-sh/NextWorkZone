@@ -264,6 +264,30 @@ final class AppModel {
         return r
     }
 
+    private var issueChangeTask: Task<Void, Never>?
+
+    /// 在应用里改了问题（字段、流转、分配等）：重新计算到期提醒、未解决问题数、关联的待办和需要处理的事，不必等下一轮轮询。连续修改只刷新一次。
+    func issueChanged() {
+        issueChangeTask?.cancel()
+        issueChangeTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            _ = try? await checkReminders(withNotify: false)
+            if let r = try? await API.shared.jiraSearch(JQL.myUnresolved, startAt: 0, maxResults: 1) { issueCount = r.total }
+            // 问题解决或重新打开后，关联的待办跟着完成或恢复
+            if let r = try? await API.shared.wsRefreshJiraTodos(), r.added + r.completed + r.reopened > 0 { Events.workspaceChanged() }
+            await refreshInbox()
+        }
+    }
+
+    /// 在应用里合并、关闭或批准了合并请求：立即刷新需要处理的事。
+    func mergeRequestChanged() {
+        Task {
+            await API.shared.glInboxChanged()
+            await refreshInbox()
+        }
+    }
+
     private func notifyDue(_ due: [Reminder]) {
         guard !due.isEmpty else { return }
         let day = Fmt.today()

@@ -9,6 +9,9 @@ struct RootView: View {
     /// 各保留页面第几次显示
     @State private var visits: [PageID: Int] = [:]
 
+    /// 不在窗口中显示标题的页面：侧栏已经标明当前页面，标题夹在列表和详情两组工具栏按钮之间显得突兀；条数等信息放在列表上方
+    static let untitled: Set<PageID> = [.jira, .gitlab]
+
     static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats, .settings]
 
     var body: some View {
@@ -28,8 +31,8 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .textBackgroundColor))
-            .navigationTitle(title)
-            .navigationSubtitle(PageTitles.shared.subtitles[model.current.page] ?? "")
+            .navigationTitle(Self.untitled.contains(model.current.page) ? "" : title)
+            .navigationSubtitle(Self.untitled.contains(model.current.page) ? "" : PageTitles.shared.subtitles[model.current.page] ?? "")
         }
         // 窗口的最小尺寸由 SwiftUI 内容决定（NSHostingController 会覆盖 window.minSize）；
         // 太窄时列表加详情的页面挤成一个字宽，长 Wiki 页面会排成几十万点高，画面出现黑块
