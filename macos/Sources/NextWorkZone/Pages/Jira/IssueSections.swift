@@ -57,6 +57,43 @@ struct SubtasksSection: View {
     }
 }
 
+/// Epic 中的问题（网页上的“长篇故事中的事务”）。
+struct EpicIssuesSection: View {
+    var jql: String
+    var menu: IssueMenu
+    @State private var result: SearchResult?
+    @State private var error: String?
+
+    var body: some View {
+        let done = result?.issues.filter { $0.status.category == "done" }.count ?? 0
+        BlockSection(title: "Epic 中的问题", icon: "list.bullet.indent", count: result.flatMap { $0.total == 0 ? nil : "\(done)/\($0.total)" }) {
+            if let result, result.total > result.issues.count {
+                Button("在列表中查看全部") { AppModel.shared.navigate(NavTarget(.jira, jql: jql)) }.buttonStyle(.borderless)
+            }
+        } content: {
+            if let error { ErrorBox(message: error) }
+            if result == nil && error == nil { ProgressView().controlSize(.small) }
+            if let result {
+                if result.issues.isEmpty {
+                    Text("Epic 中暂无问题").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(result.issues) { i in
+                            IssueRefRow(key: i.key, summary: i.summary, status: i.status, icon: i.issueType.iconUrl, menu: menu) {
+                                Text(i.assignee ?? "未分配").font(.callout).foregroundStyle(.secondary).lineLimit(1).frame(width: 72, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: jql) {
+            error = nil
+            do { result = try await API.shared.jiraSearch(jql, maxResults: 50) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+        }
+    }
+}
+
 struct LinksSection: View {
     var issue: IssueDetail
     var menu: IssueMenu

@@ -506,11 +506,13 @@ public struct IssueDetail: Codable, Hashable, Sendable, Identifiable {
     public var links: [IssueLink]
     public var attachments: [Attachment]
     public var comments: [Comment]
+    /// 这个问题是 Epic 时，查询其中问题的 JQL（按 Epic 链接字段）
+    public var epicIssuesJql: String?
 
     public var summaryValue: IssueSummary {
         IssueSummary(key: key, summary: summary, status: status, issueType: issueType, priority: priority, project: project, assignee: assignee, assigneeName: assigneeName, reporter: reporter, reporterName: reporterName, lastViewed: lastViewed, resolution: resolution, created: created, updated: updated, dueDate: dueDate, extra: extra)
     }
-    public init(id: String, key: String, summary: String, status: JiraStatus, issueType: Named, priority: Named? = nil, project: Named, assignee: String? = nil, assigneeName: String? = nil, reporter: String? = nil, reporterName: String? = nil, lastViewed: String? = nil, resolution: String? = nil, created: String, updated: String, dueDate: String? = nil, extra: [String: String]? = nil, descriptionHtml: String? = nil, fields: [DisplayField], timeTracking: TimeTracking? = nil, parent: IssueRef? = nil, subtasks: [IssueRef], links: [IssueLink], attachments: [Attachment], comments: [Comment]) {
+    public init(id: String, key: String, summary: String, status: JiraStatus, issueType: Named, priority: Named? = nil, project: Named, assignee: String? = nil, assigneeName: String? = nil, reporter: String? = nil, reporterName: String? = nil, lastViewed: String? = nil, resolution: String? = nil, created: String, updated: String, dueDate: String? = nil, extra: [String: String]? = nil, descriptionHtml: String? = nil, fields: [DisplayField], timeTracking: TimeTracking? = nil, parent: IssueRef? = nil, subtasks: [IssueRef], links: [IssueLink], attachments: [Attachment], comments: [Comment], epicIssuesJql: String? = nil) {
         self.id = id
         self.key = key
         self.summary = summary
@@ -536,6 +538,7 @@ public struct IssueDetail: Codable, Hashable, Sendable, Identifiable {
         self.links = links
         self.attachments = attachments
         self.comments = comments
+        self.epicIssuesJql = epicIssuesJql
     }
 }
 

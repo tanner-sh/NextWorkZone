@@ -391,7 +391,11 @@ struct MyIssuesCard: View {
         guard model.settings != nil else { return }
         guard model.isReady(.jira) else { state = .off; return }
         if let cached = try? await API.shared.jiraCachedSearch(JQL.myUnresolved), state.value == nil { state = .ok(cached) }
-        do { state = .ok(try await API.shared.jiraSearch(JQL.myUnresolved)) } catch { if !isCancellation(error) { if state.value == nil { state = .failed(errorMessage(error)) } } }
+        do {
+            let r = try await API.shared.jiraSearch(JQL.myUnresolved)
+            state = .ok(r)
+            model.issueCount = r.total
+        } catch { if !isCancellation(error) { if state.value == nil { state = .failed(errorMessage(error)) } } }
     }
 
     /// 通过右键菜单修改过的问题，覆盖列表中的旧数据

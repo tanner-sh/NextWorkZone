@@ -152,6 +152,8 @@ struct JiraPage: View {
             guard id == requestId else { return }
             issues = result.issues
             total = result.total
+            // 侧栏的问题数跟着最新结果走，不必等下一轮轮询
+            if query.jql == JQL.myUnresolved { model.issueCount = result.total }
         } catch {
             guard !isCancellation(error) else { return }
             if id == requestId {

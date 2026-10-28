@@ -40,7 +40,13 @@ struct JiraClientTests {
         #expect(JiraFields.text(try json("2.5")) == "2.5")
         #expect(JiraFields.formatMillis(757650000) == "8天 18小时 28分")
     }
-    @Test func followsScreenConfiguration() throws {
+    @Test func findsIssuesInEpicByLinkField() throws {
+        let schema = try json(#"{"customfield_101":{"custom":"com.pyxis.greenhopper.jira:gh-epic-link"},"customfield_102":{"custom":"com.pyxis.greenhopper.jira:gh-epic-label"}}"#)
+        #expect(IssueDetail.epicIssuesJql(key: "A-1", fields: try json(#"{"customfield_102":"大项目"}"#), schema: schema) == "cf[101] = A-1 ORDER BY Rank ASC")
+        // 不是 Epic：没有 Epic 名称
+        #expect(IssueDetail.epicIssuesJql(key: "A-2", fields: try json(#"{"customfield_101":"A-1","customfield_102":null}"#), schema: schema) == nil)
+    }
+        @Test func followsScreenConfiguration() throws {
         let fields = try json(#"{"assignee":{"displayName":"张三"},"customfield_2":"第二个","customfield_1":"第一个","customfield_9":"隐藏默认值"}"#)
         let names = try json(#"{"assignee":"经办人","customfield_1":"甲","customfield_2":"乙","customfield_9":"丙"}"#)
         let list = JiraFields.display(fields, rendered: .null, names: names, schema: .null, screen: ["customfield_1", "customfield_2"])

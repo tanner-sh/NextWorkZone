@@ -344,6 +344,7 @@ struct IssueView: View {
     @ViewBuilder
     private func rest(_ issue: IssueDetail, proxy: ScrollViewProxy) -> some View {
         SubtasksSection(issue: issue, menu: issueMenu) { creatingSubtask = true }
+        if let jql = issue.epicIssuesJql { EpicIssuesSection(jql: jql, menu: issueMenu) }
         LinksSection(issue: issue, menu: issueMenu, onChanged: apply)
         SimilarSection(issue: issue, menu: issueMenu)
         WikiPagesSection(issueKey: issue.key) { related["wiki"] = $0 }.id("wiki")
