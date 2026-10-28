@@ -32,7 +32,10 @@ sed -e "s/__BUNDLE_ID__/$BUNDLE_ID/" Resources/Info.plist > "$APP/Contents/Info.
 # 图标：Assets.car 为分层图标（由 ./icon.sh 从 Icon/AppIcon.icon 生成），AppIcon.icns 供不认识分层图标的地方使用
 cp Resources/Assets.car Resources/AppIcon.icns Resources/tray-template.png Resources/app-icon.png "$APP/Contents/Resources/"
 
-IDENTITY="${NWZ_SIGN_IDENTITY:-NextWorkZone Local Signing}"
+# 优先用 Apple 开发证书（免费 Apple ID 即可创建）：带团队 ID 的签名让钥匙串按团队识别应用，
+# 更新后不再弹出授权窗口；自签名证书没有团队 ID，钥匙串只能按每次编译都会变的 cdhash 识别
+APPLE_DEV="$(security find-identity -v -p codesigning 2>/dev/null | awk '/"Apple Development: / { print $2; exit }')"
+IDENTITY="${NWZ_SIGN_IDENTITY:-${APPLE_DEV:-NextWorkZone Local Signing}}"
 # 固定的签名身份让辅助功能、钥匙串授权在重新编译后仍然有效；没有时用临时签名
 codesign --force --sign "$IDENTITY" "$APP" 2>/dev/null || codesign --force --sign - "$APP"
 echo "$APP"
