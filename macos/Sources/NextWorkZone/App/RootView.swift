@@ -48,6 +48,10 @@ struct RootView: View {
         }
         // 富文本右键菜单中的问题菜单（流转、分配需要的对话框）
         .issueMenuDialogs(IssueMenu.shared)
+        // 从通知等处回到应用：当前页面按再次显示处理，在后台刷新
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if kept.contains(model.current.page) { visits[model.current.page, default: 0] += 1 }
+        }
         .onChange(of: model.current.page, initial: true) { _, page in
             guard Self.keepAlive.contains(page) else { return }
             if kept.contains(page) { visits[page, default: 0] += 1 } else { kept.append(page) }

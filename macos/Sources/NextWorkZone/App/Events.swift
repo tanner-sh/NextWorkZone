@@ -39,6 +39,8 @@ enum Events {
     enum local {
         static let workspaceChanged = "local.workspace-changed"
         static let activityFeed = "local.activity-feed"
+        /// 轮询发现了新的 Jira 动态（新问题、分配、状态变化等），问题列表和详情可能需要刷新；payload 为涉及的问题 key 数组
+        static let jiraActivity = "local.jira-activity"
         static let issueViewed = "local.issue-viewed"
         static let reminders = "local.reminders"
         static let inbox = "local.inbox"

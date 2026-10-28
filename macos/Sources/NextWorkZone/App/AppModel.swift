@@ -230,6 +230,12 @@ final class AppModel {
     func pollActivity() async throws -> ActivityFeed {
         let poll = try await API.shared.jiraActivityPoll()
         activity = poll.feed
+        let jiraKeys = Array(Set(poll.fresh.filter { $0.system != "wiki" }.map(\.issueKey)))
+        if !jiraKeys.isEmpty {
+            Events.post(Events.local.jiraActivity, payload: (try? JSONEncoder().encode(jiraKeys)).map { String(decoding: $0, as: UTF8.self) } ?? "[]")
+            // 新分配、新建或状态变化的问题：未解决问题数、到期提醒和关联待办不必等下一轮
+            issueChanged()
+        }
         let kinds = ActivityText.notifyKinds()
         let wanted = poll.fresh.filter { kinds.contains($0.kind) }
         if wanted.count == 1, let e = wanted.first {

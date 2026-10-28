@@ -86,7 +86,7 @@ struct GitlabPage: View {
     }
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageActive) private var active
+    @Environment(\.pageVisit) private var visit
     @State private var projects: [Project]?
     @State private var loading = false
     @State private var error: String?
@@ -129,9 +129,9 @@ struct GitlabPage: View {
         .task(id: "\(scope)|\(mrState)|\(mrSearch)|\(model.isReady(.gitlab))") {
             if model.isReady(.gitlab) { await mrList.load(.scope(scope), state: mrState, search: mrSearch) }
         }
-        .onChange(of: active) { _, isActive in
-            // 回到 GitLab 页面时在原地刷新；加载过更多时不刷新，免得列表变短
-            if isActive && model.isReady(.gitlab) && !mrList.loadedMore { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
+        .onChange(of: visit) {
+            // 回到 GitLab 页面或回到应用时在原地刷新；加载过更多时不刷新，免得列表变短
+            if model.isReady(.gitlab) && !mrList.loadedMore { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
         }
         .onChange(of: projects) { resolvePath() }
     }

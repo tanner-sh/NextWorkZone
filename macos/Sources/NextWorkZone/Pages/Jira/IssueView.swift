@@ -81,6 +81,11 @@ struct IssueView: View {
             if me == nil { me = try? await API.shared.jiraMe() }
             await load()
         }
+        // 这个问题有了新动态（评论、流转等）：重新加载
+        .onEvent(Events.local.jiraActivity) { n in
+            let keys = (n.userInfo?["payload"] as? String).flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? []
+            if keys.contains(issueKey) { Task { await load() } }
+        }
         .issueMenuDialogs(issueMenu)
         .sheet(item: $activeTransition) { req in
             TransitionSheet(issueKey: req.issue.key, transition: req.transition, issue: req.issue, template: req.template) { apply($0) }

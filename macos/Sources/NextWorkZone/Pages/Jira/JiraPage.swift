@@ -22,6 +22,7 @@ struct JiraPage: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.pageActive) private var active
+    @Environment(\.pageVisit) private var visit
     @State private var mode: Mode = .mine
     @State private var query: (jql: String, label: String?) = (JQL.presets[0].jql, nil)
     @State private var customJql = ""
@@ -93,10 +94,10 @@ struct JiraPage: View {
             hits = nil
             await load()
         }
-        .onChange(of: active) { _, isActive in
-            // 回到 Jira 页面时在原地刷新列表（本机搜索的结果不需要）；加载过更多时不刷新，免得列表变短
-            if isActive && model.isReady(.jira) && !localSearch && (issues?.count ?? 0) <= Self.pageSize { Task { await load() } }
-        }
+        // 回到 Jira 页面或回到应用时刷新
+        .onChange(of: visit) { refreshInPlace() }
+        // 有了新的 Jira 动态：正在显示的列表也要更新
+        .onEvent(Events.local.jiraActivity) { _ in if active { refreshInPlace() } }
         .onChange(of: form) { searchLocal() }
         .onChange(of: localSearch) { searchLocal() }
         .onChange(of: indexStore.status?.lastSync) { searchLocal() }
@@ -161,6 +162,11 @@ struct JiraPage: View {
         if id == requestId { loading = false }
         viewedStore.load(issues?.map(\.key) ?? [])
         selectFirst()
+    }
+
+    /// 在原地刷新列表（本机搜索的结果不需要）；加载过更多时不刷新，免得列表变短。
+    private func refreshInPlace() {
+        if model.isReady(.jira) && !localSearch && (issues?.count ?? 0) <= Self.pageSize { Task { await load() } }
     }
 
     /// 本机搜索：输入时即时搜索。

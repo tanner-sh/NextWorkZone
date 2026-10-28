@@ -384,6 +384,7 @@ struct MyIssuesCard: View {
         }
         .issueMenuDialogs(issueMenu)
         .task(id: "\(model.isReady(.jira))|\(visit)") { await load() }
+        .onEvent(Events.local.jiraActivity) { _ in Task { await load() } }
     }
 
     private func load() async {
