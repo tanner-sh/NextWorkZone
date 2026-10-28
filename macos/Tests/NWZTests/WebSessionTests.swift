@@ -5,7 +5,7 @@ import NWZCore
 
 /// 按地址返回预设响应；可以模拟服务器把请求重定向到登录页（同站时最终地址不同，跨站时返回 3xx）。
 private actor RoutedTransport: HTTPTransport {
-    struct Route: Sendable { var status = 200; var body = "ok"; var finalURL: String?; var setCookie: String? }
+    struct Route: Sendable { var status = 200; var body = "ok"; var finalURL: String?; var setCookie: String?; var user: String? }
     private let routes: [String: Route]
     private(set) var requests: [URLRequest] = []
     init(_ routes: [String: Route]) { self.routes = routes }
@@ -13,7 +13,7 @@ private actor RoutedTransport: HTTPTransport {
         requests.append(request)
         let url = request.url!.absoluteString
         guard let route = routes.first(where: { url.hasPrefix($0.key) })?.value else { throw NWZError.other("没有预设响应：\(url)") }
-        return HTTPResponse(data: Data(route.body.utf8), status: route.status, headers: route.setCookie.map { ["Set-Cookie": $0] } ?? [:], url: URL(string: route.finalURL ?? url)!)
+        return HTTPResponse(data: Data(route.body.utf8), status: route.status, headers: (route.setCookie.map { ["Set-Cookie": $0] } ?? [:]).merging(route.user.map { ["X-AUSERNAME": $0] } ?? [:]) { a, _ in a }, url: URL(string: route.finalURL ?? url)!)
     }
 }
 
@@ -72,6 +72,18 @@ struct WebSessionTests {
         // 没有会话时用 Token；被重定向到单点登录站点（跨站，不跟随）时同样需要网页登录
         await #expect(throws: NWZError.sessionRequired(.jira)) { try await sessions.fetch(service: .jira, url: "https://jira.example.com/secure/attachment/2") }
         #expect(await transport.requests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer sample-token")
+    }
+
+    @Test func anonymousResultNeedsLogin() async throws {
+        // 2FA 插件把 Token 请求转到验证页，未认证时再转回首页：最终地址不是登录页，但以匿名身份结束
+        let transport = RoutedTransport([
+            "https://jira.example.com/secure/ViewProfile.jspa": .init(body: "<title>System Dashboard</title>", finalURL: "https://jira.example.com/", user: "anonymous"),
+            "https://jira.example.com/secure/attachment/1": .init(body: "<title>System Dashboard</title>", finalURL: "https://jira.example.com/", user: "anonymous"),
+        ])
+        let (directory, sessions, _) = try await service(transport)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(await sessions.accessStatus()["jira"] == .loginRequired)
+        await #expect(throws: NWZError.sessionRequired(.jira)) { try await sessions.fetch(service: .jira, url: "https://jira.example.com/secure/attachment/1") }
     }
 
     @Test func recognizesIssueKeys() {

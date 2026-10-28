@@ -232,6 +232,9 @@ public actor WebSessionService: WebResourceSource {
             throw NWZError.sessionRequired(service)
         }
         if service != .gitlab, isLoginRedirect(response.url, base: rest.baseURL) { throw NWZError.sessionRequired(service) }
+        // 有的认证插件（例如 2FA）先把请求转到它的验证页，再把未认证的请求转回首页：最终地址看不出登录页，
+        // 但 Atlassian 系统会在 X-AUSERNAME 中标明请求以匿名身份结束
+        if service != .gitlab, response.header("X-AUSERNAME")?.lowercased() == "anonymous" { throw NWZError.sessionRequired(service) }
         return response
     }
 
