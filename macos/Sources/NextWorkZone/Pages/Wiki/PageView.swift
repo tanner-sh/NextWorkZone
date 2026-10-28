@@ -198,7 +198,10 @@ struct PageView: View {
 
     private func export(_ page: WikiPageDetail, word: Bool) {
         toast(word ? "正在导出 Word…" : "正在导出 PDF（页面较长时需要一会儿）…")
-        guarded { toast("已保存到 \(try await API.shared.wikiExport(page, word: word))") }
+        guarded {
+            let path = try await withDownloadProgress("正在导出 \(word ? "Word" : "PDF")…") { try await API.shared.wikiExport(page, word: word) }
+            toast("已保存到 \(path)")
+        }
     }
 
     /// 点击任务的勾选框：勾选或取消（写入 Wiki）。

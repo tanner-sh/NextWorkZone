@@ -223,11 +223,19 @@ struct WebLoginHint: View {
 /// 加载中的占位。
 struct LoadingView: View {
     var label = "加载中…"
+    /// 已知进度（0...1）时显示进度条和百分比
+    var progress: Double?
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text(label).foregroundStyle(.secondary)
+            if let progress {
+                Text(label).foregroundStyle(.secondary)
+                ProgressView(value: progress).frame(width: 160)
+                Text("\(Int(progress * 100))%").monospacedDigit().foregroundStyle(.secondary)
+            } else {
+                ProgressView().controlSize(.small)
+                Text(label).foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -250,8 +258,9 @@ final class Toasts {
 
     var items: [Item] = []
 
-    func begin(_ message: String) -> UUID {
-        let item = Item(message: message, error: false, progress: 0)
+    /// 开始一项进行中的操作，`progress` 为 nil 时先不显示进度条（还不知道总量）
+    func begin(_ message: String, progress: Double? = 0) -> UUID {
+        let item = Item(message: message, error: false, progress: progress)
         items = Array(items.suffix(2)) + [item]
         return item.id
     }
@@ -283,13 +292,25 @@ final class Toasts {
 @MainActor func withUploadProgress<T>(_ message: String, onProgress: (@MainActor @Sendable (Double) -> Void)? = nil, _ body: () async throws -> T) async rethrows -> T {
     let id = Toasts.shared.begin(message)
     defer { Toasts.shared.finish(id) }
-    let report: @Sendable (Double) -> Void = { fraction in
+    return try await UploadProgress.$report.withValue(progressReporter(id, onProgress)) { try await body() }
+}
+
+/// 下载文件，期间在窗口底部显示进度。`expected` 为已知的文件大小，服务器没有给出长度时据此换算。
+@MainActor func withDownloadProgress<T>(_ message: String, expected: Int64 = 0, _ body: () async throws -> T) async rethrows -> T {
+    let id = Toasts.shared.begin(message, progress: expected > 0 ? 0 : nil)
+    defer { Toasts.shared.finish(id) }
+    return try await DownloadProgress.$expected.withValue(expected) {
+        try await DownloadProgress.$report.withValue(progressReporter(id, nil)) { try await body() }
+    }
+}
+
+private func progressReporter(_ id: UUID, _ onProgress: (@MainActor @Sendable (Double) -> Void)?) -> @Sendable (Double) -> Void {
+    { fraction in
         Task { @MainActor in
             Toasts.shared.update(id, progress: fraction)
             onProgress?(fraction)
         }
     }
-    return try await UploadProgress.$report.withValue(report) { try await body() }
 }
 
 /// 执行异步操作，失败时提示错误。

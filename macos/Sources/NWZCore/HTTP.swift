@@ -38,6 +38,13 @@ public enum UploadProgress {
     }
 }
 
+/// 下载进度。在 `DownloadProgress.$report.withValue { … }` 中发出的请求会报告已接收的比例（0...1，大约每 1% 一次，
+/// 回调可能来自任意线程）。服务器没有给出长度时按 `expected`（例如附件列表中的大小）换算，两者都没有时不报告。
+public enum DownloadProgress {
+    @TaskLocal public static var report: (@Sendable (Double) -> Void)?
+    @TaskLocal public static var expected: Int64 = 0
+}
+
 public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> HTTPResponse
 }
@@ -82,18 +89,18 @@ public struct HTTPClient: Sendable {
 public actor SessionTransport: HTTPTransport {
     private let proxy: String?
     private var session: URLSession
-    /// 上传大文件用：整个请求的时限放宽到一小时
-    private var uploadSession: URLSession?
+    /// 上传、下载大文件用：整个请求的时限放宽到一小时
+    private var transferSession: URLSession?
     private var activeRequests = 0
     private var lastFinished = ContinuousClock.now
-    private let redirectDelegate = RequestDelegate(progress: nil)
+    private let redirectDelegate = RequestDelegate()
 
     public init(proxy: String?) throws {
         self.proxy = proxy
         session = URLSession(configuration: try Self.configuration(proxy: proxy))
     }
 
-    deinit { session.invalidateAndCancel(); uploadSession?.invalidateAndCancel() }
+    deinit { session.invalidateAndCancel(); transferSession?.invalidateAndCancel() }
 
     public static func configuration(proxy: String?) throws -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
@@ -131,16 +138,20 @@ public actor SessionTransport: HTTPTransport {
         activeRequests += 1
         defer { activeRequests -= 1; lastFinished = .now }
         let data: Data, response: URLResponse
-        if let progress = UploadProgress.report, let body = request.httpBody {
-            if uploadSession == nil {
-                let config = try Self.configuration(proxy: proxy)
-                config.timeoutIntervalForRequest = 60
-                config.timeoutIntervalForResource = 3600
-                uploadSession = URLSession(configuration: config)
-            }
-            var upload = request
-            upload.httpBody = nil
-            (data, response) = try await uploadSession!.upload(for: upload, from: body, delegate: RequestDelegate(progress: progress))
+        let upload = UploadProgress.report.flatMap { report in request.httpBody.map { (report, $0) } }
+        let download = upload == nil ? DownloadProgress.report : nil
+        if (upload != nil || download != nil) && transferSession == nil {
+            let config = try Self.configuration(proxy: proxy)
+            config.timeoutIntervalForRequest = 60
+            config.timeoutIntervalForResource = 3600
+            transferSession = URLSession(configuration: config)
+        }
+        if let (report, body) = upload {
+            var request = request
+            request.httpBody = nil
+            (data, response) = try await transferSession!.upload(for: request, from: body, delegate: RequestDelegate(upload: report))
+        } else if let download {
+            (data, response) = try await transferSession!.data(for: request, delegate: RequestDelegate(download: download, expected: DownloadProgress.expected))
         } else {
             (data, response) = try await current.data(for: request, delegate: redirectDelegate)
         }
@@ -153,21 +164,48 @@ public actor SessionTransport: HTTPTransport {
 }
 
 private final class RequestDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    private let progress: (@Sendable (Double) -> Void)?
+    private let upload: (@Sendable (Double) -> Void)?
+    private let download: (@Sendable (Double) -> Void)?
+    private let expected: Int64
     private let lock = NSLock()
     private var lastReported = -1.0
+    private var observation: NSKeyValueObservation?
 
-    init(progress: (@Sendable (Double) -> Void)?) { self.progress = progress }
+    init(upload: (@Sendable (Double) -> Void)? = nil, download: (@Sendable (Double) -> Void)? = nil, expected: Int64 = 0) {
+        self.upload = upload; self.download = download; self.expected = expected
+    }
+
+    deinit { observation?.invalidate() }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        // 用 async 接口时收不到逐块的数据回调，改为观察任务已接收的字节数
+        guard download != nil else { return }
+        let observation = task.observe(\.countOfBytesReceived) { [weak self] task, _ in
+            guard let self else { return }
+            let total = task.countOfBytesExpectedToReceive > 0 ? task.countOfBytesExpectedToReceive : expected
+            if total > 0 { report(Double(task.countOfBytesReceived) / Double(total), to: download) }
+        }
+        lock.withLock { self.observation = observation }
+    }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        guard let progress, totalBytesExpectedToSend > 0 else { return }
-        let fraction = min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend))
-        let report = lock.withLock {
+        guard totalBytesExpectedToSend > 0 else { return }
+        report(Double(totalBytesSent) / Double(totalBytesExpectedToSend), to: upload)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if error == nil, download != nil { report(1, to: download) }
+    }
+
+    private func report(_ value: Double, to progress: (@Sendable (Double) -> Void)?) {
+        guard let progress else { return }
+        let fraction = min(1, value)
+        let changed = lock.withLock {
             guard fraction - lastReported >= 0.01 || (fraction >= 1 && lastReported < 1) else { return false }
             lastReported = fraction
             return true
         }
-        if report { progress(fraction) }
+        if changed { progress(fraction) }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {

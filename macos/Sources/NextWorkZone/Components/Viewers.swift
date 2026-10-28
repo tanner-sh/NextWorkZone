@@ -1,5 +1,6 @@
 import AppKit
 import AVKit
+import NWZCore
 import PDFKit
 import Quartz
 import SwiftUI
@@ -239,9 +240,8 @@ enum AttachmentViewer {
             toast("附件地址不属于已配置的系统", error: true)
             return
         }
-        if a.size > 5 * 1024 * 1024 { toast("正在下载 \(a.filename)…") }
         guarded {
-            let (data, _) = try await API.shared.asset(path)
+            let (data, _) = try await download(a) { try await API.shared.asset(path) }
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NextWorkZone/copied/\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let url = dir.appendingPathComponent(a.filename.replacingOccurrences(of: "/", with: "_"))
@@ -251,10 +251,16 @@ enum AttachmentViewer {
         }
     }
 
+    /// 较大的附件下载时在窗口底部显示进度，小文件一闪而过就不显示了。
+    private static func download<T>(_ a: Attachment, _ body: () async throws -> T) async rethrows -> T {
+        guard a.size == 0 || a.size > 1024 * 1024 else { return try await body() }
+        return try await withDownloadProgress("正在下载 \(a.filename)\(a.size > 0 ? "（\(Fmt.size(a.size))）" : "")", expected: Int64(a.size), body)
+    }
+
     /// 下载到“下载”文件夹并用系统应用打开。
     static func openExternal(_ a: Attachment, service: Service) {
         guarded {
-            let path = try await API.shared.jiraOpenAttachment(url: a.contentUrl, filename: a.filename, service: service)
+            let path = try await download(a) { try await API.shared.jiraOpenAttachment(url: a.contentUrl, filename: a.filename, service: service) }
             toast("已保存到 \(path)")
         }
     }
@@ -303,6 +309,7 @@ private struct AttachmentBody: View {
     @State private var preview: AttachmentPreview?
     @State private var error: String?
     @State private var showSource = false
+    @State private var progress: Double?
 
     private var ext: String { (attachment.filename as NSString).pathExtension.lowercased() }
     private var isHTML: Bool { ext == "html" || ext == "htm" || attachment.mimeType == "text/html" }
@@ -339,7 +346,7 @@ private struct AttachmentBody: View {
                     QuickLookView(url: file)
                 }
             } else {
-                LoadingView(label: "正在下载…")
+                LoadingView(label: "正在下载…", progress: progress)
             }
         }
         .task { await load() }
@@ -350,6 +357,13 @@ private struct AttachmentBody: View {
             error = "文件较大（\(Fmt.size(attachment.size))），请用系统应用打开。"
             return
         }
+        let report: @Sendable (Double) -> Void = { fraction in Task { @MainActor in progress = fraction } }
+        await DownloadProgress.$expected.withValue(Int64(attachment.size)) {
+            await DownloadProgress.$report.withValue(report) { await download() }
+        }
+    }
+
+    private func download() async {
         do {
             if useConverted {
                 preview = try await API.shared.jiraPreviewAttachment(url: attachment.contentUrl, filename: attachment.filename, mime: attachment.mimeType, service: service)
