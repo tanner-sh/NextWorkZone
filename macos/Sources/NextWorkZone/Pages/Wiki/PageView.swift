@@ -1,3 +1,4 @@
+import NWZCore
 import SwiftUI
 
 /// 阅读 Wiki 页面：面包屑、标题、正文（Jira 宏实时状态、任务可勾选）、目录、引用的问题、子页面、附件、工作空间引用、评论。
@@ -187,9 +188,9 @@ struct PageView: View {
 
     private func upload(_ paths: [String]) {
         guard !paths.isEmpty else { return }
-        toast("正在上传 \(paths.count) 个文件…")
+        let size = Fmt.size(paths.map(UploadProgress.fileSize).reduce(0, +))
         guarded {
-            try await API.shared.wikiUpload(pageId, paths: paths)
+            try await withUploadProgress("正在上传 \(paths.count) 个文件（\(size)）") { try await API.shared.wikiUpload(pageId, paths: paths) }
             attachmentsVersion += 1
             toast("已上传 \(paths.count) 个附件")
         }

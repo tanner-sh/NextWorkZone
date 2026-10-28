@@ -310,8 +310,8 @@ final class API: @unchecked Sendable {
     func wikiStorage(_ page: String) async throws -> String { try await wiki.client().page(page).storage }
     func wikiUpload(_ page: String, paths: [String]) async throws {
         let client = try await wiki.client()
-        for path in paths {
-            let url = URL(fileURLWithPath: path)
+        _ = try await UploadProgress.sequence(paths.map(UploadProgress.fileSize)) { index in
+            let url = URL(fileURLWithPath: paths[index])
             try await client.attach(page, filename: url.lastPathComponent, mime: AttachmentViewer.guessMime(url.lastPathComponent), data: Data(contentsOf: url))
         }
     }

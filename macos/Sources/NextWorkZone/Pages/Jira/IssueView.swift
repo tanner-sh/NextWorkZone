@@ -1,3 +1,4 @@
+import NWZCore
 import os
 import SwiftUI
 import UniformTypeIdentifiers
@@ -205,11 +206,14 @@ struct IssueView: View {
 
     private func upload(_ paths: [String]) {
         guard !paths.isEmpty, let issue else { return }
-        uploading = "正在上传 \(paths.count) 个文件…"
-        toast("正在上传 \(paths.count) 个文件到 \(issue.key)…")
+        let size = Fmt.size(paths.map(UploadProgress.fileSize).reduce(0, +))
+        let label = "正在上传 \(paths.count) 个文件（\(size)）"
+        uploading = label + "…"
         Task {
             do {
-                let added = try await API.shared.jiraUploadAttachments(issue.key, paths: paths)
+                let added = try await withUploadProgress("\(label)到 \(issue.key)", onProgress: { uploading = "\(label)… \(Int($0 * 100))%" }) {
+                    try await API.shared.jiraUploadAttachments(issue.key, paths: paths)
+                }
                 self.issue?.attachments += added
                 toast("已上传 \(added.count) 个附件到 \(issue.key)")
             } catch {

@@ -95,9 +95,8 @@ public actor JiraService {
     }
     public func updateIssue(_ key: String, fields: [String: JSONValue]) async throws -> IssueDetail { try await client().updateIssue(key, fields: fields); return try await issue(key) }
     public func uploadAttachments(_ key: String, paths: [String]) async throws -> [Attachment] {
-        let client = try await client(); var result: [Attachment] = []
-        for path in paths { result += try await client.uploadAttachment(key, file: URL(fileURLWithPath: path)) }
-        return result
+        let client = try await client()
+        return try await UploadProgress.sequence(paths.map(UploadProgress.fileSize)) { try await client.uploadAttachment(key, file: URL(fileURLWithPath: paths[$0])) }.flatMap { $0 }
     }
     public func cachedCreateProjects() async throws -> [CreateProject]? { await cache.get(try cacheKey("createProjects"), as: [CreateProject].self) }
     public func createProjects() async throws -> [CreateProject] {

@@ -466,13 +466,36 @@ private struct HistoryRow: View {
                 ForEach(Array(entry.items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(item.field).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-                        if let f = item.from { Text(f).strikethrough().foregroundStyle(.secondary).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
+                        if let f = item.from { HistoryValue(text: f, old: true) } else { Text("无").foregroundStyle(.tertiary) }
                         Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
-                        if let t = item.to { Text(t).lineLimit(3) } else { Text("无").foregroundStyle(.tertiary) }
+                        if let t = item.to { HistoryValue(text: t, old: false) } else { Text("无").foregroundStyle(.tertiary) }
                     }
                     .font(.callout)
                     .textSelection(.enabled)
                 }
+            }
+        }
+    }
+}
+
+/// 变更前后的值：完整显示（多行的解决方案、描述等），很长时先折叠。
+private struct HistoryValue: View {
+    var text: String
+    var old: Bool
+    @State private var expanded = false
+
+    private static let foldedLines = 6
+    private var long: Bool { text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.foldedLines || text.count > 400 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(text)
+                .strikethrough(old)
+                .foregroundStyle(old ? .secondary : .primary)
+                .lineLimit(long && !expanded ? Self.foldedLines : nil)
+                .fixedSize(horizontal: false, vertical: true)
+            if long {
+                Button(expanded ? "收起" : "展开") { expanded.toggle() }.buttonStyle(.link).font(.caption)
             }
         }
     }

@@ -13,6 +13,31 @@ public struct HTTPResponse: Sendable {
     public var contentType: String? { header("content-type") }
 }
 
+/// 上传进度。在 `UploadProgress.$report.withValue { … }` 中发出的带请求体的请求会报告已发送的比例
+/// （0...1，大约每 1% 一次，回调可能来自任意线程）。
+public enum UploadProgress {
+    @TaskLocal public static var report: (@Sendable (Double) -> Void)?
+
+    /// 依次上传多个部分（例如多个文件）：按各部分的大小把每次请求的进度换算成总进度。
+    public static func sequence<T>(_ sizes: [Int64], isolation: isolated (any Actor)? = #isolation, _ body: (Int) async throws -> T) async throws -> [T] {
+        let outer = report, total = Double(max(1, sizes.reduce(0, +)))
+        var done: Int64 = 0, result: [T] = []
+        for (index, size) in sizes.enumerated() {
+            let base = Double(done), part = Double(size)
+            var inner: (@Sendable (Double) -> Void)?
+            if let outer { inner = { fraction in outer((base + fraction * part) / total) } }
+            let value = try await $report.withValue(inner, operation: { try await body(index) }, isolation: isolation)
+            result.append(value)
+            done += size
+        }
+        return result
+    }
+
+    public static func fileSize(_ path: String) -> Int64 {
+        ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber)?.int64Value ?? 0
+    }
+}
+
 public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> HTTPResponse
 }
@@ -57,16 +82,18 @@ public struct HTTPClient: Sendable {
 public actor SessionTransport: HTTPTransport {
     private let proxy: String?
     private var session: URLSession
+    /// 上传大文件用：整个请求的时限放宽到一小时
+    private var uploadSession: URLSession?
     private var activeRequests = 0
     private var lastFinished = ContinuousClock.now
-    private let redirectDelegate = SameOriginRedirectDelegate()
+    private let redirectDelegate = RequestDelegate(progress: nil)
 
     public init(proxy: String?) throws {
         self.proxy = proxy
         session = URLSession(configuration: try Self.configuration(proxy: proxy))
     }
 
-    deinit { session.invalidateAndCancel() }
+    deinit { session.invalidateAndCancel(); uploadSession?.invalidateAndCancel() }
 
     public static func configuration(proxy: String?) throws -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
@@ -103,7 +130,20 @@ public actor SessionTransport: HTTPTransport {
         let current = session
         activeRequests += 1
         defer { activeRequests -= 1; lastFinished = .now }
-        let (data, response) = try await current.data(for: request, delegate: redirectDelegate)
+        let data: Data, response: URLResponse
+        if let progress = UploadProgress.report, let body = request.httpBody {
+            if uploadSession == nil {
+                let config = try Self.configuration(proxy: proxy)
+                config.timeoutIntervalForRequest = 60
+                config.timeoutIntervalForResource = 3600
+                uploadSession = URLSession(configuration: config)
+            }
+            var upload = request
+            upload.httpBody = nil
+            (data, response) = try await uploadSession!.upload(for: upload, from: body, delegate: RequestDelegate(progress: progress))
+        } else {
+            (data, response) = try await current.data(for: request, delegate: redirectDelegate)
+        }
         guard let response = response as? HTTPURLResponse, let url = response.url else { throw NWZError.other("服务器响应不是 HTTP") }
         let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, item in
             if let name = item.key as? String { result[name] = String(describing: item.value) }
@@ -112,7 +152,24 @@ public actor SessionTransport: HTTPTransport {
     }
 }
 
-private final class SameOriginRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+private final class RequestDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let progress: (@Sendable (Double) -> Void)?
+    private let lock = NSLock()
+    private var lastReported = -1.0
+
+    init(progress: (@Sendable (Double) -> Void)?) { self.progress = progress }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard let progress, totalBytesExpectedToSend > 0 else { return }
+        let fraction = min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend))
+        let report = lock.withLock {
+            guard fraction - lastReported >= 0.01 || (fraction >= 1 && lastReported < 1) else { return false }
+            lastReported = fraction
+            return true
+        }
+        if report { progress(fraction) }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
         // PRIVATE-TOKEN 等自定义头不会由系统自动保护，禁止带着它们跨站重定向。
         guard let source = task.originalRequest?.url, let destination = request.url,

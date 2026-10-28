@@ -1,8 +1,20 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import NWZCore
 
 struct CoreTests {
+    @Test func uploadProgressCombinesParts() async throws {
+        let seen = Mutex<[Double]>([])
+        _ = try await UploadProgress.$report.withValue({ value in seen.withLock { $0.append(value) } }) {
+            try await UploadProgress.sequence([100, 300]) { _ in
+                UploadProgress.report?(0.5)
+                UploadProgress.report?(1)
+            }
+        }
+        #expect(seen.withLock { $0 } == [0.125, 0.25, 0.625, 1])
+    }
+
     @Test func stripsUIPagesAndTrailingSlash() throws {
         let cases = [
             ("https://jira.example.com/secure/Dashboard.jspa", "https://jira.example.com"),

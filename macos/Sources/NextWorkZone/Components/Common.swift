@@ -1,4 +1,5 @@
 import AppKit
+import NWZCore
 import SwiftUI
 
 // MARK: - 图片
@@ -243,9 +244,26 @@ final class Toasts {
         let id = UUID()
         var message: String
         var error: Bool
+        /// 进行中的操作（例如上传）的进度；有进度的提示一直显示到操作结束
+        var progress: Double?
     }
 
     var items: [Item] = []
+
+    func begin(_ message: String) -> UUID {
+        let item = Item(message: message, error: false, progress: 0)
+        items = Array(items.suffix(2)) + [item]
+        return item.id
+    }
+
+    func update(_ id: UUID, progress: Double) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].progress = progress
+    }
+
+    func finish(_ id: UUID) {
+        items.removeAll { $0.id == id }
+    }
 
     func show(_ message: String, error: Bool = false) {
         let item = Item(message: message, error: error)
@@ -261,6 +279,19 @@ final class Toasts {
     Toasts.shared.show(message, error: error)
 }
 
+/// 上传文件，期间在窗口底部显示进度；`onProgress` 另外收到进度（0...1）。
+@MainActor func withUploadProgress<T>(_ message: String, onProgress: (@MainActor @Sendable (Double) -> Void)? = nil, _ body: () async throws -> T) async rethrows -> T {
+    let id = Toasts.shared.begin(message)
+    defer { Toasts.shared.finish(id) }
+    let report: @Sendable (Double) -> Void = { fraction in
+        Task { @MainActor in
+            Toasts.shared.update(id, progress: fraction)
+            onProgress?(fraction)
+        }
+    }
+    return try await UploadProgress.$report.withValue(report) { try await body() }
+}
+
 /// 执行异步操作，失败时提示错误。
 @MainActor func guarded(_ action: @escaping @MainActor () async throws -> Void) {
     Task {
@@ -274,7 +305,13 @@ struct ToastOverlay: View {
     var body: some View {
         VStack(spacing: 6) {
             ForEach(toasts.items) { t in
-                Text(t.message)
+                HStack(spacing: 10) {
+                    Text(t.message)
+                    if let p = t.progress {
+                        ProgressView(value: p).frame(width: 120)
+                        Text("\(Int(p * 100))%").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
                     .font(.callout)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
