@@ -176,7 +176,7 @@ struct AttentionCard: View {
         Button {
             Task { await refresh() }
         } label: {
-            Image(systemName: "arrow.clockwise").rotationEffect(.degrees(loading ? 360 : 0)).animation(loading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: loading)
+            Image(systemName: "arrow.clockwise").refreshing(loading)
         }
         .buttonStyle(.borderless)
         .help("刷新")

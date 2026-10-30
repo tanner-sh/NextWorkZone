@@ -116,7 +116,7 @@ struct ActivityPage: View {
                 })
             }
             .help("通知设置")
-            Button("立即检查", systemImage: "arrow.clockwise") { Task { await refresh() } }.disabled(loading).help("立即检查")
+            Button("立即检查", systemImage: "arrow.clockwise") { Task { await refresh() } }.refreshing(loading).disabled(loading).help("立即检查")
         }
         ToolbarSpacer(.fixed)
         ToolbarItem {

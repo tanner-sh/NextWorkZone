@@ -294,10 +294,13 @@ struct CheckCircle: View {
             ZStack {
                 Circle().strokeBorder(Self.color(priority), lineWidth: 1.5)
                 if done {
-                    Circle().fill(Color.accentColor)
+                    Circle().fill(Color.accentColor).transition(.scale(scale: 0.4).combined(with: .opacity))
                     Image(systemName: "checkmark").font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white)
+                        .transition(.symbolEffect(.drawOn))
                 }
             }
+            // 勾选完成时圆圈填满、对勾画出来
+            .animation(.spring(duration: 0.3), value: done)
             .frame(width: size, height: size)
             .contentShape(Circle())
         }

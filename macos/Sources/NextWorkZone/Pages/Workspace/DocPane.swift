@@ -296,7 +296,7 @@ struct WorkLogPanel: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).disabled(loading).help("刷新")
+                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise").refreshing(loading) }.buttonStyle(.borderless).disabled(loading).help("刷新")
                 Button("写入日记", systemImage: "doc.text", action: writeToDaily)
                     .disabled(log?.events.isEmpty ?? true)
                     .help("把整理后的工作记录写入（或更新）日记中的“工作记录”小节")

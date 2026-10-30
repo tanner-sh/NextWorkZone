@@ -103,7 +103,7 @@ struct StatsPage: View {
                         Picker("时间范围", selection: $period) { ForEach(Period.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()
                     }
                     ToolbarItem {
-                        Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(loading).help("刷新")
+                        Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.refreshing(loading).disabled(loading).help("刷新")
                     }
                 }
                 .pageSubtitle(.stats, "\(period.range.from) 至 \(period.range.to)")
@@ -297,7 +297,8 @@ private struct Kpi: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.callout).foregroundStyle(.secondary)
-            Text(value).font(.title.weight(.semibold))
+            // 切换时间范围时数字滚动变化
+            Text(value).font(.title.weight(.semibold)).contentTransition(.numericText()).animation(.snappy, value: value)
             if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
         }
         .padding(14)

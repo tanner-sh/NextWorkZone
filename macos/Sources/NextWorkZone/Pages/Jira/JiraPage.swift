@@ -363,7 +363,7 @@ struct JiraPage: View {
             Button("常用查询", systemImage: "bookmark") { MenuBuilder.popUp(savedMenu()) }.help("常用查询")
             Button("排序与分组", systemImage: view.sort != "default" || view.group != "none" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") { MenuBuilder.popUp(viewMenu()) }
                 .help("排序与分组")
-            Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(loading).help("刷新")
+            Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.refreshing(loading).disabled(loading).help("刷新")
         }
         ToolbarItem(placement: .primaryAction) {
             Button("新建问题", systemImage: "plus") { creating = true }.help("新建问题")

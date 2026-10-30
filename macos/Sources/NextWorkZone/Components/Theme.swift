@@ -121,3 +121,10 @@ struct FilterField: View {
         if let focus { input.focused(focus) } else { input }
     }
 }
+
+extension View {
+    /// 刷新按钮加载时图标持续旋转（SF Symbols 的旋转动效）。
+    func refreshing(_ active: Bool) -> some View {
+        symbolEffect(.rotate, options: .repeat(.continuous), isActive: active)
+    }
+}

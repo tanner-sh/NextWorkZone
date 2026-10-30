@@ -220,9 +220,9 @@ struct GitlabPage: View {
                 }
                 .help("合并请求的状态")
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
-                    .disabled(mrList.loading).help("刷新")
+                    .refreshing(mrList.loading).disabled(mrList.loading).help("刷新")
             } else {
-                Button("刷新", systemImage: "arrow.clockwise") { Task { await loadProjects() } }.disabled(loading).help("刷新")
+                Button("刷新", systemImage: "arrow.clockwise") { Task { await loadProjects() } }.refreshing(loading).disabled(loading).help("刷新")
             }
         }
     }
