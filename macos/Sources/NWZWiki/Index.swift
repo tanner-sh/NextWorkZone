@@ -60,16 +60,8 @@ public actor WikiIndex {
             INSERT INTO pages_fts(rowid,title_lc,text_lc) VALUES(new.rowid,new.title_lc,new.text_lc);
         END;
         """
-    public static func time(_ value: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = f.date(from: value) { return date }
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: value)
-    }
-    public static func fold(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.map { String($0).lowercased().unicodeScalars.first ?? $0 }))
-    }
+    public static func time(_ value: String) -> Date? { ServerTime.iso8601(value) }
+    public static func fold(_ text: String) -> String { TextFold.fold(text) }
     static func terms(_ text: String) -> [String] {
         var out: [String] = []
         for t in text.split(whereSeparator: \.isWhitespace).map({ fold(String($0)) }) where !out.contains(t) && out.count < 8 { out.append(t) }

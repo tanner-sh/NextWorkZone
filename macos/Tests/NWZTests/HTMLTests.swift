@@ -14,6 +14,16 @@ struct HTMLTests {
         #expect(RichDoc.empty.sections().count == 1)
     }
 
+    @Test func splitsLongSectionsBetweenTopLevelBlocks() {
+        // 第一个标题之前就很长：在顶层块之间再切开，标题序号仍与整页目录一致
+        let doc = HTML.parse(#"<p>aaaa</p><table><tr><td><h3>T</h3>bbbb</td></tr></table><p>cccc</p><p>dddd</p><h1>A</h1><p>eeee</p>"#)
+        let sections = doc.sections(limit: 5)
+        #expect(sections.flatMap(\.doc.blocks) == doc.blocks)
+        #expect(sections.map(\.doc.blocks.count) == [2, 2, 2])
+        #expect(sections.map(\.headingStart) == [0, 1, 1])
+        #expect(doc.headings.map(\.index) == [0, 1])
+    }
+
     @Test func collapsesWhitespaceAndMergesRuns() {
         let blocks = HTML.parse("<p>  a \n b <b>c</b><b> d</b></p>").blocks
         #expect(blocks == [.para([.text("a b ", [], link: nil, color: nil), .text("c d", .bold, link: nil, color: nil)])])

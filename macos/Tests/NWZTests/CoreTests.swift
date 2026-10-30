@@ -4,6 +4,17 @@ import Testing
 @testable import NWZCore
 
 struct CoreTests {
+    @Test func foldMatchesPerCharacterLowercasing() {
+        // 逐字小写的快速写法与 String.lowercased() 取第一个字符的结果相同（索引中已存的文字不必重建）
+        for value in 0..<0x20000 {
+            guard let scalar = Unicode.Scalar(value) else { continue }
+            #expect(TextFold.fold(scalar) == (String(scalar).lowercased().unicodeScalars.first ?? scalar), "U+\(String(value, radix: 16))")
+        }
+        #expect(TextFold.fold("ÀBC İstanbul 估值 ＡＢ") == "àbc istanbul 估值 ａｂ")
+        #expect(ServerTime.parse("2026-10-23T10:11:12.000+0800") == ServerTime.parse("2026-10-23T02:11:12Z"))
+        #expect(ServerTime.iso8601("2026-10-23T10:11:12.345+08:00") != nil)
+    }
+
     @Test func uploadProgressCombinesParts() async throws {
         let seen = Mutex<[Double]>([])
         _ = try await UploadProgress.$report.withValue({ value in seen.withLock { $0.append(value) } }) {

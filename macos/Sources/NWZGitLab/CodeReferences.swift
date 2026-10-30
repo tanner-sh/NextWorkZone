@@ -1,4 +1,5 @@
 import Foundation
+import NWZCore
 
 private enum PendingCode: Sendable {
     case link(GitLabLink, String, [CodeRefSource])
@@ -135,13 +136,7 @@ public enum CodeReferences {
         }.map(\.element)
         return ref
     }
-    static func time(_ value: String) -> Date? {
-        for pattern in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX", "yyyy-MM-dd'T'HH:mm:ssXXXXX"] {
-            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = pattern
-            if let date = f.date(from: value) { return date }
-        }
-        return nil
-    }
+    static func time(_ value: String) -> Date? { ServerTime.parse(value) }
     /// 限制同时在途的请求，并按输入顺序输出，让多来源结果稳定。
     static func map<Input: Sendable, Output: Sendable>(_ input: [Input], transform: @escaping @Sendable (Input) async -> Output) async -> [Output] {
         await withTaskGroup(of: (Int, Output).self) { group in

@@ -22,15 +22,18 @@ public struct IndexedIssue: Codable, Sendable {
 
 public enum JiraIndexText {
     public static func project(_ key: String) -> String { key.lastIndex(of: "-").map { String(key[..<$0]) } ?? key }
-    public static func fold(_ text: String) -> String { String(String.UnicodeScalarView(text.unicodeScalars.map { String($0).lowercased().unicodeScalars.first ?? $0 })) }
+    public static func fold(_ text: String) -> String { TextFold.fold(text) }
     static func terms(_ text: String) -> [String] {
         var result: [String] = []
         for term in text.split(whereSeparator: \.isWhitespace).map({ fold(String($0)) }) where !result.contains(term) && result.count < 8 { result.append(term) }
         return result
     }
     static func excerpt(_ text: String, term: String) -> String? {
-        let characters = Array(text.unicodeScalars), lower = Array(fold(text).unicodeScalars), needle = Array(term.unicodeScalars)
-        guard !needle.isEmpty, needle.count <= lower.count, let index = (0...(lower.count - needle.count)).first(where: { Array(lower[$0..<($0 + needle.count)]) == needle }) else { return nil }
+        // 每个搜索结果都要在描述和全部评论中找一遍，大多找不到：逐字比较，不复制子串
+        let characters = Array(text.unicodeScalars), needle = Array(term.unicodeScalars)
+        guard let first = needle.first, needle.count <= characters.count else { return nil }
+        let lower = characters.map(TextFold.fold)
+        guard let index = (0...(lower.count - needle.count)).first(where: { start in lower[start] == first && lower[start..<(start + needle.count)].elementsEqual(needle) }) else { return nil }
         let from = max(0, index - 30), to = min(characters.count, index + needle.count + 90)
         let snippet = String(String.UnicodeScalarView(characters[from..<to])).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return (from > 0 ? "…" : "") + snippet + (to < characters.count ? "…" : "")

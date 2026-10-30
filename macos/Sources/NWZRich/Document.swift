@@ -51,19 +51,25 @@ public struct RichDoc: Codable, Hashable, Sendable {
 
     /// 按顶层标题切成几段，每段从一个顶层标题开始（第一段可以没有标题）。很长的页面分段显示：
     /// 整页放在一个文本视图里时，几十万点高的视图排版要将近一秒，绘制时还会出现空白或黑块。
+    /// 一段的文字超过 `limit` 时，在顶层的段落、表格之间再切开：有的页面不用标题（日期写成加粗的段落），
+    /// 几十个表格都在同一段里，打开时整段排版要好几秒。
     /// `headingStart` 是这一段之前的标题数，与 `headings` 中的 `index` 对应（含嵌套在面板、表格等里面的标题）。
-    public func sections() -> [(doc: RichDoc, headingStart: Int)] {
+    public func sections(limit: Int = 4000) -> [(doc: RichDoc, headingStart: Int)] {
         var out: [(doc: RichDoc, headingStart: Int)] = []
         var current: [RichBlock] = []
-        var start = 0, count = 0
+        var start = 0, count = 0, size = 0
         for b in blocks {
-            if case .heading = b, !current.isEmpty {
+            let one = RichDoc(blocks: [b])
+            let isHeading = if case .heading = b { true } else { false }
+            if !current.isEmpty, isHeading || size >= limit {
                 out.append((RichDoc(blocks: current), start))
                 current = []
                 start = count
+                size = 0
             }
             current.append(b)
-            RichDoc(blocks: [b]).walk { if case .heading = $0 { count += 1 } }
+            size += one.plainText.utf16.count
+            one.walk { if case .heading = $0 { count += 1 } }
         }
         if !current.isEmpty || out.isEmpty { out.append((RichDoc(blocks: current), start)) }
         return out

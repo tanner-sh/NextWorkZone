@@ -70,7 +70,8 @@ private final class Connection {
         handle = pointer
         sqlite3_busy_timeout(handle, 5_000)
         do {
-            try script("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA recursive_triggers = ON")
+            // 本地索引有几十到上百兆，搜索时要扫描整张表：用内存映射读取，免去逐页的 read 系统调用
+            try script("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA recursive_triggers = ON; PRAGMA mmap_size = 268435456")
         } catch {
             sqlite3_close(handle)
             throw error
@@ -112,13 +113,17 @@ private final class Connection {
     func query(_ sql: String, _ values: [SQLValue]) throws -> [[String: SQLValue]] {
         let statement = try Statement(connection: self, sql: sql, values: values)
         var rows: [[String: SQLValue]] = []
+        var names: [String]?
         while true {
             let result = sqlite3_step(statement.handle)
             if result == SQLITE_DONE { return rows }
             guard result == SQLITE_ROW else { throw failure(result) }
-            var row: [String: SQLValue] = [:]
-            for index in 0..<sqlite3_column_count(statement.handle) {
-                row[String(cString: sqlite3_column_name(statement.handle, index))] = statement.value(at: index)
+            // 列名每条语句只取一次
+            let columns = names ?? (0..<sqlite3_column_count(statement.handle)).map { String(cString: sqlite3_column_name(statement.handle, $0)) }
+            names = columns
+            var row: [String: SQLValue] = Dictionary(minimumCapacity: columns.count)
+            for (index, name) in columns.enumerated() {
+                row[name] = statement.value(at: Int32(index))
             }
             rows.append(row)
         }

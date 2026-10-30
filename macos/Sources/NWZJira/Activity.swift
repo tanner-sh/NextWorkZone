@@ -2,13 +2,7 @@ import Foundation
 import NWZCore
 
 public enum JiraActivity {
-    public static func time(_ value: String) -> Date? {
-        for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX", "yyyy-MM-dd'T'HH:mm:ssXXXXX"] {
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = format
-            if let date = formatter.date(from: value) { return date }
-        }
-        return nil
-    }
+    public static func time(_ value: String) -> Date? { ServerTime.parse(value) }
     public static func activityJQL(me: String, since: String) -> String {
         "(assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser() OR text ~ \"\(JiraQueries.escape(me))\") AND updated >= \"\(since)\" ORDER BY updated DESC"
     }
