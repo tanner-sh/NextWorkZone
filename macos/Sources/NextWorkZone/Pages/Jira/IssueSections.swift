@@ -124,6 +124,7 @@ struct LinksSection: View {
                                     do { onChanged(try await API.shared.jiraDeleteLink(issue.key, linkId: l.id)) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                                 }
                             } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("删除与 \(l.key) 的链接")
                             .buttonStyle(.borderless)
                             .help("删除链接")
                         }

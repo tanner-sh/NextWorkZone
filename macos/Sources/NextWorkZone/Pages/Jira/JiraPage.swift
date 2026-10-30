@@ -491,7 +491,7 @@ private struct IssueRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                if unseen { Circle().fill(Color.accentColor).frame(width: 6, height: 6).help("上次查看之后有新变化") }
+                if unseen { Circle().fill(Color.accentColor).frame(width: 6, height: 6).help("上次查看之后有新变化").accessibilityLabel("有新变化") }
                 SysImage(service: .jira, src: issue.issueType.iconUrl, size: 16)
                 Text(issue.key).font(.callout.monospaced()).foregroundStyle(.secondary)
                 if issue.resolution == nil, let r = reminder { Chip(text: AppModel.reminderLabel(r.kind, r.days), tint: r.kind == "overdue" || r.kind == "today" ? .red : .orange) }
@@ -533,6 +533,8 @@ private struct IssueRow: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        // 读屏时整行作为一项：问题键、概要、状态、时间和人
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -631,7 +633,7 @@ private struct FieldChooserSheet: View {
                     ForEach(selected) { f in
                         HStack(spacing: 3) {
                             Text(f.name)
-                            Button { selected.removeAll { $0.id == f.id } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain)
+                            Button { selected.removeAll { $0.id == f.id } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).accessibilityLabel("移除字段 \(f.name)")
                         }
                         .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
                     }

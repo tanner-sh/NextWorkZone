@@ -389,6 +389,7 @@ private struct WikiAttachmentRow: View {
             Spacer()
             Text("\(Fmt.size(a.size)) · \(a.author) · \(Fmt.time(a.created))").font(.caption).foregroundStyle(.secondary)
             Button { AttachmentViewer.copy(a, service: .confluence) } label: { Image(systemName: "doc.on.doc") }
+                .accessibilityLabel("复制 \(a.filename)")
                 .buttonStyle(.borderless)
                 .opacity(hover ? 1 : 0)
                 .help("复制文件，可以粘贴到访达、聊天或邮件中")
@@ -621,7 +622,7 @@ private struct PageFooter: View {
                     HStack(spacing: 3) {
                         Button(label) { AppModel.shared.navigate(NavTarget(.wiki, wikiSearch: "label:\(label)")) }.buttonStyle(.plain).help("查看带这个标签的页面")
                         if page.canEdit {
-                            Button { remove(label) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).help("移除标签")
+                            Button { remove(label) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).help("移除标签").accessibilityLabel("移除标签")
                         }
                     }
                     .font(.callout)

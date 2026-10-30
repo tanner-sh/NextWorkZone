@@ -71,6 +71,8 @@ struct SysImage: View {
             }
         }
         .frame(width: image == nil ? (size ?? 1) : size, height: image == nil ? (size ?? 1) : size)
+        // 问题类型、优先级等系统图标只是装饰，旁边有文字，读屏时跳过
+        .accessibilityHidden(true)
         .task(id: "\(src ?? "")|\(model.sessionVersion)") { await load() }
     }
 
@@ -127,6 +129,8 @@ struct Avatar: View {
                 .frame(width: size, height: size)
                 .background(Self.colors[Int(hash % UInt32(Self.colors.count))], in: Circle())
                 .help(text)
+                // 读出完整的名字，而不是头像上的两个字
+                .accessibilityLabel(text)
         }
     }
 }
@@ -141,6 +145,8 @@ struct StatusPill: View {
             Text(status.name).font(.callout).foregroundStyle(.secondary).lineLimit(1)
         }
         .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("状态：\(status.name)")
     }
 
     static func color(_ category: String) -> Color {

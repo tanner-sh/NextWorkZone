@@ -128,6 +128,7 @@ private struct ClipHistory: View {
                                 .help("右键：重命名、颜色、删除")
                         }
                         Button { editBoard = BoardEdit(board: nil) } label: { Image(systemName: "plus") }
+                            .accessibilityLabel("新建置顶板")
                             .buttonStyle(.borderless).help("新建置顶板")
                     }
                 }

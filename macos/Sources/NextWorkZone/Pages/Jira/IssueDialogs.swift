@@ -187,7 +187,7 @@ struct CreateIssueSheet: View {
                         ForEach(files, id: \.self) { path in
                             HStack(spacing: 3) {
                                 Text((path as NSString).lastPathComponent)
-                                Button { files.removeAll { $0 == path } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain)
+                                Button { files.removeAll { $0 == path } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).accessibilityLabel("移除 \((path as NSString).lastPathComponent)")
                             }
                             .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
                             .help(path)

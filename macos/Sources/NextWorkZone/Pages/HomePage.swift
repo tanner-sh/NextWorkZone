@@ -241,9 +241,9 @@ struct AttentionCard: View {
             Spacer(minLength: 8)
             if item.source != "due" { Text(Fmt.time(ms: item.at)).font(.caption).foregroundStyle(.secondary) }
             Button("今天") { toTodo(item, Fmt.today()) }.controlSize(.small).help("转为今天的待办")
-            Button { MenuBuilder.popUp(snoozeMenu(item)) } label: { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒")
-            Button { run { await model.handle(item) } } label: { Image(systemName: "checkmark") }.buttonStyle(.borderless).help("已处理")
-            Button { MenuBuilder.popUp(moreMenu(item)) } label: { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多")
+            Button { MenuBuilder.popUp(snoozeMenu(item)) } label: { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒").accessibilityLabel("稍后提醒")
+            Button { run { await model.handle(item) } } label: { Image(systemName: "checkmark") }.buttonStyle(.borderless).help("已处理").accessibilityLabel("已处理")
+            Button { MenuBuilder.popUp(moreMenu(item)) } label: { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多").accessibilityLabel("更多")
         }
         .contextMenu(specs: { moreMenu(item) })
     }

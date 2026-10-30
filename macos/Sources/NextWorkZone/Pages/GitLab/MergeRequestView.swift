@@ -222,7 +222,7 @@ struct MergeRequestView: View {
                 Text(mr.sourceBranch).font(.caption.monospaced()).padding(.horizontal, 6).chipBackground().help("源分支")
                 Text("→")
                 Text(mr.targetBranch).font(.caption.monospaced()).padding(.horizontal, 6).chipBackground().help("目标分支")
-                Button { Pasteboard.copy(mr.sourceBranch); toast("已复制分支名") } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("复制源分支名")
+                Button { Pasteboard.copy(mr.sourceBranch); toast("已复制分支名") } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("复制源分支名").accessibilityLabel("复制源分支名")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -497,8 +497,8 @@ private struct ThreadView: View {
                 Text(Fmt.time(n.createdAt)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if mine && editing != n.id {
-                    Button { editing = n.id } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("编辑")
-                    Button { remove(n) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除")
+                    Button { editing = n.id } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("编辑").accessibilityLabel("编辑")
+                    Button { remove(n) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除").accessibilityLabel("删除")
                 }
             }
             if editing == n.id {

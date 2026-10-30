@@ -160,7 +160,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
                     HStack {
                         Text(notice)
                         Spacer()
-                        Button { self.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                        Button { self.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).accessibilityLabel("关闭提示")
                     }
                     .padding(8)
                     .noticeBackground(.green)
@@ -246,7 +246,7 @@ struct TagsInput: View {
             ForEach(tags, id: \.self) { t in
                 HStack(spacing: 3) {
                     Text(t)
-                    Button { onChange(tags.filter { $0 != t }) } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.plain).help("移除标签 \(t)")
+                    Button { onChange(tags.filter { $0 != t }) } label: { Image(systemName: "xmark").font(.caption2) }.buttonStyle(.plain).help("移除标签 \(t)").accessibilityLabel("移除标签 \(t)")
                 }
                 .font(.callout)
                 .padding(.horizontal, 8)
@@ -296,7 +296,7 @@ struct WorkLogPanel: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise").refreshing(loading) }.buttonStyle(.borderless).disabled(loading).help("刷新")
+                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise").refreshing(loading) }.buttonStyle(.borderless).disabled(loading).help("刷新").accessibilityLabel("刷新")
                 Button("写入日记", systemImage: "doc.text", action: writeToDaily)
                     .disabled(log?.events.isEmpty ?? true)
                     .help("把整理后的工作记录写入（或更新）日记中的“工作记录”小节")

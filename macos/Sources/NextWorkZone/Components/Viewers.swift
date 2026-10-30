@@ -221,9 +221,9 @@ private struct AttachmentViewerView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 if attachments.count > 1 {
-                    Button { go(-1) } label: { Image(systemName: "chevron.left") }.keyboardShortcut(.leftArrow, modifiers: []).help("上一个（←）")
+                    Button { go(-1) } label: { Image(systemName: "chevron.left") }.keyboardShortcut(.leftArrow, modifiers: []).help("上一个（←）").accessibilityLabel("上一个（←）")
                     Text("\(index + 1) / \(attachments.count)").font(.callout.monospacedDigit())
-                    Button { go(1) } label: { Image(systemName: "chevron.right") }.keyboardShortcut(.rightArrow, modifiers: []).help("下一个（→）")
+                    Button { go(1) } label: { Image(systemName: "chevron.right") }.keyboardShortcut(.rightArrow, modifiers: []).help("下一个（→）").accessibilityLabel("下一个（→）")
                 }
                 Text(a.filename).font(.headline).lineLimit(1)
                 if a.size > 0 { Text("\(Fmt.size(a.size)) · \(a.author) · \(Fmt.time(a.created))").font(.caption).foregroundStyle(.secondary).lineLimit(1) }

@@ -354,9 +354,9 @@ private struct SpaceTreeView: View {
             Text(s.name).lineLimit(1)
             Spacer()
             if let home = s.homepageId {
-                Button { onOpen(home) } label: { Image(systemName: "text.book.closed") }.buttonStyle(.borderless).help("打开空间首页")
+                Button { onOpen(home) } label: { Image(systemName: "text.book.closed") }.buttonStyle(.borderless).help("打开空间首页").accessibilityLabel("打开空间首页")
             }
-            Button { onCreate(s.key, nil) } label: { Image(systemName: "plus") }.buttonStyle(.borderless).help("在空间顶层新建页面")
+            Button { onCreate(s.key, nil) } label: { Image(systemName: "plus") }.buttonStyle(.borderless).help("在空间顶层新建页面").accessibilityLabel("在空间顶层新建页面")
         }
         .help(s.description.isEmpty ? s.name : s.description)
         .rowTap { tree.toggle(id) }
@@ -368,7 +368,7 @@ private struct SpaceTreeView: View {
         let open = tree.expanded.contains(n.id)
         return HStack(spacing: 4) {
             if n.hasChildren {
-                Button { tree.toggle(n.id) } label: { Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).frame(width: 14) }.buttonStyle(.plain)
+                Button { tree.toggle(n.id) } label: { Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption).frame(width: 14) }.buttonStyle(.plain).accessibilityLabel(open ? "收起" : "展开")
             } else {
                 Image(systemName: "doc.text").font(.caption).foregroundStyle(.secondary).frame(width: 14)
             }

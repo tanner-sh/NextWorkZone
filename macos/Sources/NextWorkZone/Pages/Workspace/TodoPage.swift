@@ -302,6 +302,9 @@ struct CheckCircle: View {
             // 勾选完成时圆圈填满、对勾画出来
             .animation(.spring(duration: 0.3), value: done)
             .frame(width: size, height: size)
+            .accessibilityElement()
+            .accessibilityLabel(done ? "已完成" : "未完成")
+            .accessibilityHint(done ? "标记为未完成" : "标记为完成")
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

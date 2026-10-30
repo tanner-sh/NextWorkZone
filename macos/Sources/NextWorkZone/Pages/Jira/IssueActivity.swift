@@ -129,7 +129,7 @@ private struct CommentItem: View {
                     if editing == nil {
                         Button(action: onQuote) { Image(systemName: "arrowshape.turn.up.left") }.buttonStyle(.borderless).help("引用回复")
                         if c.mine {
-                            Button { editing = c.body } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("编辑")
+                            Button { editing = c.body } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("编辑").accessibilityLabel("编辑")
                             Button(action: remove) { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除")
                         }
                     }
@@ -239,7 +239,7 @@ private struct Worklogs: View {
                         }
                         Spacer()
                         if w.mine {
-                            Button { editing = w.id } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("修改")
+                            Button { editing = w.id } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("修改").accessibilityLabel("修改")
                             Button {
                                 Task {
                                     guard await Confirm.ask("删除这条工作日志？") else { return }
@@ -248,7 +248,7 @@ private struct Worklogs: View {
                                         onChanged()
                                     } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                                 }
-                            } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除")
+                            } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("删除").accessibilityLabel("删除")
                         }
                     }
                 }

@@ -608,7 +608,7 @@ private struct WatchersSheet: View {
                                 Text(u.displayName)
                                 Text(u.name).font(.caption).foregroundStyle(.secondary)
                                 Spacer()
-                                Button { remove(u) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("移除").disabled(busy)
+                                Button { remove(u) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("移除").accessibilityLabel("移除").disabled(busy)
                             }
                             .padding(.vertical, 3)
                         }

@@ -475,7 +475,7 @@ struct ClipPanelView: View {
                     .focused($searchFocused)
                     .onChange(of: searchFocused, initial: true) { _, f in model.searchFocused = f }
                 if !model.query.isEmpty {
-                    Button { model.setQuery("") } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help("清空")
+                    Button { model.setQuery("") } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help("清空").accessibilityLabel("清空")
                 }
             }
             .padding(.horizontal, 10)
@@ -493,7 +493,7 @@ struct ClipPanelView: View {
                             .frame(width: 180)
                             .onSubmit { model.createBoard(name) }
                     } else {
-                        Button { model.newBoard = "" } label: { Image(systemName: "plus") }.buttonStyle(.borderless).help("新建置顶板（会把选中的条目放进去）")
+                        Button { model.newBoard = "" } label: { Image(systemName: "plus") }.buttonStyle(.borderless).help("新建置顶板（会把选中的条目放进去）").accessibilityLabel("新建置顶板（会把选中的条目放进去）")
                     }
                 }
             }
@@ -513,7 +513,7 @@ struct ClipPanelView: View {
                 Button("已暂停记录 · 恢复", systemImage: "pause.fill") { Task { model.settings = try? await API.shared.clipPause(minutes: 0) } }
                     .buttonStyle(.borderless).foregroundStyle(.orange)
             }
-            Button { model.openSettings() } label: { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("剪贴板设置（⌘,）")
+            Button { model.openSettings() } label: { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("剪贴板设置（⌘,）").accessibilityLabel("剪贴板设置（⌘,）")
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -748,7 +748,7 @@ struct ClipPreviewLayer: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button { model.preview = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("关闭（Esc）")
+                    Button { model.preview = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("关闭（Esc）").accessibilityLabel("关闭（Esc）")
                 }
                 TextField("", text: $title, prompt: Text("命名（方便搜索，例如“签名”）"))
                     .textFieldStyle(.roundedBorder)

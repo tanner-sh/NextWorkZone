@@ -234,6 +234,7 @@ private struct FileDiffView: View {
                 Button {
                     composing = composing == i ? nil : i
                 } label: { Image(systemName: "plus.bubble") }
+                .accessibilityLabel("在这一行添加评论")
                 .buttonStyle(.borderless)
                 .help("评论这一行")
                 .padding(.trailing, 6)

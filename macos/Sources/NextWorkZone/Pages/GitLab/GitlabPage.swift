@@ -379,5 +379,6 @@ private struct MrListItem: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
     }
 }
