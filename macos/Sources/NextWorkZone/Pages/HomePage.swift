@@ -119,7 +119,8 @@ struct LoadableBody<T, Content: View>: View {
 /// 每条可以打开、标为已处理、转为待办或稍后提醒；处理之后有新变化时会再次出现。
 struct AttentionCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var todos: [Todo] = []
     @State private var loading = false
     @State private var error: String?
@@ -261,7 +262,8 @@ struct AttentionCard: View {
 /// 到期（含逾期）的待办，可直接勾选；添加和安排在“待办”页（或 ⌘⇧N）。
 struct TodayTodosCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var todos: [Todo]?
 
     var body: some View {
@@ -310,7 +312,8 @@ struct TodayTodosCard: View {
 
 struct WeeklyCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var state: Loadable<WeeklyView> = .loading
 
     var body: some View {
@@ -348,7 +351,8 @@ struct WeeklyCard: View {
 
 struct MyIssuesCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var state: Loadable<SearchResult> = .loading
     @State private var issueMenu = IssueMenu()
 
@@ -411,7 +415,8 @@ struct MyIssuesCard: View {
 /// 今天的工作记录：最近几件事，可直接生成日报。
 struct WorkLogCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var state: Loadable<WorkLog> = .loading
     @State private var report: String?
 
@@ -484,7 +489,8 @@ struct ReportSheet: View {
 
 struct WikiRecentCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var state: Loadable<[WikiRecent]> = .loading
 
     var body: some View {
@@ -516,7 +522,8 @@ struct WikiRecentCard: View {
 
 struct ProjectsCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var state: Loadable<[Project]> = .loading
 
     var body: some View {

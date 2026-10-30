@@ -10,8 +10,10 @@ struct KeptPages: NSViewRepresentable {
     var pages: [PageID]
     /// 正在显示的页面（不是保留的页面时，所有保留的页面都隐藏）
     var active: PageID
-    /// 页面内容；第二个参数为是否正在显示（页面据此决定是否响应快捷键、接收拖入的文件）
-    var content: (PageID, Bool) -> AnyView
+    /// 各页面第几次显示
+    var visits: [PageID: Int]
+    /// 页面内容（只创建一次）；第二个参数为页面的显示状态，之后切换页面只改它
+    var content: (PageID, PageState) -> AnyView
 
     func makeNSView(context: Context) -> NSView { NSView() }
 
@@ -19,21 +21,23 @@ struct KeptPages: NSViewRepresentable {
         let c = context.coordinator
         for page in pages {
             let isActive = page == active
-            if let host = c.hosts[page] {
-                // 只在显示状态变化时更新内容：替换 rootView 会让这个页面整体重新比较一遍
-                if c.shown[page] != isActive { host.rootView = content(page, isActive) }
+            if let host = c.hosts[page], let state = c.states[page] {
+                // 只改显示状态，不替换 rootView：替换会让这个页面整体重新比较一遍
+                if state.active != isActive { state.active = isActive }
+                if let visit = visits[page], state.visit != visit { state.visit = visit }
                 if !isActive, let responder = container.window?.firstResponder as? NSView, responder.isDescendant(of: host) {
                     // 隐藏的页面中的输入框不应继续接收键盘输入
                     container.window?.makeFirstResponder(nil)
                 }
                 Self.track(host, in: container, active: isActive)
             } else {
-                let host = PageHost(rootView: content(page, isActive))
+                let state = PageState(active: isActive, visit: visits[page] ?? 0)
+                let host = PageHost(rootView: content(page, state))
                 container.addSubview(host)
                 Self.track(host, in: container, active: isActive)
                 c.hosts[page] = host
+                c.states[page] = state
             }
-            c.shown[page] = isActive
         }
     }
 
@@ -52,10 +56,16 @@ struct KeptPages: NSViewRepresentable {
     /// 隐藏的页面本来就不该获得焦点，直接回答不能。
     final class PageHost: NSHostingView<AnyView> {
         override var acceptsFirstResponder: Bool { isHidden ? false : super.acceptsFirstResponder }
+        #if DEBUG
+        override func layout() {
+            super.layout()
+            if !isHidden { DevBridge.pageLaidOut() }
+        }
+        #endif
     }
 
     final class Coordinator {
         var hosts: [PageID: PageHost] = [:]
-        var shown: [PageID: Bool] = [:]
+        var states: [PageID: PageState] = [:]
     }
 }

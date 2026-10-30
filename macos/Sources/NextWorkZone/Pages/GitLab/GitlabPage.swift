@@ -86,7 +86,8 @@ struct GitlabPage: View {
     }
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var projects: [Project]?
     @State private var loading = false
     @State private var error: String?

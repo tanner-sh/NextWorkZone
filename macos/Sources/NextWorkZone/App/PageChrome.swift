@@ -12,7 +12,8 @@ import SwiftUI
 /// 和页面内容放在同一帧里，点击侧栏或列表后要等它们都做完才看到新内容。先显示内容，下一轮再更新工具栏：
 /// 视图出现后才创建项目（例如切换问题时新的问题详情），切换页面时下一轮才显示或隐藏。
 private struct PageToolbar<Items: ToolbarContent>: ViewModifier {
-    @Environment(\.pageActive) private var active
+    @Environment(\.page) private var pageState
+    private var active: Bool { pageState.active }
     @State private var shown: Bool?
     let items: () -> Items
 

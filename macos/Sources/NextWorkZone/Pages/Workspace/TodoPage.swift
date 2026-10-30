@@ -26,7 +26,8 @@ struct TodoPage: View {
     }
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageActive) private var active
+    @Environment(\.page) private var pageState
+    private var active: Bool { pageState.active }
     @State private var todos: [Todo]?
     @State private var error: String?
     @State private var view: ViewKind = .today

@@ -33,7 +33,8 @@ struct ActivityPage: View {
     static let mergeMs: Int64 = 10 * 60 * 1000
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var filter: Filter = .all
     @State private var loading = false
     @State private var error: String?

@@ -14,7 +14,7 @@ import NWZServices
 /// ```
 ///
 /// - `/nav?page=<页面>&<NavTarget 字段>=<值>`：跳转；
-/// - `/state`：当前页面和窗口编号（截图用）；
+/// - `/state`：当前页面、窗口编号（截图用）和上一次 /nav 后新页面排好版（layoutMs）、提交到屏幕（commitMs）的毫秒数；
 /// - `/palette`、`/quick-todo`、`/capture`、`/clipboard`：打开对应的浮层或窗口；
 /// - `/theme?mode=dark|light|system`：切换外观；
 /// - `/key?chars=<文字>`：向主窗口发送按键（测试键盘操作）。
@@ -29,6 +29,25 @@ enum DevBridge {
     }
 
     private static var listener: NWListener?
+    private static var lastCommitMs: Double = 0
+    private static var lastLayoutMs: Double = 0
+    private static var navStart: CFTimeInterval?
+
+    /// 保留的页面显示出来后第一次排版完成（见 KeptPages.PageHost.layout）。
+    static func pageLaidOut() {
+        guard let start = navStart, lastLayoutMs < 0 else { return }
+        lastLayoutMs = (CACurrentMediaTime() - start) * 1000
+    }
+
+    /// 主窗口：每次绘制后记录，新页面排好版后的第一次绘制就是切换后看到的第一帧（同一次刷新随即提交到屏幕）。
+    final class MeasuredWindow: NSWindow {
+        override func displayIfNeeded() {
+            super.displayIfNeeded()
+            guard let start = navStart, lastLayoutMs >= 0 else { return }
+            navStart = nil
+            lastCommitMs = (CACurrentMediaTime() - start) * 1000
+        }
+    }
 
     static func start() {
         let token = String(UInt64.random(in: 0...UInt64.max), radix: 16)
@@ -122,6 +141,10 @@ enum DevBridge {
             t.tool = query["tool"]
             t.toolTab = query["toolTab"]
             t.searchQuery = query["searchQuery"]
+            // 从跳转到新页面第一次排好版的时间（/state 的 commitMs，随后同一次刷新就提交到屏幕）：衡量切换页面时看到新内容要等多久
+            lastCommitMs = -1
+            lastLayoutMs = -1
+            navStart = CACurrentMediaTime()
             model.navigate(t)
         case "/palette": model.paletteOpen.toggle()
         // /image?src=<地址>&service=jira：打开图片查看器
@@ -245,7 +268,7 @@ enum DevBridge {
         default: break
         }
         let windows = NSApp.windows.filter(\.isVisible).map { "{\"title\":\"\($0.title)\",\"number\":\($0.windowNumber)}" }.joined(separator: ",")
-        return "{\"page\":\"\(model.current.page.rawValue)\",\"windows\":[\(windows)]}"
+        return "{\"page\":\"\(model.current.page.rawValue)\",\"layoutMs\":\(Int(lastLayoutMs)),\"commitMs\":\(Int(lastCommitMs)),\"windows\":[\(windows)]}"
     }
 }
 #endif

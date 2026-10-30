@@ -21,8 +21,9 @@ struct JiraPage: View {
     static let groups: [(String, String)] = [("none", "不分组"), ("status", "按状态"), ("project", "按项目"), ("priority", "按优先级"), ("assignee", "按经办人")]
 
     @Environment(AppModel.self) private var model
-    @Environment(\.pageActive) private var active
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var active: Bool { pageState.active }
+    private var visit: Int { pageState.visit }
     @State private var mode: Mode = .mine
     @State private var query: (jql: String, label: String?) = (JQL.presets[0].jql, nil)
     @State private var customJql = ""

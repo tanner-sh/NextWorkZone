@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 主窗口：侧栏 + 内容区。侧栏中的页面切走后只隐藏、不销毁（见 KeptPages）：
-/// 回来时立即显示，滚动位置、选中项、搜索条件和展开状态都还在；需要最新数据的页面按 `pageVisit` 在后台刷新。
+/// 回来时立即显示，滚动位置、选中项、搜索条件和展开状态都还在；需要最新数据的页面按 `PageState.visit` 在后台刷新。
 /// 其余页面（搜索、工具）每次打开时重新创建。
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -21,8 +21,8 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
         } detail: {
             ZStack {
-                KeptPages(pages: kept, active: model.current.page) { page, active in
-                    AnyView(pageView(page).environment(\.pageActive, active).environment(\.pageVisit, visits[page] ?? 0).environment(model))
+                KeptPages(pages: kept, active: model.current.page, visits: visits) { page, state in
+                    AnyView(pageView(page).environment(\.page, state).environment(model))
                 }
                 if !Self.keepAlive.contains(model.current.page) {
                     pageView(model.current.page)
@@ -83,25 +83,31 @@ struct RootView: View {
     }
 }
 
-private struct PageActiveKey: EnvironmentKey {
-    static let defaultValue = true
+/// 页面的显示状态。每个保留的页面一个，切换页面时只改它的属性：只有读了这些属性的视图会更新。
+/// 改成环境值的话，每次切换整个页面都要检查一遍（环境变化要逐个视图比较用到的值），切到问题列表等较大的页面要多花几十毫秒。
+// 只在主线程使用；不标 @MainActor，才能作为环境值的默认值
+@Observable
+final class PageState {
+    /// 页面是否正在显示。切走后保留的页面隐藏时为 false：不应响应快捷键、接收拖入的文件。
+    var active: Bool
+    /// 保留的页面再次显示时加一（首次显示为 0）。放进 `.task(id:)` 就能在回到页面时后台刷新，已显示的内容不清空。
+    var visit: Int
+
+    init(active: Bool = true, visit: Int = 0) { self.active = active; self.visit = visit }
+
+    /// 不保留的页面（搜索、工具）：一直显示，每次打开都重新创建
+    nonisolated(unsafe) static let always = PageState()
 }
 
-private struct PageVisitKey: EnvironmentKey {
-    static let defaultValue = 0
+private struct PageStateKey: EnvironmentKey {
+    static var defaultValue: PageState { .always }
 }
 
 extension EnvironmentValues {
-    /// 页面是否正在显示。切走后保留的页面隐藏时为 false：不应响应快捷键、接收拖入的文件。
-    var pageActive: Bool {
-        get { self[PageActiveKey.self] }
-        set { self[PageActiveKey.self] = newValue }
-    }
-
-    /// 保留的页面再次显示时加一（首次显示为 0）。放进 `.task(id:)` 就能在回到页面时后台刷新，已显示的内容不清空。
-    var pageVisit: Int {
-        get { self[PageVisitKey.self] }
-        set { self[PageVisitKey.self] = newValue }
+    /// 所在页面的显示状态（见 PageState）。
+    var page: PageState {
+        get { self[PageStateKey.self] }
+        set { self[PageStateKey.self] = newValue }
     }
 }
 

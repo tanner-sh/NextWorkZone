@@ -3,7 +3,8 @@ import SwiftUI
 /// 周报：编辑共享 Wiki 页面中自己那一行（周报内容、风险事项），旁边是按这一周的工作生成的草稿。
 struct WeeklyPage: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.pageVisit) private var visit
+    @Environment(\.page) private var pageState
+    private var visit: Int { pageState.visit }
     @State private var view: WeeklyView?
     @State private var error: String?
     @State private var loading = false

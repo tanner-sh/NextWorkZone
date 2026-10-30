@@ -8,7 +8,8 @@ struct WikiPageEditor: View {
     var onClose: () -> Void
     var onSaved: (String) -> Void
 
-    @Environment(\.pageActive) private var active
+    @Environment(\.page) private var pageState
+    private var active: Bool { pageState.active }
     @State private var session: WikiEditSession?
     @State private var doc: RichDoc?
     @State private var error: String?
