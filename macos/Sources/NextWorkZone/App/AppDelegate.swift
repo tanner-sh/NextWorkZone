@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupShortcuts()
+        ListClickFocus.install()
         // 剪贴板面板和快速记录窗口创建要 0.2 秒左右：主窗口显示后再创建，不推迟启动
         DispatchQueue.main.async {
             ClipboardPanel.shared.prepare()

@@ -226,6 +226,18 @@ struct KnowledgePage: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        // ⌫ 或“编辑 > 删除”：删除选中的页面（含子页面）
+        .onDeleteCommand {
+            guard let page = pages?.first(where: { $0.id == selected }) else { return }
+            let hasChildren = pages?.contains { $0.parentId == page.id } ?? false
+            Confirm.ask("删除页面“\(page.title.isEmpty ? "无标题" : page.title)”\(hasChildren ? "（含子页面）" : "")？", confirm: "删除") {
+                guarded {
+                    self.selected = nil
+                    _ = try await API.shared.wsDeleteDoc(page.id)
+                    Events.workspaceChanged()
+                }
+            }
+        }
         .listHeader {
             FilterField(prompt: "筛选页面", text: $filter)
             if !allTags.isEmpty {

@@ -183,6 +183,7 @@ private struct RecentList: View {
                 if list?.isEmpty == true { Text("还没有查看过 Wiki 页面").foregroundStyle(.secondary) }
             }
             .listStyle(.inset)
+            .copyLinks { (list ?? []).filter { $0.id == selected }.map { WorkLink.wiki(id: $0.id, title: $0.title) } }
             .overlay { if list == nil && error == nil { ProgressView() } }
         }
         .task { await load() }
@@ -213,6 +214,7 @@ private struct FavoriteList: View {
             if favorites.list.isEmpty { Text("点击工具栏中的星标收藏常看的页面").foregroundStyle(.secondary) }
         }
         .listStyle(.inset)
+        .copyLinks { favorites.list.filter { $0.id == selected }.map { WorkLink.wiki(id: $0.id, title: $0.title) } }
     }
 }
 
@@ -335,6 +337,7 @@ private struct SpaceTreeView: View {
             if tree.spaces?.isEmpty == false && rows.isEmpty { Text("没有匹配的空间").foregroundStyle(.secondary) }
         }
         .listStyle(.inset)
+        .copyLinks { rows.compactMap { if case .page(let n, _, _) = $0, n.id == selected { WorkLink.wiki(id: n.id, title: n.title) } else { nil } } }
         .overlay { if tree.spaces == nil && tree.error == nil { ProgressView() } }
         .listHeader(inset: 12) {
             FilterField(prompt: "筛选空间", text: $filter)
@@ -424,6 +427,7 @@ private struct WikiSearchPanel: View {
             if result == nil && !loading { Text("输入关键词搜索；多个关键词用空格分开，需全部出现").foregroundStyle(.secondary) }
         }
         .listStyle(.inset)
+        .copyLinks { (result?.hits ?? []).filter { $0.id == selected }.map { WorkLink.wiki(id: $0.id, title: $0.title) } }
         .listHeader(inset: 12) {
             FilterField(prompt: "搜索标题和正文", text: $text, loading: loading, focus: $focused)
             HStack {

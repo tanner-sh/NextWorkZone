@@ -19,6 +19,8 @@ import NWZServices
 /// - `/theme?mode=dark|light|system`：切换外观；
 /// - `/key?chars=<文字>`：向主窗口发送按键（测试键盘操作）。
 /// - `/hit?x=&y=`：主窗口中某点（窗口坐标，左上角为原点）所在的视图及其各级上层（排查绘制问题）。
+/// - `/menu[?path=菜单/项目]`：列出菜单栏项目，或执行某项（按标题前缀匹配）。
+/// - `/responder`：键盘焦点所在的视图及其各级上层；`/focus-at?x=&y=`：让某点所在的列表等视图获得焦点。
 @MainActor
 enum DevBridge {
     static func findEditor(_ view: NSView?) -> EditorTextView? {
@@ -272,6 +274,26 @@ enum DevBridge {
                 return String(decoding: data, as: UTF8.self)
             default: break
             }
+        case "/responder":
+            // 键盘焦点：主窗口的第一响应者及其各级上层
+            var chain: [String] = []
+            var r: NSResponder? = NSApp.keyWindow?.firstResponder
+            while let cur = r, chain.count < 12 { chain.append(String(describing: type(of: cur))); r = cur.nextResponder }
+            return String(data: (try? JSONSerialization.data(withJSONObject: chain)) ?? Data(), encoding: .utf8) ?? "[]"
+        case "/focus-at":
+            // 某点所在视图向上第一个能获得焦点的视图，以及让它成为第一响应者的结果
+            guard let window = MainWindow.window, let root = window.contentView?.superview,
+                  let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return "{}" }
+            var v = root.hitTest(NSPoint(x: x, y: root.bounds.height - y))
+            var info: [String] = []
+            while let cur = v {
+                if cur is NSTableView || cur.acceptsFirstResponder {
+                    info.append("\(type(of: cur)) accepts=\(cur.acceptsFirstResponder) make=\(window.makeFirstResponder(cur))")
+                    break
+                }
+                v = cur.superview
+            }
+            return String(data: (try? JSONSerialization.data(withJSONObject: info)) ?? Data(), encoding: .utf8) ?? "[]"
         case "/menu":
             // 菜单栏：列出各菜单的项目（标题、快捷键、是否可用）；path=菜单/项目 时执行该项目
             NSApp.mainMenu?.update()

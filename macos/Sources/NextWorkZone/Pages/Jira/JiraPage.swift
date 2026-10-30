@@ -448,6 +448,7 @@ struct JiraPage: View {
         }
         .listStyle(.inset)
         .overlay { if issues == nil && error == nil { ProgressView() } }
+        .copyLinks { (issues ?? []).filter { $0.key == selected }.map(WorkLink.issue) }
     }
 
     @ViewBuilder

@@ -348,6 +348,7 @@ struct MrListBody: View {
                 }
             }
             .listStyle(.inset)
+            .copyLinks { (list.items ?? []).filter { $0.id == selected }.map(WorkLink.mr) }
             .overlay { if list.items == nil && list.error == nil { ProgressView() } }
         }
     }

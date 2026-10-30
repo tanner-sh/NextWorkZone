@@ -45,6 +45,13 @@ enum TodoActions {
         undoable("删除待办", undo: { _ = try await API.shared.wsRestoreTodo(todo.id) }, redo: { try await API.shared.wsDeleteTodo(todo.id) })
     }
 
+    /// 调整顺序（可撤销）。
+    static func move(_ todo: Todo, sort: Double) async throws {
+        try await API.shared.wsMoveTodo(todo.id, sort: sort)
+        Events.workspaceChanged()
+        undoable("移动待办", undo: { try await API.shared.wsMoveTodo(todo.id, sort: todo.sort) }, redo: { try await API.shared.wsMoveTodo(todo.id, sort: sort) })
+    }
+
     /// 在主窗口的撤销记录中登记一步：⌘Z 撤销、⇧⌘Z 重做，完成后各页面按工作空间变化刷新。
     private static func undoable(_ name: String, undo: @escaping @MainActor () async throws -> Void, redo: @escaping @MainActor () async throws -> Void) {
         guard let manager = MainWindow.window?.undoManager else { return }

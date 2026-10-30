@@ -147,6 +147,8 @@ struct TodoPage: View {
                     .tag(todo.id)
                     .contextMenu(specs: { TodoActions.menu(todo, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) })
             }
+            // 拖动调整顺序（已完成的按完成时间排列，不能调整）
+            .onMove(perform: moveAction)
             if todos != nil && visible.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(view.empty).foregroundStyle(.secondary)
@@ -165,6 +167,16 @@ struct TodoPage: View {
             return !items.isEmpty
         } isTargeted: { dropTargeted = $0 }
         .overlay { if dropTargeted { DropHighlight(text: "加为待办") } }
+        // ⌫ 或“编辑 > 删除”：删除选中的待办（可撤销）
+        .onDeleteCommand {
+            guard let todo = todos?.first(where: { $0.id == selected }) else { return }
+            Confirm.ask(TodoActions.fromJiraSync(todo) ? "确认删除？之后不再自动添加" : "确认删除“\(todo.title)”？", confirm: "删除") {
+                guarded {
+                    try await TodoActions.delete(todo)
+                    removeLocal(todo)
+                }
+            }
+        }
         .listHeader(inset: 12) {
             HStack {
                 Image(systemName: "plus").foregroundStyle(.secondary)
@@ -204,6 +216,39 @@ struct TodoPage: View {
 
     private func toggle(_ todo: Todo) {
         guarded { replace(try await TodoActions.setDone(todo, !todo.done)) }
+    }
+
+    private var moveAction: ((IndexSet, Int) -> Void)? {
+        if view == .done { return nil }
+        return { from, to in reorder(from, to) }
+    }
+
+    /// 拖动调整顺序。列表先按截止日期（今天、计划）和优先级排列，只能在同一组内调整，
+    /// 新位置取前后两条的中间值。
+    private func reorder(_ from: IndexSet, _ to: Int) {
+        var list = visible
+        guard let index = from.first else { return }
+        let todo = list[index]
+        list.move(fromOffsets: from, toOffset: to)
+        guard let at = list.firstIndex(where: { $0.id == todo.id }) else { return }
+        let byDue = view == .today || view == .upcoming
+        func group(_ t: Todo) -> String { (byDue ? t.due ?? "" : "") + "|\(9 - t.priority)" }
+        let prev = at > 0 ? list[at - 1] : nil, next = at + 1 < list.count ? list[at + 1] : nil
+        guard prev.map({ group($0) <= group(todo) }) ?? true, next.map({ group(todo) <= group($0) }) ?? true else {
+            toast("待办按\(byDue ? "截止日期和" : "")优先级排列，只能在同一组内调整顺序")
+            return
+        }
+        let before = prev.flatMap { group($0) == group(todo) ? $0.sort : nil }, after = next.flatMap { group($0) == group(todo) ? $0.sort : nil }
+        let sort: Double = switch (before, after) {
+        case let (b?, a?): (b + a) / 2
+        case let (b?, nil): b + 1
+        case let (nil, a?): a - 1
+        case (nil, nil): todo.sort
+        }
+        guard sort != todo.sort else { return }
+        // 先在列表中移好，再保存
+        if let i = todos?.firstIndex(where: { $0.id == todo.id }) { todos?[i].sort = sort }
+        guarded { try await TodoActions.move(todo, sort: sort) }
     }
 
     /// 安排日期（“未安排”中的今天、明天）

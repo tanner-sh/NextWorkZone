@@ -130,6 +130,17 @@ struct NotesPage: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        // ⌫ 或“编辑 > 删除”：删除选中的笔记（日记不在这里删除）
+        .onDeleteCommand {
+            guard tab == .notes, let n = notes?.first(where: { $0.id == selected }) else { return }
+            Confirm.ask("删除笔记“\(n.title.isEmpty ? "无标题" : n.title)”？", confirm: "删除") {
+                guarded {
+                    selected = "daily-\(today)"
+                    _ = try await API.shared.wsDeleteDoc(n.id)
+                    Events.workspaceChanged()
+                }
+            }
+        }
         .listHeader {
             if tab == .daily {
                 DatePicker("跳到日期", selection: Binding(get: {

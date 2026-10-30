@@ -44,6 +44,17 @@ struct WorkLink: Codable, Hashable, Transferable {
 
     private var webURL: URL { URL(string: url) ?? URL(string: "about:blank")! }
 
+    /// ⌘C 复制的内容：纯文本为“问题键 概要 地址”，带格式的文本（邮件、备忘录等）中是链接。
+    var copyProvider: NSItemProvider {
+        let provider = NSItemProvider(object: "\(label) \(url)" as NSString)
+        let html = "<a href=\"\(url.htmlEscaped)\">\(label.htmlEscaped)</a>"
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.html.identifier, visibility: .all) { done in
+            done(Data(html.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
     /// 从拖动的数据中读出（编辑器等 AppKit 视图接收拖入时用）。
     static func read(_ pasteboard: NSPasteboard) -> WorkLink? {
         pasteboard.data(forType: NSPasteboard.PasteboardType(UTType.nwzLink.identifier)).flatMap { try? JSONDecoder().decode(WorkLink.self, from: $0) }
@@ -123,5 +134,18 @@ struct DropHighlight: View {
             .overlay(Text(text).font(.headline).padding(10).glassEffect())
             .padding(8)
             .allowsHitTesting(false)
+    }
+}
+
+private extension String {
+    var htmlEscaped: String {
+        replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
+extension View {
+    /// 列表获得焦点时 ⌘C（“编辑 > 拷贝”）复制选中的问题、页面、合并请求。
+    func copyLinks(_ links: @escaping () -> [WorkLink]) -> some View {
+        onCopyCommand { links().map(\.copyProvider) }
     }
 }
