@@ -83,19 +83,6 @@ public actor SettingsService {
         return getSettings()
     }
 
-    public func importTokensEnv() throws -> [Service] {
-        let file = paths.home.appendingPathComponent(".nextworkzone/tokens.env")
-        let text: String
-        do { text = try String(contentsOf: file, encoding: .utf8) }
-        catch CocoaError.fileReadNoSuchFile { throw NWZError.other("未找到 ~/.nextworkzone/tokens.env，请在设置中手动填写令牌") }
-        let tokens = parseTokensEnv(text)
-        var next = credentials
-        for (service, token) in tokens { next[Secret.token.key(for: service)] = token }
-        if next != credentials { try store.save(next) }
-        credentials = next
-        return Service.allCases.filter { tokens[$0] != nil }
-    }
-
     public func testConnection(_ service: Service) async throws -> ConnectionInfo {
         let config = configuration.snapshot()
         let base = try config.baseURL(for: service)

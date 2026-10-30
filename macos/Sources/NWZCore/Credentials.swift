@@ -75,16 +75,3 @@ public enum PrivateFile {
         guard rename(temporary.path, url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     }
 }
-
-public func parseTokensEnv(_ content: String) -> [Service: String] {
-    var result: [Service: String] = [:]
-    for line in content.split(separator: "\n") {
-        let pair = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-        guard pair.count == 2 else { continue }
-        let key = pair[0].trimmingCharacters(in: .whitespaces)
-        let value = pair[1].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-        let service: Service? = switch key { case "JIRA_PAT": .jira; case "WIKI_PAT", "CONFLUENCE_PAT": .confluence; case "GITLAB_PAT": .gitlab; default: nil }
-        if let service, !value.isEmpty { result[service] = value }
-    }
-    return result
-}

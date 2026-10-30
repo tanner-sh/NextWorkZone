@@ -94,9 +94,6 @@ struct SettingsPage: View {
         Form {
             Section {
                 Text("连接的系统地址与凭据，修改后需要保存。凭据只保存在本机。").foregroundStyle(.secondary)
-                #if DEBUG
-                Button("导入 tokens.env", systemImage: "square.and.arrow.down", action: importEnv).help("开发用：从 ~/.nextworkzone/tokens.env 导入")
-                #endif
                 if let notice {
                     Text(notice.text).foregroundStyle(notice.ok ? .green : .red)
                 }
@@ -205,22 +202,6 @@ struct SettingsPage: View {
                 notice = (false, errorMessage(error))
             }
             saving = false
-        }
-    }
-
-    private func importEnv() {
-        Task {
-            do {
-                let imported = try await API.shared.importTokensEnv()
-                let next = try await API.shared.getSettings()
-                model.setSettings(next)
-                fill(next)
-                tests = [:]
-                notice = (true, imported.isEmpty ? "tokens.env 中没有可导入的令牌" : "已从 ~/.nextworkzone/tokens.env 导入 \(imported.count) 个令牌")
-            } catch {
-                guard !isCancellation(error) else { return }
-                notice = (false, errorMessage(error))
-            }
         }
     }
 

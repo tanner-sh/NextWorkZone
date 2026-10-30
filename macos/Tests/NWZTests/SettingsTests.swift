@@ -61,17 +61,6 @@ struct SettingsTests {
         #expect(store.snapshot().jira.baseUrl == "https://jira.example.com")
     }
 
-    @Test func tokenImportHandlesMissingFile() async throws {
-        let dir = try directory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let settings = try service(dir)
-        await #expect(throws: NWZError.self) { try await settings.importTokensEnv() }
-        let folder = dir.appendingPathComponent(".nextworkzone")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try Data("JIRA_PAT=sample\nWIKI_PAT=another".utf8).write(to: folder.appendingPathComponent("tokens.env"))
-        #expect(try await settings.importTokensEnv() == [.jira, .confluence])
-    }
-
     @Test func connectionProbeUsesReadOnlyRequestsAndSeparateTokens() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -105,7 +94,7 @@ struct SettingsTests {
 
 struct ReadOnlyCommandTests {
     @Test func rejectsWritesUnknownCommandsAndCredentials() {
-        for command in ["save_settings", "clear_token", "import_tokens_env", "jira_transition", "jira_add_comment", "jira_upload_attachments", "wiki_save", "wiki_create", "wiki_set_task", "weekly_save", "weekly_create_week", "gl_mr_merge", "gl_mr_approve", "gl_mr_add_note", "ws_publish_to_wiki", "clip_paste", "web_login_info", "web_login_finish", "web_logout", "future_command"] {
+        for command in ["save_settings", "clear_token", "jira_transition", "jira_add_comment", "jira_upload_attachments", "wiki_save", "wiki_create", "wiki_set_task", "weekly_save", "weekly_create_week", "gl_mr_merge", "gl_mr_approve", "gl_mr_add_note", "ws_publish_to_wiki", "clip_paste", "web_login_info", "web_login_finish", "web_logout", "future_command"] {
             #expect(!ReadOnlyCommands.names.contains(command))
         }
         #expect(ReadOnlyCommands.names.contains("get_settings"))

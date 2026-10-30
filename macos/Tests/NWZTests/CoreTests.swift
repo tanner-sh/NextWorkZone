@@ -57,11 +57,6 @@ struct CoreTests {
         #expect(try JSONDecoder().decode(ServiceMap<String>.self, from: JSONEncoder().encode(values)) == values)
     }
 
-    @Test func parsesTokensEnv() {
-        let parsed = parseTokensEnv("JIRA_PAT=abc\n# comment\nWIKI_PAT=\"def\"\nGITLAB_PAT=\nOTHER=x\n")
-        #expect(parsed == [.jira: "abc", .confluence: "def"])
-    }
-
     @Test func detectsLoginRedirects() throws {
         let base = "https://jira.example.com"
         for address in ["https://jira.example.com/login.jsp?x=1", "https://jira.example.com/plugins/servlet/mfa/authlogin", "https://sso.example.com/idp/start"] {

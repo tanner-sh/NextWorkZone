@@ -116,7 +116,6 @@ final class API: @unchecked Sendable {
     func getSettings() async throws -> Settings { await settings.getSettings() }
     func saveSettings(_ input: SettingsInput) async throws -> Settings { let result = try await settings.saveSettings(input); await jira.configurationChanged(); await wiki.configurationChanged(); await gitlab.configurationChanged(); await sessions.configurationChanged(); return result }
     func clearToken(_ service: Service) async throws -> Settings { try await settings.clearToken(service) }
-    func importTokensEnv() async throws -> [Service] { try await settings.importTokensEnv() }
     func testConnection(_ service: Service) async throws -> ConnectionInfo { try await settings.testConnection(service) }
 
     // MARK: Jira
