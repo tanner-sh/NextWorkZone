@@ -37,6 +37,8 @@ struct NavTarget: Equatable {
     var searchQuery: String?
     /// 搜索页的范围
     var searchScope: String?
+    /// 打开 Wiki 页面的编辑器（从单独窗口中的页面点“编辑”）
+    var wikiEdit = false
     /// 每次跳转都不同，让页面即使目标相同也再处理一次。
     var nonce = UUID()
 

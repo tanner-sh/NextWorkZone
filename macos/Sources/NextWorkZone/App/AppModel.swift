@@ -47,6 +47,8 @@ final class AppModel {
     var clipboardPaused = false
     /// 打开设置窗口（SwiftUI 只在视图中提供，由主窗口的根视图交给这里）
     @ObservationIgnored var openSettingsAction: OpenSettingsAction?
+    /// 打开新窗口（问题、Wiki 页面等单独的窗口，预览窗口），同样由主窗口的根视图交给这里
+    @ObservationIgnored var openWindowAction: OpenWindowAction?
 
     private static let lastPageKey = "nextworkzone.lastPage"
     private static let lastToolKey = "nextworkzone.lastTool"

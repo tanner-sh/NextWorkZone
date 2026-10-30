@@ -158,6 +158,7 @@ struct NotesPage: View {
     private func dayMenu(_ day: String) -> [MenuSpec] {
         var specs: [MenuSpec] = [
             .action("打开") { selected = "daily-\(day)" },
+            DetailWindows.menuItem(.doc("daily-\(day)")),
             .action("新建笔记", icon: "plus", createNote),
         ]
         // 今天的日记还没写时不能删除
@@ -170,6 +171,7 @@ struct NotesPage: View {
     private func noteMenu(_ n: DocSummary) -> [MenuSpec] {
         [
             .action("打开") { selected = n.id },
+            DetailWindows.menuItem(.doc(n.id)),
             .action("新建笔记", icon: "plus", createNote),
             .separator,
             DocMenus.pin(n),

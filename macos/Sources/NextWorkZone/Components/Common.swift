@@ -322,10 +322,12 @@ private func progressReporter(_ id: UUID, _ onProgress: (@MainActor @Sendable (D
 
 struct ToastOverlay: View {
     @State private var toasts = Toasts.shared
+    /// 主窗口、单独打开的窗口都有提示层，只在当前窗口中显示
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         VStack(spacing: 6) {
-            ForEach(toasts.items) { t in
+            ForEach(appearsActive ? toasts.items : []) { t in
                 HStack(spacing: 10) {
                     Text(t.message)
                     if let p = t.progress {

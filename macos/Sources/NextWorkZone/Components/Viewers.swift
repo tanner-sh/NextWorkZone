@@ -5,66 +5,11 @@ import PDFKit
 import Quartz
 import SwiftUI
 
-/// 预览窗口：图片、附件在单独的窗口中查看，Esc 关闭，← → 切换附件。
-@MainActor
-final class PreviewWindow: NSObject, NSWindowDelegate {
-    static let shared = PreviewWindow()
-    private var window: NSWindow?
-
-    /// 小于这个尺寸的窗口（包括记住的尺寸）不合用，改用默认大小。
-    private static let minSize = NSSize(width: 720, height: 520)
-    private static let autosaveName = "NextWorkZonePreviewWindow"
-
-    func show<V: View>(title: String, _ content: V) {
-        let host = NSHostingController(rootView: content.environment(AppModel.shared))
-        // 窗口大小不随内容变化：默认会缩到内容的最小尺寸（图片查看器只有 400×300）
-        host.sizingOptions = []
-        if window == nil {
-            let w = KeyWindow(contentRect: NSRect(origin: .zero, size: Self.minSize), styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
-            w.isReleasedWhenClosed = false
-            w.titlebarAppearsTransparent = true
-            w.delegate = self
-            // 先恢复记住的大小再设最小尺寸：否则记住的过小尺寸会先被撑到最小尺寸，看起来就“合用”了。
-            // 之前的版本会把窗口缩到内容的最小尺寸并记住，所以换一个名称，不再使用那时记住的大小。
-            if !w.setFrameUsingName(Self.autosaveName) || w.frame.width < Self.minSize.width || w.frame.height < Self.minSize.height {
-                w.setFrame(Self.defaultFrame(), display: false)
-            }
-            w.minSize = Self.minSize
-            w.setFrameAutosaveName(Self.autosaveName)
-            window = w
-        }
-        // 设置 contentViewController 时窗口会改成控制器视图的尺寸（新建时为 0，再被撑到最小尺寸），保留原来的位置和大小
-        if let window {
-            let frame = window.frame
-            window.contentViewController = host
-            window.setFrame(frame, display: false)
-        }
-        window?.title = title
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-    }
-
-    func close() { window?.orderOut(nil) }
-
-    /// 与主窗口一样大（与 Tauri 版铺满窗口的查看器相当）；主窗口不可见时取屏幕的 85%。
-    private static func defaultFrame() -> NSRect {
-        if let main = MainWindow.window, main.isVisible, main.frame.width >= minSize.width { return main.frame }
-        let area = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
-        let size = NSSize(width: area.width * 0.85, height: area.height * 0.85)
-        return NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
-    }
-
-    /// Esc 关闭。
-    private final class KeyWindow: NSWindow {
-        override func cancelOperation(_ sender: Any?) { orderOut(nil) }
-    }
-}
-
 /// 放大查看图片（可缩放）。
 @MainActor
 enum ImageViewer {
     static func show(src: String, service: Service, alt: String) {
-        PreviewWindow.shared.show(title: alt.isEmpty ? "图片" : alt, ImageViewerView(src: src, service: service))
+        PreviewContent.shared.show(title: alt.isEmpty ? "图片" : alt, ImageViewerView(src: src, service: service))
     }
 }
 
@@ -199,7 +144,7 @@ enum AttachmentViewer {
     }
 
     static func show(_ attachments: [Attachment], index: Int, service: Service) {
-        PreviewWindow.shared.show(title: attachments[index].filename, AttachmentViewerView(attachments: attachments, index: index, service: service))
+        PreviewContent.shared.show(title: attachments[index].filename, AttachmentViewerView(attachments: attachments, index: index, service: service))
     }
 
     /// 按扩展名推测文件类型，用于预览只有地址的附件链接。

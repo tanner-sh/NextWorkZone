@@ -57,6 +57,7 @@ enum WikiMenus {
         let favorite = WikiFavorites.shared.contains(id)
         var specs: [MenuSpec] = []
         if !current { specs.append(.action("打开", icon: "text.book.closed") { AppModel.shared.navigate(NavTarget(.wiki, wikiPage: id)) }) }
+        specs.append(DetailWindows.menuItem(.wiki(id)))
         specs.append(.action(favorite ? "取消收藏" : "收藏", icon: favorite ? "star.slash" : "star") {
             guarded {
                 let (t, s) = try await info()

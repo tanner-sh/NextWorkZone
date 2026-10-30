@@ -449,6 +449,10 @@ struct JiraPage: View {
         .listStyle(.inset)
         .overlay { if issues == nil && error == nil { ProgressView() } }
         .copyLinks { (issues ?? []).filter { $0.key == selected }.map(WorkLink.issue) }
+        // 双击在新窗口中打开（右键菜单仍是各行自己的菜单）
+        .contextMenu(forSelectionType: String.self, menu: { _ in EmptyView() }, primaryAction: { keys in
+            if let key = keys.first { DetailWindows.open(.issue(key)) }
+        })
     }
 
     @ViewBuilder

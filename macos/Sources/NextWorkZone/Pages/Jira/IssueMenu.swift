@@ -75,8 +75,9 @@ final class IssueMenu {
         var specs: [MenuSpec] = []
         if !current {
             specs.append(.action("打开 \(key)", icon: "smallcircle.filled.circle") { AppModel.shared.navigate(NavTarget(.jira, issueKey: key)) })
-            specs.append(.separator)
         }
+        specs.append(DetailWindows.menuItem(.issue(key)))
+        specs.append(.separator)
         specs.append(.lazy("流转", icon: "arrow.left.arrow.right") { [weak self] in
             // 先发出请求，再在主线程上取问题信息，两者同时进行
             async let available = API.shared.jiraTransitions(key)

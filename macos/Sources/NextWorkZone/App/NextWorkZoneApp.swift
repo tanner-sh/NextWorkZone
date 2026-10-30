@@ -19,6 +19,22 @@ struct NextWorkZoneApp: App {
         .keyboardShortcut("0", modifiers: [.command, .shift])
         .commands { AppCommands() }
 
+        // 在新窗口中打开的问题、Wiki 页面、文档；重新启动时不恢复
+        WindowGroup(id: DetailWindows.id, for: DetailTarget.self) { $target in
+            DetailWindow(target: target)
+        }
+        .defaultSize(width: 1000, height: 780)
+        .windowToolbarStyle(.unified)
+        .restorationBehavior(.disabled)
+
+        Window("预览", id: DetailWindows.previewId) {
+            PreviewWindowView()
+        }
+        .defaultSize(width: 1280, height: 820)
+        .restorationBehavior(.disabled)
+        // 不在“窗口”菜单中列出（没有内容时打开是空窗口）
+        .commandsRemoved()
+
         // 名字和业务的 Settings 类型相同，写全称
         SwiftUI.Settings {
             SettingsPage()

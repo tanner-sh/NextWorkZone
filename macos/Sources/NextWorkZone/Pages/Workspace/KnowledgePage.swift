@@ -181,6 +181,7 @@ struct KnowledgePage: View {
         let allOpen = !below.isEmpty && ([page.id] + below.filter { !(tree[$0] ?? []).isEmpty }).allSatisfy(expanded.contains)
         var specs: [MenuSpec] = [
             .action("打开") { selected = page.id },
+            DetailWindows.menuItem(.doc(page.id)),
             .action("添加子页面", icon: "plus") { create(parent: page.id) },
         ]
         if !below.isEmpty {

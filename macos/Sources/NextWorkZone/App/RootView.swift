@@ -6,6 +6,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var kept: [PageID] = []
     /// 各保留页面第几次显示
     @State private var visits: [PageID: Int] = [:]
@@ -49,7 +50,10 @@ struct RootView: View {
         }
         // 富文本右键菜单中的问题菜单（流转、分配需要的对话框）
         .issueMenuDialogs(IssueMenu.shared)
-        .onAppear { model.openSettingsAction = openSettings }
+        .onAppear {
+            model.openSettingsAction = openSettings
+            model.openWindowAction = openWindow
+        }
         // 从通知等处回到应用：当前页面按再次显示处理，在后台刷新
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if kept.contains(model.current.page) { visits[model.current.page, default: 0] += 1 }

@@ -77,7 +77,7 @@ struct WikiPage: View {
         if let page = t.wikiPage {
             selected = page
             anchor = t.anchor
-            editing = nil
+            editing = t.wikiEdit ? .edit(page) : nil
         }
         if let q = t.wikiSearch {
             searchText = q
