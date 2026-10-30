@@ -455,6 +455,7 @@ struct JiraPage: View {
         ForEach(list) { issue in
             IssueRow(issue: issue, hit: hits?[issue.key], query: hits != nil ? form.text : "", fields: view.fields, multiProject: multiProject, reminder: reminders[issue.key], unseen: viewedStore.isUnseen(issue), showReporter: mode == .mine)
                 .tag(issue.key)
+                .draggable(WorkLink.issue(issue))
                 .contextMenu(specs: { issueMenu.specs(.summary(issue), onUpdated: menuUpdated) })
         }
     }

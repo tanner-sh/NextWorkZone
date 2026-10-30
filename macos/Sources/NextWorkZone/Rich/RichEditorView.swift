@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 富文本编辑器的命令与状态（工具栏使用）。
 @MainActor @Observable
@@ -938,8 +939,40 @@ final class EditorTextView: NSTextView {
         return true
     }
 
+    /// 应用中拖来的问题、Wiki 页面、合并请求：SwiftUI 的拖动只提供“移动”，文本视图不接受来自外部的移动，所以自己接受，
+    /// 并把光标移到放下的位置作为插入提示。
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        linkDragOperation(sender) ?? super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        linkDragOperation(sender) ?? super.draggingUpdated(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        linkDragOperation(sender) != nil || super.prepareForDragOperation(sender)
+    }
+
+    private func linkDragOperation(_ sender: NSDraggingInfo) -> NSDragOperation? {
+        guard sender.draggingSource as? NSTextView !== self,
+              sender.draggingPasteboard.availableType(from: [NSPasteboard.PasteboardType(UTType.nwzLink.identifier)]) != nil else { return nil }
+        window?.makeFirstResponder(self)
+        setSelectedRange(NSRange(location: characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil)), length: 0))
+        return sender.draggingSourceOperationMask.contains(.copy) ? .copy : .move
+    }
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        if sender.draggingSource as? NSTextView !== self, pasteImages(from: sender.draggingPasteboard) { return true }
+        if sender.draggingSource as? NSTextView !== self {
+            // 从应用中拖来的问题、Wiki 页面、合并请求（同时带有文字，所以按文字接受拖入）：在放下的位置插入链接
+            if let link = WorkLink.read(sender.draggingPasteboard) {
+                let index = characterIndexForInsertion(at: convert(sender.draggingLocation, from: nil))
+                setSelectedRange(NSRange(location: index, length: 0))
+                insertLink(text: link.label, href: link.url, replacing: 0)
+                return true
+            }
+            if pasteImages(from: sender.draggingPasteboard) { return true }
+        }
         return super.performDragOperation(sender)
     }
 }
+

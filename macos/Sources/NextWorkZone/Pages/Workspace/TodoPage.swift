@@ -36,6 +36,7 @@ struct TodoPage: View {
     @State private var promoting: Todo?
     @State private var newTitle = ""
     @FocusState private var newFocused: Bool
+    @State private var dropTargeted = false
 
     private var day: String { Fmt.today() }
 
@@ -158,6 +159,12 @@ struct TodoPage: View {
         }
         .listStyle(.inset)
         .overlay { if todos == nil && error == nil { ProgressView() } }
+        // 拖入问题、Wiki 页面或文字：加为待办（在“今天”中拖入的安排在今天）
+        .dropDestination(for: DroppedWork.self) { items, _ in
+            DroppedWork.addTodos(items, due: view == .today ? day : nil)
+            return !items.isEmpty
+        } isTargeted: { dropTargeted = $0 }
+        .overlay { if dropTargeted { DropHighlight(text: "加为待办") } }
         .listHeader(inset: 12) {
             HStack {
                 Image(systemName: "plus").foregroundStyle(.secondary)

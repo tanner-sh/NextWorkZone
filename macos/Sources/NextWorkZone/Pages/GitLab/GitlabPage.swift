@@ -339,6 +339,7 @@ struct MrListBody: View {
                 ForEach(list.items ?? []) { mr in
                     MrListItem(mr: mr, showProject: showProject)
                         .tag(mr.id)
+                        .draggable(WorkLink.mr(mr))
                         .contextMenu(specs: { GitLab.mrMenu(mr) { onOpen(mr) } })
                 }
                 if list.items?.isEmpty == true { Text(empty).foregroundStyle(.secondary) }

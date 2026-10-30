@@ -263,6 +263,8 @@ enum DevBridge {
                 info["keyWindow"] = NSApp.keyWindow.map { String(describing: type(of: $0)) + " " + String($0.windowNumber) } ?? "nil"
                 info["firstResponder"] = NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
                 info["pasteTarget"] = target.map { String(describing: type(of: $0)) } ?? "nil"
+                info["dragTypes"] = tv.registeredDraggedTypes.map(\.rawValue).joined(separator: ",")
+                info["frame"] = "\(tv.convert(tv.bounds, to: nil))"
                 return String(data: (try? JSONSerialization.data(withJSONObject: info)) ?? Data(), encoding: .utf8) ?? "{}"
             case "dump":
                 let doc = RichFlat.build(RichFlat.parse(tv.textStorage!).paras)

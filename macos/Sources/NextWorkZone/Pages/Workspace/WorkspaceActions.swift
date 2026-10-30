@@ -30,6 +30,14 @@ enum TodoActions {
         return saved
     }
 
+    /// 新建（可撤销，撤销即删除）。
+    static func add(_ input: TodoInput) async throws -> Todo {
+        let todo = try await API.shared.wsSaveTodo(input)
+        Events.workspaceChanged()
+        undoable("添加待办", undo: { try await API.shared.wsDeleteTodo(todo.id) }, redo: { _ = try await API.shared.wsRestoreTodo(todo.id) })
+        return todo
+    }
+
     /// 删除（可撤销：删除只是打上删除标记，撤销时去掉）。
     static func delete(_ todo: Todo) async throws {
         try await API.shared.wsDeleteTodo(todo.id)

@@ -116,6 +116,9 @@ extension EnvironmentValues {
 /// 侧栏：搜索入口、页面分组、工具。设置在单独的设置窗口中（⌘,）。
 struct Sidebar: View {
     @Environment(AppModel.self) private var model
+    /// 正有内容拖到其上的页面
+    @State private var dropTarget: PageID?
+    @State private var springTask: Task<Void, Never>?
 
     private struct Entry: Identifiable {
         var id: PageID
@@ -182,10 +185,37 @@ struct Sidebar: View {
         let count = model.count(entry.id)
         let alert = entry.id == .jira && model.overdue > 0
         let index = AppCommands.pageOrder.firstIndex(of: entry.id)
-        Label(entry.label, systemImage: entry.icon)
+        let label = Label(entry.label, systemImage: entry.icon)
             .badge(count.map { Text("\($0)").foregroundStyle(alert ? Color.red : Color.secondary) })
             .tag(entry.id.rawValue)
             .help("\(entry.label)\(index.map { "（⌘\(($0 + 1) % 10)）" } ?? "")\(alert ? "\n\(model.overdue) 个问题已逾期或今天到期" : "")")
+        // 问题、Wiki 页面、合并请求或文字拖到“待办”上加为待办，拖到“笔记”上追加到今天的日记，不用离开当前页面；
+        // 停在“待办”“笔记”“知识库”上不放，稍后切换到那个页面（像访达的弹簧文件夹），可以放到页面中的具体位置
+        if [.todos, .notes, .kb].contains(entry.id) {
+            label.dropDestination(for: DroppedWork.self) { items, _ in
+                springTask?.cancel()
+                switch entry.id {
+                case .todos: DroppedWork.addTodos(items)
+                case .notes: DroppedWork.appendToDaily(items)
+                default: return false
+                }
+                return !items.isEmpty
+            } isTargeted: { targeted in
+                springTask?.cancel()
+                if targeted {
+                    dropTarget = entry.id
+                    springTask = Task {
+                        try? await Task.sleep(for: .milliseconds(800))
+                        if !Task.isCancelled, dropTarget == entry.id { model.navigate(entry.id) }
+                    }
+                } else if dropTarget == entry.id {
+                    dropTarget = nil
+                }
+            }
+            .listRowBackground(dropTarget == entry.id ? Color.accentColor.opacity(0.25).clipShape(.rect(cornerRadius: 6)) : nil)
+        } else {
+            label
+        }
     }
 }
 

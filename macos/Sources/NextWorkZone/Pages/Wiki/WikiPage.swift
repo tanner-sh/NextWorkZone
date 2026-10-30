@@ -177,6 +177,7 @@ private struct RecentList: View {
                     }
                     .padding(.vertical, 2)
                     .tag(p.id)
+                    .draggable(WorkLink.wiki(id: p.id, title: p.title))
                     .contextMenu(specs: { WikiMenus.page(id: p.id, title: p.title, space: p.space) })
                 }
                 if list?.isEmpty == true { Text("还没有查看过 Wiki 页面").foregroundStyle(.secondary) }
@@ -206,6 +207,7 @@ private struct FavoriteList: View {
                     Text(p.space).font(.caption).foregroundStyle(.secondary)
                 }
                 .tag(p.id)
+                .draggable(WorkLink.wiki(id: p.id, title: p.title))
                 .contextMenu(specs: { WikiMenus.page(id: p.id, title: p.title, space: p.space) })
             }
             if favorites.list.isEmpty { Text("点击工具栏中的星标收藏常看的页面").foregroundStyle(.secondary) }
@@ -373,6 +375,7 @@ private struct SpaceTreeView: View {
         .padding(.leading, CGFloat(depth - 1) * 14)
         .help(n.title)
         .tag(n.id)
+        .draggable(WorkLink.wiki(id: n.id, title: n.title))
         .contextMenu(specs: {
             var specs = WikiMenus.page(id: n.id, title: n.title, space: space.name, onNewChild: { onCreate(space.key, n.id) })
             if n.hasChildren {
@@ -414,6 +417,7 @@ private struct WikiSearchPanel: View {
                 }
                 .padding(.vertical, 2)
                 .tag(h.id)
+                .draggable(WorkLink.wiki(id: h.id, title: h.title))
                 .contextMenu(specs: { WikiMenus.page(id: h.id, title: h.title, space: h.spaceName) })
             }
             if let result, result.hits.isEmpty { Text("没有找到页面").foregroundStyle(.secondary) }

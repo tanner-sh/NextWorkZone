@@ -1,5 +1,4 @@
 import NWZCore
-import os
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -60,19 +59,13 @@ struct IssueView: View {
                 }
                 .contextMenu(specs: { issueActions(issue) })
                 .pageToolbar { toolbar(issue) }
-                .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
-                    // 把文件拖进详情即可上传到当前问题
-                    loadURLs(providers) { paths in upload(paths) }
-                    return true
-                }
-                .overlay {
-                    if dropping {
-                        RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
-                            .overlay(Text("上传到 \(issue.key) 的附件").font(.headline).padding(10).glassEffect())
-                            .padding(8)
-                            .allowsHitTesting(false)
-                    }
-                }
+                // 把文件拖进详情即可上传到当前问题
+                .dropDestination(for: URL.self) { urls, _ in
+                    let paths = urls.filter(\.isFileURL).map(\.path)
+                    upload(paths)
+                    return !paths.isEmpty
+                } isTargeted: { dropping = $0 }
+                .overlay { if dropping { DropHighlight(text: "上传到 \(issue.key) 的附件") } }
             } else {
                 LoadingView()
             }
@@ -708,21 +701,6 @@ private struct ChangesSince: View {
             }
         }
     }
-}
-
-/// 从拖入的项目中取出文件路径。
-func loadURLs(_ providers: [NSItemProvider], completion: @escaping @MainActor ([String]) -> Void) {
-    let group = DispatchGroup()
-    // 各个回调在不同线程上执行
-    let paths = OSAllocatedUnfairLock<[String]>(initialState: [])
-    for p in providers {
-        group.enter()
-        _ = p.loadObject(ofClass: URL.self) { url, _ in
-            if let url, url.isFileURL { paths.withLock { $0.append(url.path) } }
-            group.leave()
-        }
-    }
-    group.notify(queue: .main) { MainActor.assumeIsolated { completion(paths.withLock { $0 }) } }
 }
 
 /// 最近看过的问题详情（只在内存中，最多几十个），切换问题时先显示，再从服务器刷新。
