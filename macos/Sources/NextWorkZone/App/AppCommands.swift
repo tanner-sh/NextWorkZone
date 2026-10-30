@@ -118,6 +118,10 @@ struct MenuSpecItems: View {
                 Divider()
             case .label(let text):
                 Text(text)
+            case let .share(url, title):
+                if let link = URL(string: url) {
+                    ShareLink(item: link, subject: Text(title)) { Label("共享", systemImage: "square.and.arrow.up") }
+                }
             case let .item(title, icon, checked, disabled, destructive, confirm, action):
                 Group {
                     if checked {

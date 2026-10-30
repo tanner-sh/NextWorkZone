@@ -7,6 +7,8 @@ indirect enum MenuSpec {
     case item(String, icon: String? = nil, checked: Bool = false, disabled: Bool = false, destructive: Bool = false, confirm: String? = nil, action: @MainActor () -> Void)
     case submenu(String, icon: String? = nil, children: [MenuSpec])
     case lazy(String, icon: String? = nil, load: @MainActor () async throws -> [MenuSpec])
+    /// 系统的“共享”子菜单（信息、邮件、隔空投送、备忘录等），共享网页地址
+    case share(url: String, title: String)
     /// 不可点击的说明文字
     case label(String)
     case separator
@@ -26,6 +28,8 @@ indirect enum MenuSpec {
 
 @MainActor
 enum MenuBuilder {
+    nonisolated(unsafe) private static var pickerKey = 0
+
     static func menu(_ specs: [MenuSpec]) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -55,6 +59,13 @@ enum MenuBuilder {
                 let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
                 if let icon { item.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }
                 item.submenu = MenuBuilder.menu(children)
+                items.append(item)
+            case let .share(url, _):
+                guard let link = URL(string: url) else { continue }
+                let picker = NSSharingServicePicker(items: [link])
+                let item = picker.standardShareMenuItem
+                // 菜单项不持有选择器，跟菜单项一起保留
+                objc_setAssociatedObject(item, &Self.pickerKey, picker, .OBJC_ASSOCIATION_RETAIN)
                 items.append(item)
             case let .lazy(title, icon, load):
                 let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")

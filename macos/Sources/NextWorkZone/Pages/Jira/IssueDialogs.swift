@@ -99,6 +99,7 @@ struct CreateIssueSheet: View {
     @State private var fieldsError: String?
     @State private var values: FieldValues = [:]
     @State private var files: [String] = []
+    @State private var pickingFiles = false
     @State private var images: [PendingImage] = []
     @State private var submitting = false
     @State private var problem: SubmitProblem?
@@ -191,9 +192,10 @@ struct CreateIssueSheet: View {
                             .padding(.horizontal, 8).padding(.vertical, 3).chipBackground()
                             .help(path)
                         }
-                        Button("选择文件", systemImage: "paperclip") {
-                            for p in FilePicker.pick() where !files.contains(p) { files.append(p) }
-                        }
+                        Button("选择文件", systemImage: "paperclip") { pickingFiles = true }
+                            .filePicker(isPresented: $pickingFiles) { paths in
+                                for p in paths where !files.contains(p) { files.append(p) }
+                            }
                     }
                 }
             }
@@ -335,25 +337,5 @@ struct DialogFrame<Content: View, Footer: View>: View {
         }
         .frame(width: width)
         .frame(minHeight: 260, idealHeight: 640, maxHeight: 820)
-    }
-}
-
-/// 选择文件（打开面板）。
-@MainActor
-enum FilePicker {
-    static func pick(multiple: Bool = true) -> [String] {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = multiple
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        return panel.runModal() == .OK ? panel.urls.map(\.path) : []
-    }
-
-    static func pickFolder() -> String? {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        return panel.runModal() == .OK ? panel.url?.path : nil
     }
 }

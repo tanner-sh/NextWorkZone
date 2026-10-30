@@ -142,6 +142,7 @@ final class IssueMenu {
                 guarded { AppModel.shared.navigate(NavTarget(.kb, docId: try await KBImport.issueToPage(key).id)) }
             },
             .separator,
+            .share(url: url, title: key),
             .action("在浏览器中打开", icon: "safari") { Links.openInBrowser(url) },
         ]
         return specs

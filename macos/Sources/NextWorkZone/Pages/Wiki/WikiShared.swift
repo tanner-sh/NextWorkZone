@@ -89,6 +89,7 @@ enum WikiMenus {
             },
             .action("剪藏到知识库", icon: "book") { guarded { AppModel.shared.navigate(NavTarget(.kb, docId: try await KBImport.wikiToPage(id).id)) } },
             .separator,
+            .share(url: url, title: title ?? "Wiki 页面"),
             .action("在浏览器中打开", icon: "safari") { Links.openInBrowser(url) },
         ]
         return specs

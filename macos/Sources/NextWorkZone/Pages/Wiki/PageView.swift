@@ -1,5 +1,6 @@
 import NWZCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 阅读 Wiki 页面：面包屑、标题、正文（Jira 宏实时状态、任务可勾选）、目录、引用的问题、子页面、附件、工作空间引用、评论。
 struct PageView: View {
@@ -15,6 +16,8 @@ struct PageView: View {
 
     @Environment(AppModel.self) private var model
     @State private var page: WikiPageDetail?
+    @State private var pickingFiles = false
+    @State private var exported: ExportedFile?
     @State private var doc: RichDoc? { didSet { sections = doc?.sections() ?? [] } }
     /// 正文按顶层标题分段显示（见 RichDoc.sections）：只有滚到附近的段才创建和排版
     @State private var sections: [(doc: RichDoc, headingStart: Int)] = []
@@ -85,6 +88,8 @@ struct PageView: View {
         }
         .task(id: pageId) { meta = try? await API.shared.wikiPageMeta(pageId) }
         .issueMenuDialogs(issueMenu)
+        .filePicker(isPresented: $pickingFiles) { upload($0) }
+        .fileSaver($exported)
     }
 
     /// 跳到第 index 个标题：先滚到所在的段，标题不在段首时再由这一段滚到标题处。
@@ -144,6 +149,9 @@ struct PageView: View {
             if page.canEdit { Button("编辑", systemImage: "pencil", action: onEdit).help("编辑页面") }
             Button("新建子页面", systemImage: "doc.badge.plus") { onNewChild() }.help("新建子页面")
             Button("历史版本", systemImage: "clock.arrow.circlepath") { history = true }.help("历史版本")
+            if let link = URL(string: WikiMenus.pageUrl(page.id)) {
+                ShareLink(item: link, subject: Text(page.title)).help("共享")
+            }
             Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(pageActions(page)) }.help("更多")
         }
     }
@@ -158,7 +166,7 @@ struct PageView: View {
             specs.append(.action(meta.liked ? "取消赞" : "赞", icon: meta.liked ? "hand.thumbsup.fill" : "hand.thumbsup") { toggleLike() })
             specs.append(.action(meta.watching ? "停止观看" : "观看", icon: meta.watching ? "eye.slash" : "eye") { toggleWatch() })
         }
-        specs.append(.action("上传附件…", icon: "paperclip") { upload(FilePicker.pick()) })
+        specs.append(.action("上传附件…", icon: "paperclip") { pickingFiles = true })
         specs.append(.action("页面信息…", icon: "info.circle") { info = true })
         specs.append(.action("复制页面…", icon: "plus.square.on.square") { copying = true })
         specs.append(.separator)
@@ -200,11 +208,12 @@ struct PageView: View {
         }
     }
 
+    /// 导出后选择保存位置（系统的存储面板）。
     private func export(_ page: WikiPageDetail, word: Bool) {
         toast(word ? "正在导出 Word…" : "正在导出 PDF（页面较长时需要一会儿）…")
         guarded {
-            let path = try await withDownloadProgress("正在导出 \(word ? "Word" : "PDF")…") { try await API.shared.wikiExport(page, word: word) }
-            toast("已保存到 \(path)")
+            let (data, name) = try await withDownloadProgress("正在导出 \(word ? "Word" : "PDF")…") { try await API.shared.wikiExport(page, word: word) }
+            exported = ExportedFile(data: data, filename: name, type: word ? UTType(filenameExtension: "doc") ?? .data : .pdf)
         }
     }
 
@@ -285,7 +294,7 @@ struct PageView: View {
             PageFooter(page: page, meta: meta, onLike: toggleLike) { await load() }
                 .padding(.bottom, 22)
             ChildPages(pageId: page.id, onOpen: onOpen)
-            WikiAttachments(pageId: page.id, version: attachmentsVersion) { upload(FilePicker.pick()) }
+            WikiAttachments(pageId: page.id, version: attachmentsVersion) { pickingFiles = true }
             BacklinksSection(system: "wiki", itemKey: page.id, title: "工作空间", hideEmpty: true)
             WikiComments(pageId: page.id)
         }

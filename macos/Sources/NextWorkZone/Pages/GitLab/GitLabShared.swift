@@ -86,6 +86,7 @@ enum GitLab {
             copy("复制源分支名", mr.sourceBranch, icon: "arrow.triangle.branch"),
             copy("复制为 Markdown 链接", "[\(projectPath(mr).components(separatedBy: "/").last ?? "")!\(mr.iid) \(mr.title)](\(mr.webUrl))"),
             .separator,
+            .share(url: mr.webUrl, title: mr.title),
             .action("在浏览器中打开", icon: "safari") { Links.openInBrowser(mr.webUrl) },
         ]
         return specs

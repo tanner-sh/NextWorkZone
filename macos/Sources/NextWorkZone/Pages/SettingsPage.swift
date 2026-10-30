@@ -278,6 +278,7 @@ struct ShortcutField: View {
 private struct WorkspaceSettingsSection: View {
     @State private var settings: WorkspaceSettings?
     @State private var busy = false
+    @State private var choosingFolder = false
     @State private var error: String?
 
     var body: some View {
@@ -286,7 +287,8 @@ private struct WorkspaceSettingsSection: View {
                 LabeledContent("同步文件夹") {
                     HStack {
                         Text(s.syncDir.isEmpty ? "未设置，仅保存在本机" : s.syncDir).foregroundStyle(s.syncDir.isEmpty ? .secondary : .primary).lineLimit(1).truncationMode(.middle)
-                        Button("选择…") { if let dir = FilePicker.pickFolder() { update(dir, s.jiraTodos) } }.disabled(busy)
+                        Button("选择…") { choosingFolder = true }.disabled(busy)
+                            .folderPicker(isPresented: $choosingFolder) { update($0, s.jiraTodos) }
                         if !s.syncDir.isEmpty { Button("停止同步") { update("", s.jiraTodos) }.disabled(busy) }
                     }
                 }

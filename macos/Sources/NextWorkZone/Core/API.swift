@@ -321,8 +321,8 @@ final class API: @unchecked Sendable {
         let storage = try await client.page(page.id).storage
         return try await client.createIn(space: page.spaceKey, parent: page.ancestors.last?.id, title: title, storage: storage)
     }
-    /// 导出 PDF / Word：使用网页端的导出地址（需要网页登录），保存到“下载”并打开
-    func wikiExport(_ page: WikiPageDetail, word: Bool) async throws -> String {
+    /// 导出 PDF / Word：使用网页端的导出地址（需要网页登录），返回文件内容和建议的文件名（由用户选择保存位置）
+    func wikiExport(_ page: WikiPageDetail, word: Bool) async throws -> (Data, String) {
         let path = word ? "/exportword?pageId=\(page.id)" : "/spaces/flyingpdf/pdfpageexport.action?pageId=\(page.id)"
         let name = page.title.replacingOccurrences(of: "/", with: "_") + (word ? ".doc" : ".pdf")
         let (data, type) = try await wiki.attachments.fetch(service: .confluence, url: path)
@@ -331,7 +331,7 @@ final class API: @unchecked Sendable {
         if type?.contains("text/html") == true, head.contains("os_username") || head.contains("login.action") {
             throw APIError(message: "导出需要网页登录，请先在设置中登录 Wiki 网页")
         }
-        return try await wiki.attachments.save(data: data, filename: name)
+        return (data, name)
     }
     func wikiResolve(_ input: String) async throws -> String? { try await wiki.client().resolvePage(input) }
     func wikiAttachments(_ page: String) async throws -> [Attachment] { try await wiki.pageAttachments(page) }

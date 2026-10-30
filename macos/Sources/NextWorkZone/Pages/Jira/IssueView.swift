@@ -32,6 +32,7 @@ struct IssueView: View {
     @State private var issueMenu = IssueMenu()
     @State private var dropping = false
     @State private var uploading: String?
+    @State private var pickingFiles = false
     /// 下面的区块（子任务、关联、相似问题、评论等）晚一帧再创建：先尽快显示标题、字段和描述
     @State private var showRest = false
 
@@ -81,6 +82,7 @@ struct IssueView: View {
             if keys.contains(issueKey) { Task { await load() } }
         }
         .issueMenuDialogs(issueMenu)
+        .filePicker(isPresented: $pickingFiles) { upload($0) }
         .sheet(item: $activeTransition) { req in
             TransitionSheet(issueKey: req.issue.key, transition: req.transition, issue: req.issue, template: req.template) { apply($0) }
         }
@@ -238,7 +240,7 @@ struct IssueView: View {
         var specs: [MenuSpec] = [
             .action("编辑…", icon: "pencil") { editing = true },
             .action("分配…", icon: "person") { assigning = true },
-            .action("上传附件…", icon: "paperclip") { upload(FilePicker.pick()) },
+            .action("上传附件…", icon: "paperclip") { pickingFiles = true },
             .separator,
         ]
         if let votes {
@@ -367,7 +369,7 @@ struct IssueView: View {
             }
         }
         .id("workspace")
-        AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading, onPick: { upload(FilePicker.pick()) }, onDelete: deleteAttachment)
+        AttachmentsSection(issueKey: issue.key, attachments: issue.attachments, busy: uploading, onPick: { pickingFiles = true }, onDelete: deleteAttachment)
         IssueActivity(issue: issue, newSince: changes?.since, onCommentsChanged: { self.issue?.comments = $0 }, onTimeChanged: reload)
     }
 
