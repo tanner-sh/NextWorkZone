@@ -276,7 +276,7 @@ enum DevBridge {
             if let path = query["path"]?.components(separatedBy: "/"), path.count == 2,
                let menu = NSApp.mainMenu?.items.first(where: { $0.title == path[0] })?.submenu,
                case _ = menu.delegate?.menuNeedsUpdate?(menu),
-               let index = menu.items.firstIndex(where: { $0.title == path[1] }) {
+               let index = menu.items.firstIndex(where: { $0.title == path[1] }) ?? menu.items.firstIndex(where: { $0.title.hasPrefix(path[1]) }) {
                 menu.performActionForItem(at: index)
                 return "{\"performed\":true}"
             }

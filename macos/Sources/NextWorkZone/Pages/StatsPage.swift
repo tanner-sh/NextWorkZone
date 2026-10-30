@@ -191,28 +191,7 @@ private struct StatsBody: View {
             Card(title: "解决的问题" + (stats.resolved.total > resolved.count ? "（显示前 \(resolved.count) 个）" : ""), actions: {
                 Button("在列表中查看") { open(q.resolved) }.buttonStyle(.borderless)
             }) {
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-                    GridRow {
-                        Text("问题"); Text("项目"); Text("解决时间"); Text("解决用时")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    ForEach(resolved.prefix(200)) { i in
-                        GridRow {
-                            HStack(spacing: 6) {
-                                SysImage(service: .jira, src: i.issueType.iconUrl, size: 16)
-                                Text(i.key).font(.callout.monospaced()).foregroundStyle(.secondary)
-                                Text(i.summary).lineLimit(1)
-                            }
-                            .rowTap { AppModel.shared.navigate(NavTarget(.jira, issueKey: i.key)) }
-                            .contextMenu(specs: { menu.specs(.summary(i)) })
-                            Text(i.project.name).foregroundStyle(.secondary).lineLimit(1)
-                            Text(i.extra?["resolutiondate"].map { String($0.prefix(10)) } ?? "—").foregroundStyle(.secondary)
-                            Text(days(i).map(Self.formatDays) ?? "—")
-                        }
-                        .font(.callout)
-                    }
-                }
+                ResolvedTable(issues: Array(resolved.prefix(200)), menu: menu, days: days, formatDays: Self.formatDays)
             }
         }
     }
@@ -248,6 +227,64 @@ private struct StatsBody: View {
             items[idx].count += 1
         }
         return (unit, items)
+    }
+}
+
+/// 解决的问题：系统表格，可以点列头排序、拖动调整列宽；双击（或回车）打开问题，右键为问题的菜单。
+private struct ResolvedTable: View {
+    struct Row: Identifiable {
+        var issue: IssueSummary
+        var id: String { issue.key }
+        var key: String { issue.key }
+        var project: String { issue.project.name }
+        var resolved: String
+        /// 解决用时（天）；没有时排在最后
+        var days: Double
+    }
+
+    var issues: [IssueSummary]
+    var menu: IssueMenu
+    var days: (IssueSummary) -> Double?
+    var formatDays: (Double) -> String
+
+    @State private var sortOrder = [KeyPathComparator(\Row.resolved, order: .reverse)]
+    @State private var selection: Set<String> = []
+
+    private static let rowHeight: CGFloat = 26
+
+    var body: some View {
+        let rows = issues.map { i in
+            Row(issue: i, resolved: i.extra?["resolutiondate"].map { String($0.prefix(10)) } ?? "", days: days(i) ?? .infinity)
+        }.sorted(using: sortOrder)
+        Table(rows, selection: $selection, sortOrder: $sortOrder) {
+            TableColumn("问题", value: \.key) { row in
+                HStack(spacing: 6) {
+                    SysImage(service: .jira, src: row.issue.issueType.iconUrl, size: 16)
+                    Text(row.key).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    Text(row.issue.summary).lineLimit(1)
+                }
+                .help(row.issue.summary)
+            }
+            .width(min: 240, ideal: 480)
+            TableColumn("项目", value: \.project) { row in Text(row.project).foregroundStyle(.secondary).lineLimit(1) }
+                .width(min: 80, ideal: 140)
+            TableColumn("解决时间", value: \.resolved) { row in Text(row.resolved.isEmpty ? "—" : row.resolved).foregroundStyle(.secondary).monospacedDigit() }
+                .width(min: 80, ideal: 96)
+            TableColumn("解决用时", value: \.days) { row in Text(row.days.isFinite ? formatDays(row.days) : "—").monospacedDigit() }
+                .width(min: 70, ideal: 90)
+        }
+        .contextMenu(forSelectionType: String.self) { keys in
+            if keys.count == 1, let issue = issues.first(where: { $0.key == keys.first }) {
+                MenuSpecItems(specs: menu.specs(.summary(issue)))
+            } else if !keys.isEmpty {
+                Button("复制问题键") { Pasteboard.copy(keys.sorted().joined(separator: "\n")) }
+            }
+        } primaryAction: { keys in
+            if let key = keys.first { AppModel.shared.navigate(NavTarget(.jira, issueKey: key)) }
+        }
+        // 放在可以滚动的统计页中：表格本身不滚动，高度随行数，最多约 18 行
+        .frame(height: min(CGFloat(rows.count) * Self.rowHeight + 30, 18 * Self.rowHeight + 30))
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
     }
 }
 

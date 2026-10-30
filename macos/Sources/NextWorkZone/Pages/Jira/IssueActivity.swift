@@ -170,7 +170,7 @@ private struct CommentItem: View {
     }
 
     private func remove() {
-        if Confirm.ask("确认删除这条评论？") { delete() }
+        Confirm.ask("确认删除这条评论？", then: delete)
     }
 
     private func delete() {
@@ -241,8 +241,8 @@ private struct Worklogs: View {
                         if w.mine {
                             Button { editing = w.id } label: { Image(systemName: "pencil") }.buttonStyle(.borderless).help("修改")
                             Button {
-                                guard Confirm.ask("删除这条工作日志？") else { return }
                                 Task {
+                                    guard await Confirm.ask("删除这条工作日志？") else { return }
                                     do {
                                         logs = try await API.shared.jiraDeleteWorklog(issueKey, id: w.id)
                                         onChanged()

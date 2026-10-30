@@ -214,8 +214,8 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
     }
 
     private func remove(_ doc: Doc) {
-        guard Confirm.ask(doc.kind == "page" ? "删除这个页面（含子页面）？" : "删除这篇\(doc.kind == "daily" ? "日记" : "笔记")？", confirm: "删除") else { return }
         Task {
+            guard await Confirm.ask(doc.kind == "page" ? "删除这个页面（含子页面）？" : "删除这篇\(doc.kind == "daily" ? "日记" : "笔记")？", confirm: "删除") else { return }
             do {
                 _ = try await API.shared.wsDeleteDoc(doc.id)
                 Events.workspaceChanged()

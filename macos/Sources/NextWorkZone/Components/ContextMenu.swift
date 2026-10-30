@@ -15,11 +15,8 @@ indirect enum MenuSpec {
     @MainActor
     static func perform(confirm: String?, _ action: @escaping @MainActor () -> Void) {
         guard let confirm else { return action() }
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                if Confirm.ask(confirm) { action() }
-            }
-        }
+        // 菜单关闭后再弹出确认框
+        Confirm.ask(confirm, then: action)
     }
 
     static func action(_ title: String, icon: String? = nil, checked: Bool = false, disabled: Bool = false, _ action: @escaping @MainActor () -> Void) -> MenuSpec {
@@ -116,17 +113,26 @@ enum MenuBuilder {
     }
 }
 
-/// 需要确认的操作：系统确认框。
+/// 需要确认的操作：确认框从当前窗口（或其中打开的表单）顶部滑出，只挡住这个窗口，不阻塞整个应用。
 @MainActor
 enum Confirm {
-    static func ask(_ message: String, confirm: String = "确定", destructive: Bool = true) -> Bool {
+    static func ask(_ message: String, confirm: String = "确定", destructive: Bool = true) async -> Bool {
         let alert = NSAlert()
         // 旧的“再点一次确认…”提示改为确认框的标题
         alert.messageText = message.replacingOccurrences(of: "再点一次确认", with: "确认")
         alert.addButton(withTitle: confirm)
         alert.addButton(withTitle: "取消")
         if destructive { alert.buttons.first?.hasDestructiveAction = true }
-        return alert.runModal() == .alertFirstButtonReturn
+        // 已经有表单时附着在最上层的表单上
+        var window = NSApp.keyWindow ?? MainWindow.window
+        while let sheet = window?.attachedSheet { window = sheet }
+        guard let window, window.isVisible else { return alert.runModal() == .alertFirstButtonReturn }
+        return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+    }
+
+    /// 确认后执行。
+    static func ask(_ message: String, confirm: String = "确定", destructive: Bool = true, then action: @escaping @MainActor () -> Void) {
+        Task { if await ask(message, confirm: confirm, destructive: destructive) { action() } }
     }
 }
 

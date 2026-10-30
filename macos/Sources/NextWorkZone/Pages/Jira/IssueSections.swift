@@ -119,8 +119,8 @@ struct LinksSection: View {
                     ForEach(issue.links) { l in
                         IssueRefRow(key: l.key, summary: l.summary, status: l.status, icon: l.issueType?.iconUrl, prefix: l.relation, menu: menu) {
                             Button {
-                                guard Confirm.ask("删除与 \(l.key) 的链接？") else { return }
                                 Task {
+                                    guard await Confirm.ask("删除与 \(l.key) 的链接？") else { return }
                                     do { onChanged(try await API.shared.jiraDeleteLink(issue.key, linkId: l.id)) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
                                 }
                             } label: { Image(systemName: "xmark") }
@@ -403,7 +403,7 @@ struct AttachmentsSection: View {
             if let busy { Text(busy).font(.callout).foregroundStyle(.secondary) }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 10)], alignment: .leading, spacing: 10) {
                 ForEach(Array(attachments.enumerated()), id: \.element.id) { i, a in
-                    AttachmentTile(attachment: a, service: .jira, onDelete: busy == nil ? { if Confirm.ask(Self.confirmText(a)) { onDelete(a) } } : nil)
+                    AttachmentTile(attachment: a, service: .jira, onDelete: busy == nil ? { Confirm.ask(Self.confirmText(a)) { onDelete(a) } } : nil)
                         .onTapGesture { AttachmentViewer.show(attachments, index: i, service: .jira) }
                         .contextMenu(specs: {
                             AttachmentViewer.menu(a, preview: { AttachmentViewer.show(attachments, index: i, service: .jira) }, service: .jira)

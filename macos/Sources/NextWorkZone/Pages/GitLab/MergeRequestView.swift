@@ -133,11 +133,13 @@ struct MergeRequestView: View {
 
     private func setState(_ event: String) {
         guard let mr else { return }
-        if event == "close" && !Confirm.ask("确定关闭合并请求 !\(mr.iid) 吗？") { return }
-        run {
-            updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: MrUpdate(stateEvent: event)))
-            toast(event == "close" ? "已关闭" : "已重新打开")
+        let go: @MainActor @Sendable () -> Void = {
+            run {
+                updated(try await API.shared.glMrUpdate(projectRef, iid: iid, update: MrUpdate(stateEvent: event)))
+                toast(event == "close" ? "已关闭" : "已重新打开")
+            }
         }
+        if event == "close" { Confirm.ask("确定关闭合并请求 !\(mr.iid) 吗？", then: go) } else { go() }
     }
 
     /// 更多按钮、详情空白处右键共用。
@@ -312,7 +314,7 @@ struct MergeRequestView: View {
                 replace(updated)
             },
             remove: { d, note in
-                guard Confirm.ask("确定删除这条评论吗？") else { return }
+                guard await Confirm.ask("确定删除这条评论吗？") else { return }
                 try await API.shared.glMrDeleteNote(projectRef, iid: iid, note: note.id)
                 let notes = d.notes.filter { $0.id != note.id }
                 if notes.isEmpty { discussions = (discussions ?? []).filter { $0.id != d.id } } else {

@@ -104,9 +104,11 @@ struct WeeklyPage: View {
     }
 
     private func switchSection(_ title: String) {
-        if dirty && !Confirm.ask("当前小节有未保存的修改（已暂存在本地），确定切换吗？", confirm: "切换", destructive: false) { return }
-        notice = nil
-        Task { await load(title) }
+        Task {
+            if dirty, !(await Confirm.ask("当前小节有未保存的修改（已暂存在本地），确定切换吗？", confirm: "切换", destructive: false)) { return }
+            notice = nil
+            await load(title)
+        }
     }
 
     /// 并入草稿条目：放到同名分组下，已有的同一条只更新进度。

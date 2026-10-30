@@ -429,8 +429,9 @@ struct ClipboardSettingsForm: View {
                         HStack {
                             Text("\(s.stats.items.formatted()) 条，其中置顶 \(s.stats.pinned) 条；图片占用 \(Fmt.size(s.stats.imageBytes))").foregroundStyle(.secondary)
                             Button("清除历史", systemImage: "trash", role: .destructive) {
-                                guard Confirm.ask("清除全部历史？置顶的条目保留。", confirm: "清除") else { return }
-                                guarded { message = "已清除 \(try await API.shared.clipClear()) 条历史" }
+                                Confirm.ask("清除全部历史？置顶的条目保留。", confirm: "清除") {
+                                    guarded { message = "已清除 \(try await API.shared.clipClear()) 条历史" }
+                                }
                             }
                         }
                     }

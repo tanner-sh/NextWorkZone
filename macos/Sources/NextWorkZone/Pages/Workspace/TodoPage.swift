@@ -196,12 +196,12 @@ struct TodoPage: View {
     }
 
     private func toggle(_ todo: Todo) {
-        guarded { replace(try await API.shared.wsSetTodoDone(todo.id, done: !todo.done)) }
+        guarded { replace(try await TodoActions.setDone(todo, !todo.done)) }
     }
 
     /// 安排日期（“未安排”中的今天、明天）
     private func plan(_ todo: Todo, _ due: String) {
-        guarded { replace(try await TodoActions.save(todo) { $0.due = due }) }
+        guarded { replace(try await TodoActions.save(todo, undo: "安排日期") { $0.due = due }) }
     }
 
     // MARK: 详情
@@ -482,9 +482,9 @@ private struct TodoDetail: View {
             ToolbarItem {
                 Button(draft.refSystem == "jira" ? "删除待办" : "删除", systemImage: "trash", role: .destructive) {
                     let note = draft.refSystem == "jira" ? (TodoActions.fromJiraSync(todo) ? "只删除待办，不影响 Jira 问题，之后也不会再自动添加。" : "只删除待办，不影响 Jira 问题。") : ""
-                    if Confirm.ask("确认删除这个待办？" + (note.isEmpty ? "" : "\n" + note)) {
+                    Confirm.ask("确认删除这个待办？" + (note.isEmpty ? "" : "\n" + note)) {
                         guarded {
-                            try await API.shared.wsDeleteTodo(todo.id)
+                            try await TodoActions.delete(todo)
                             onDeleted()
                         }
                     }

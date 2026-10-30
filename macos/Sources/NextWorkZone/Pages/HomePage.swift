@@ -302,8 +302,7 @@ struct TodayTodosCard: View {
     private func complete(_ todo: Todo) {
         todos?.removeAll { $0.id == todo.id }
         guarded {
-            _ = try await API.shared.wsSetTodoDone(todo.id, done: true)
-            Events.workspaceChanged()
+            _ = try await TodoActions.setDone(todo, true)
         }
     }
 }

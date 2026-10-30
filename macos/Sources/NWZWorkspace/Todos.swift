@@ -64,6 +64,16 @@ extension Workspace {
         }
     }
 
+    /// 恢复删除的待办（撤销删除）：清除删除标记，按新的修改时间同步到其他设备。
+    public func restoreTodo(_ id: String) async throws -> Todo {
+        try await database.transaction { db in
+            guard var todo = try Store.load(Todo.self, table: "todo", id: id, db: db) else { throw NWZError.other("待办不存在") }
+            todo.deleted = false; todo.updatedAt = Self.stamp(todo.updatedAt); todo.updatedBy = self.deviceID
+            try Store.write(todo, db: db)
+            return todo
+        }
+    }
+
     private struct SourceTodo: Sendable {
         var id: String, key: String, reference: String, title: String
         var due: String?

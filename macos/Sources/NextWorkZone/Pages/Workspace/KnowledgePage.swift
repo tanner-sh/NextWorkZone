@@ -397,10 +397,10 @@ private struct ClipStatus: View {
     }
 
     private func reclip() {
-        guard Confirm.ask("用 Wiki 原页面的最新内容替换这篇知识库页面的正文？你在这里做过的修改会被替换掉（可以先复制保留）。", confirm: "用最新内容替换") else { return }
-        busy = true
-        error = nil
         Task {
+            guard await Confirm.ask("用 Wiki 原页面的最新内容替换这篇知识库页面的正文？你在这里做过的修改会被替换掉（可以先复制保留）。", confirm: "用最新内容替换") else { return }
+            busy = true
+            error = nil
             do {
                 _ = try await KBImport.reclip(doc)
                 latest = nil

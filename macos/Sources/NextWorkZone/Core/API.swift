@@ -235,6 +235,7 @@ final class API: @unchecked Sendable {
     func wsSetTodoDone(_ id: String, done: Bool) async throws -> Todo { try await workspace.value.setTodoDone(id, done: done) }
     func wsMoveTodo(_ id: String, sort: Double) async throws { try await workspace.value.store.moveTodo(id, sort: sort) }
     func wsDeleteTodo(_ id: String) async throws { try await workspace.value.store.deleteTodo(id) }
+    func wsRestoreTodo(_ id: String) async throws -> Todo { try await workspace.value.store.restoreTodo(id) }
     func wsRefreshJiraTodos() async throws -> JiraTodoSync? { try await jira.refreshTodos(in: workspace.value.store) }
     func wsDocs(_ kind: DocKind) async throws -> [DocSummary] { try await workspace.value.store.docs(kind: kind) }
     func wsDoc(_ id: String) async throws -> Doc? { try await workspace.value.doc(id) }

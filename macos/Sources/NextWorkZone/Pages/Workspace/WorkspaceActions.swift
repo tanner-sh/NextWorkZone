@@ -8,18 +8,59 @@ enum TodoActions {
     /// 由“分配给我的 Jira 问题”自动生成的待办；删除后同步时不会再添加。
     static func fromJiraSync(_ todo: Todo) -> Bool { todo.id.hasPrefix("jira-") }
 
-    static func save(_ todo: Todo, _ patch: (inout Todo) -> Void) async throws -> Todo {
+    /// 保存修改；给出 `undo` 时可以在“编辑”菜单中撤销（例如菜单中改截止日期、优先级，不含编辑标题、备注时的逐字保存）。
+    static func save(_ todo: Todo, undo: String? = nil, _ patch: @escaping (inout Todo) -> Void) async throws -> Todo {
         var next = todo
         patch(&next)
         let saved = try await API.shared.wsSaveTodo(TodoInput(next))
         Events.workspaceChanged()
+        if let undo {
+            undoable(undo, undo: { _ = try await API.shared.wsSaveTodo(TodoInput(todo)) }, redo: { _ = try await save(todo, patch) })
+        }
         return saved
+    }
+
+    /// 标记完成或未完成（可撤销）。重复的待办完成时会生成下一次，撤销不能把它去掉，所以不登记撤销。
+    static func setDone(_ todo: Todo, _ done: Bool) async throws -> Todo {
+        let saved = try await API.shared.wsSetTodoDone(todo.id, done: done)
+        Events.workspaceChanged()
+        if todo.repeat == nil {
+            undoable(done ? "完成待办" : "标记为未完成", undo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: !done) }, redo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: done) })
+        }
+        return saved
+    }
+
+    /// 删除（可撤销：删除只是打上删除标记，撤销时去掉）。
+    static func delete(_ todo: Todo) async throws {
+        try await API.shared.wsDeleteTodo(todo.id)
+        Events.workspaceChanged()
+        undoable("删除待办", undo: { _ = try await API.shared.wsRestoreTodo(todo.id) }, redo: { try await API.shared.wsDeleteTodo(todo.id) })
+    }
+
+    /// 在主窗口的撤销记录中登记一步：⌘Z 撤销、⇧⌘Z 重做，完成后各页面按工作空间变化刷新。
+    private static func undoable(_ name: String, undo: @escaping @MainActor () async throws -> Void, redo: @escaping @MainActor () async throws -> Void) {
+        guard let manager = MainWindow.window?.undoManager else { return }
+        manager.registerUndo(withTarget: UndoTarget.shared) { _ in
+            MainActor.assumeIsolated {
+                // 撤销时登记的就是重做
+                undoable(name, undo: redo, redo: undo)
+                guarded {
+                    try await undo()
+                    Events.workspaceChanged()
+                }
+            }
+        }
+        manager.setActionName(name)
+    }
+
+    private final class UndoTarget: Sendable {
+        static let shared = UndoTarget()
     }
 
     /// `onPromote` 提供时显示“创建为 Jira 问题”。
     static func menu(_ todo: Todo, onSaved: @escaping (Todo) -> Void = { _ in }, onDeleted: @escaping (Todo) -> Void = { _ in }, onPromote: ((Todo) -> Void)? = nil) -> [MenuSpec] {
         func update(_ patch: @escaping (inout Todo) -> Void) -> @MainActor () -> Void {
-            { guarded { onSaved(try await save(todo, patch)) } }
+            { guarded { onSaved(try await save(todo, undo: "修改待办", patch)) } }
         }
         func dueOption(_ label: String, _ due: String?) -> MenuSpec {
             .action(label, checked: todo.due == due, update { $0.due = due })
@@ -27,10 +68,7 @@ enum TodoActions {
         let today = Fmt.today()
         var specs: [MenuSpec] = [
             .action(todo.done ? "标记为未完成" : "标记为完成", icon: todo.done ? "arrow.uturn.backward" : "checkmark") {
-                guarded {
-                    onSaved(try await API.shared.wsSetTodoDone(todo.id, done: !todo.done))
-                    Events.workspaceChanged()
-                }
+                guarded { onSaved(try await setDone(todo, !todo.done)) }
             },
             .separator,
             .submenu("截止日期", icon: "calendar", children: [
@@ -68,9 +106,8 @@ enum TodoActions {
         let deleteLabel = todo.refSystem == "jira" ? "删除待办（不影响 Jira 问题）" : todo.source == "wiki" ? "删除待办（不影响 Wiki 任务）" : "删除"
         specs.append(.item(deleteLabel, icon: "trash", destructive: true, confirm: fromJiraSync(todo) ? "确认删除？之后不再自动添加" : "确认删除？") {
             guarded {
-                try await API.shared.wsDeleteTodo(todo.id)
+                try await delete(todo)
                 onDeleted(todo)
-                Events.workspaceChanged()
             }
         })
         return specs

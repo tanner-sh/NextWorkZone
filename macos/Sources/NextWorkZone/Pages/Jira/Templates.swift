@@ -181,7 +181,7 @@ struct ManageTemplatesSheet: View {
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                     Button("删除", systemImage: "trash") {
-                        if Confirm.ask("删除模板“\(template.name)”？") { run { try await JiraTemplate.delete(template.id) } }
+                        Confirm.ask("删除模板“\(template.name)”？") { run { try await JiraTemplate.delete(template.id) } }
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)

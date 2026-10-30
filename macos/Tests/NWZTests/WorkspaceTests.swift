@@ -17,6 +17,9 @@ struct WorkspaceTests {
         #expect(try await ws.todos().last?.id == b.id)
         try await ws.deleteTodo(b.id)
         #expect(try await ws.todos().count == 1)
+        let restored = try await ws.restoreTodo(b.id)
+        #expect(!restored.deleted && restored.title == "评审 MR")
+        #expect(try await ws.todos().count == 2)
     }
     @Test func jiraTodosFollowAssignedIssues() async throws {
         let ws = try await Workspace()

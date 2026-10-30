@@ -107,8 +107,8 @@ private struct PageCommandsModifier: ViewModifier {
     }
 }
 
-/// 用 SwiftUI 菜单显示 MenuSpec（菜单栏中）。打开时才加载的子菜单改为点击后在鼠标处弹出加载好的菜单。
-private struct MenuSpecItems: View {
+/// 用 SwiftUI 菜单显示 MenuSpec（菜单栏、表格的右键菜单中）。打开时才加载的子菜单改为点击后在鼠标处弹出加载好的菜单。
+struct MenuSpecItems: View {
     var specs: [MenuSpec]
 
     var body: some View {
