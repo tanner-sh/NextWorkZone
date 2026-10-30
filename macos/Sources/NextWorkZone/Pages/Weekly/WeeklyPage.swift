@@ -171,6 +171,7 @@ struct WeeklyPage: View {
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        .pageCommands { PageCommands(title: "周报", refresh: { Task { await load(entry?.sectionTitle) } }) }
         .pageToolbar {
             ToolbarItem {
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await load(entry?.sectionTitle) } }.disabled(loading).help("重新读取周报页面")

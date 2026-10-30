@@ -57,6 +57,7 @@ struct PageView: View {
                     }
                     .contextMenu(specs: { pageActions(page) })
                     .pageToolbar { toolbar(page) }
+                    .pageCommands { PageCommands(title: "页面", refresh: { Task { await load() } }, specs: pageActions(page, refresh: false)) }
                     // 正文太窄时不显示目录，留给正文
                     if headings.count >= Self.tocMin && width >= 700 {
                         Divider()
@@ -148,7 +149,8 @@ struct PageView: View {
     }
 
     /// 更多按钮、页面空白处右键共用。
-    private func pageActions(_ page: WikiPageDetail) -> [MenuSpec] {
+    /// `refresh` 为 false 时不含“刷新”（菜单栏中另有带快捷键的刷新）。
+    private func pageActions(_ page: WikiPageDetail, refresh: Bool = true) -> [MenuSpec] {
         var specs: [MenuSpec] = []
         if page.canEdit { specs.append(.action("编辑", icon: "pencil") { onEdit() }) }
         specs.append(.action("历史版本", icon: "clock.arrow.circlepath") { history = true })
@@ -164,8 +166,10 @@ struct PageView: View {
         specs.append(.action("导出为 Word", icon: "doc") { export(page, word: true) })
         specs.append(.action("查看存储格式", icon: "chevron.left.forwardslash.chevron.right") { guarded { source = try await API.shared.wikiStorage(page.id) } })
         specs.append(.separator)
-        specs.append(.action("刷新", icon: "arrow.clockwise") { Task { await load() } })
-        specs.append(.separator)
+        if refresh {
+            specs.append(.action("刷新", icon: "arrow.clockwise") { Task { await load() } })
+            specs.append(.separator)
+        }
         return specs + WikiMenus.page(id: page.id, title: page.title, space: page.spaceName, current: true, onNewChild: { onNewChild() })
     }
 

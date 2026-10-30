@@ -95,6 +95,10 @@ struct KnowledgePage: View {
                 .help("把解决过的 Jira 问题、常看的 Wiki 页面沉淀到知识库")
             }
         }
+        .pageCommands {
+            let page = pages?.first { $0.id == selected }
+            return PageCommands(title: "知识库", newItem: ("新建页面", { create(parent: nil) }), refresh: { Task { await load() } }, specs: page.map(pageMenu) ?? [])
+        }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
         .onAppear { takeTarget() }

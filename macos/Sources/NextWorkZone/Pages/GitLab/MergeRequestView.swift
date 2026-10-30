@@ -47,6 +47,7 @@ struct MergeRequestView: View {
                 }
                 .contextMenu(specs: { moreEntries(mr) })
                 .pageToolbar { toolbar(mr) }
+                .pageCommands { PageCommands(title: "合并请求", refresh: refresh, specs: moreEntries(mr)) }
             } else {
                 LoadingView()
             }

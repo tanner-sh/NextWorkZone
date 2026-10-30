@@ -39,14 +39,30 @@ enum DevBridge {
         lastLayoutMs = (CACurrentMediaTime() - start) * 1000
     }
 
-    /// 主窗口：每次绘制后记录，新页面排好版后的第一次绘制就是切换后看到的第一帧（同一次刷新随即提交到屏幕）。
-    final class MeasuredWindow: NSWindow {
-        override func displayIfNeeded() {
-            super.displayIfNeeded()
-            guard let start = navStart, lastLayoutMs >= 0 else { return }
-            navStart = nil
-            lastCommitMs = (CACurrentMediaTime() - start) * 1000
+    /// 主窗口出现后开始记录：窗口每次绘制后检查，新页面排好版后的第一次绘制就是切换后看到的第一帧（同一次刷新随即提交到屏幕）。
+    /// 窗口由 SwiftUI 创建，不能用子类：给窗口所属的类补上 displayIfNeeded 的改写（只在开发构建中）。
+    /// 不能给窗口换成运行时创建的子类，SwiftUI 之后对窗口做键值观察时会崩溃。
+    static func windowReady(_ window: NSWindow) {
+        guard !hooked, let cls = NSClassFromString(window.className) else { return }
+        hooked = true
+        let sel = #selector(NSWindow.displayIfNeeded)
+        typealias Display = @convention(c) (NSWindow, Selector) -> Void
+        let original = unsafeBitCast(class_getMethodImplementation(cls, sel), to: Display.self)
+        let block: @convention(block) (NSWindow) -> Void = { window in
+            original(window, sel)
+            MainActor.assumeIsolated { displayed() }
         }
+        let imp = imp_implementationWithBlock(block)
+        let method = class_getInstanceMethod(cls, sel)!
+        if !class_addMethod(cls, sel, imp, method_getTypeEncoding(method)) { method_setImplementation(method, imp) }
+    }
+
+    private static var hooked = false
+
+    private static func displayed() {
+        guard let start = navStart, lastLayoutMs >= 0 else { return }
+        navStart = nil
+        lastCommitMs = (CACurrentMediaTime() - start) * 1000
     }
 
     static func start() {
@@ -254,6 +270,33 @@ enum DevBridge {
                 return String(decoding: data, as: UTF8.self)
             default: break
             }
+        case "/menu":
+            // 菜单栏：列出各菜单的项目（标题、快捷键、是否可用）；path=菜单/项目 时执行该项目
+            NSApp.mainMenu?.update()
+            if let path = query["path"]?.components(separatedBy: "/"), path.count == 2,
+               let menu = NSApp.mainMenu?.items.first(where: { $0.title == path[0] })?.submenu,
+               case _ = menu.delegate?.menuNeedsUpdate?(menu),
+               let index = menu.items.firstIndex(where: { $0.title == path[1] }) {
+                menu.performActionForItem(at: index)
+                return "{\"performed\":true}"
+            }
+            func list(_ menu: NSMenu) -> [Any] {
+                // SwiftUI 在菜单打开前才更新菜单内容
+                menu.delegate?.menuNeedsUpdate?(menu)
+                menu.update()
+                return menu.items.map { item -> Any in
+                    if item.isSeparatorItem { return "—" }
+                    var key = item.keyEquivalent
+                    if !key.isEmpty {
+                        let m = item.keyEquivalentModifierMask
+                        key = (m.contains(.control) ? "⌃" : "") + (m.contains(.option) ? "⌥" : "") + (m.contains(.shift) ? "⇧" : "") + (m.contains(.command) ? "⌘" : "") + key
+                    }
+                    let label = item.title + (key.isEmpty ? "" : " [\(key)]") + (item.isEnabled ? "" : " (不可用)") + (item.state == .on ? " ✓" : "")
+                    if let sub = item.submenu, query["deep"] == "1" || menu === NSApp.mainMenu { return [label: list(sub)] }
+                    return label
+                }
+            }
+            return String(data: (try? JSONSerialization.data(withJSONObject: NSApp.mainMenu.map(list) ?? [], options: [.prettyPrinted])) ?? Data(), encoding: .utf8) ?? "[]"
         case "/key":
             if let chars = query["chars"], let window = MainWindow.window {
                 for ch in chars {

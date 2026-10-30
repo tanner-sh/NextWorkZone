@@ -35,6 +35,7 @@ struct TodoPage: View {
     @State private var syncNote: String?
     @State private var promoting: Todo?
     @State private var newTitle = ""
+    @FocusState private var newFocused: Bool
 
     private var day: String { Fmt.today() }
 
@@ -81,6 +82,15 @@ struct TodoPage: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+        }
+        .pageCommands {
+            let todo = todos?.first { $0.id == selected }
+            return PageCommands(
+                title: "待办",
+                newItem: ("新建待办", { newFocused = true }),
+                refresh: { Task { await load() } },
+                specs: todo.map { TodoActions.menu($0, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) } ?? []
+            )
         }
         .task {
             await load()
@@ -153,6 +163,7 @@ struct TodoPage: View {
                 Image(systemName: "plus").foregroundStyle(.secondary)
                 TextField(view == .today ? "添加今天的待办，回车保存" : "添加待办，回车保存", text: $newTitle)
                     .textFieldStyle(.plain)
+                    .focused($newFocused)
                     .onSubmit(add)
             }
             .padding(8)

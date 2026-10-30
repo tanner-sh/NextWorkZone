@@ -55,6 +55,7 @@ struct NotesPage: View {
                 Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记")
             }
         }
+        .pageCommands { PageCommands(title: "笔记", newItem: ("新建笔记", createNote), refresh: { Task { await load() } }) }
         .task { await load() }
         .onWorkspaceChange { Task { await load() } }
         .onAppear { take() }

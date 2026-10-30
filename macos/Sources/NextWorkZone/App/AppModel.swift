@@ -43,6 +43,10 @@ final class AppModel {
     static let navigated = Notification.Name("nwz.navigated")
     var paletteOpen = false
     var quickTodoOpen = false
+    /// 剪贴板记录已暂停（菜单栏图标的菜单据此显示“恢复”）
+    var clipboardPaused = false
+    /// 打开设置窗口（SwiftUI 只在视图中提供，由主窗口的根视图交给这里）
+    @ObservationIgnored var openSettingsAction: OpenSettingsAction?
 
     private static let lastPageKey = "nextworkzone.lastPage"
     private static let lastToolKey = "nextworkzone.lastTool"
@@ -50,13 +54,15 @@ final class AppModel {
     private static func initialTarget() -> NavTarget {
         let defaults = AppPreferences.shared
         // 搜索页需要搜索文字，启动时不恢复
-        if let saved = defaults.string(forKey: lastPageKey), let page = PageID(rawValue: saved), page != .search {
+        if let saved = defaults.string(forKey: lastPageKey), let page = PageID(rawValue: saved), page != .search, page != .settings {
             return page == .tools ? NavTarget(.tools, tool: defaults.string(forKey: lastToolKey)) : NavTarget(page)
         }
         return NavTarget(.home)
     }
 
     func navigate(_ target: NavTarget) {
+        // 设置在单独的设置窗口中
+        if target.page == .settings { return openSettings() }
         current = target
         pending = target
         NotificationCenter.default.post(name: Self.navigated, object: nil)
@@ -66,6 +72,11 @@ final class AppModel {
     }
 
     func navigate(_ page: PageID) { navigate(NavTarget(page)) }
+
+    func openSettings() {
+        NSApp.activate()
+        openSettingsAction?()
+    }
 
     /// 页面取走发给它的附加目标。
     func take(_ page: PageID) -> NavTarget? {

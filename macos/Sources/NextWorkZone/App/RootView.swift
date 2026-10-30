@@ -5,6 +5,7 @@ import SwiftUI
 /// 其余页面（搜索、工具）每次打开时重新创建。
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openSettings) private var openSettings
     @State private var kept: [PageID] = []
     /// 各保留页面第几次显示
     @State private var visits: [PageID: Int] = [:]
@@ -12,7 +13,7 @@ struct RootView: View {
     /// 不在窗口中显示标题的页面：侧栏已经标明当前页面，标题夹在列表和详情两组工具栏按钮之间显得突兀；条数等信息放在列表上方
     static let untitled: Set<PageID> = [.jira, .gitlab]
 
-    static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats, .settings]
+    static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats]
 
     var body: some View {
         @Bindable var model = model
@@ -48,6 +49,7 @@ struct RootView: View {
         }
         // 富文本右键菜单中的问题菜单（流转、分配需要的对话框）
         .issueMenuDialogs(IssueMenu.shared)
+        .onAppear { model.openSettingsAction = openSettings }
         // 从通知等处回到应用：当前页面按再次显示处理，在后台刷新
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if kept.contains(model.current.page) { visits[model.current.page, default: 0] += 1 }
@@ -60,7 +62,7 @@ struct RootView: View {
 
     private var title: String {
         if model.current.page == .tools { return Tools.byId(model.current.tool)?.name ?? Tools.all[0].name }
-        return MainMenu.pageTitles[model.current.page] ?? "NextWorkZone"
+        return AppCommands.pageTitles[model.current.page] ?? "NextWorkZone"
     }
 
     @ViewBuilder
@@ -77,7 +79,7 @@ struct RootView: View {
         case .gitlab: GitlabPage()
         case .stats: StatsPage()
         case .tools: ToolsPage()
-        case .settings: SettingsPage()
+        case .settings: EmptyView()
         case .search: SearchPage()
         }
     }
@@ -111,7 +113,7 @@ extension EnvironmentValues {
     }
 }
 
-/// 侧栏：搜索入口、页面分组、工具、设置。
+/// 侧栏：搜索入口、页面分组、工具。设置在单独的设置窗口中（⌘,）。
 struct Sidebar: View {
     @Environment(AppModel.self) private var model
 
@@ -171,9 +173,6 @@ struct Sidebar: View {
                     }
                 }
             }
-            Section {
-                Label("设置", systemImage: "gearshape").tag(PageID.settings.rawValue)
-            }
         }
         .listStyle(.sidebar)
     }
@@ -182,7 +181,7 @@ struct Sidebar: View {
     private func row(_ entry: Entry) -> some View {
         let count = model.count(entry.id)
         let alert = entry.id == .jira && model.overdue > 0
-        let index = MainMenu.pageOrder.firstIndex(of: entry.id)
+        let index = AppCommands.pageOrder.firstIndex(of: entry.id)
         Label(entry.label, systemImage: entry.icon)
             .badge(count.map { Text("\($0)").foregroundStyle(alert ? Color.red : Color.secondary) })
             .tag(entry.id.rawValue)

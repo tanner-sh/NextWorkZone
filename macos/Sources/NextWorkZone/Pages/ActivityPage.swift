@@ -73,6 +73,7 @@ struct ActivityPage: View {
             } else {
                 content
                     .pageToolbar { toolbar }
+                    .pageCommands { PageCommands(title: "动态", refresh: { Task { await refresh() } }) }
                     .pageSubtitle(.activity, model.activity?.lastCheck.map { "上次检查 \(Fmt.time($0))" } ?? "")
             }
         }

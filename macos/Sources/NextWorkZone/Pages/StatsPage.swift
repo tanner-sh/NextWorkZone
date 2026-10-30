@@ -97,6 +97,7 @@ struct StatsPage: View {
                     .frame(maxWidth: 1100, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
+                .pageCommands { PageCommands(title: "统计", refresh: { Task { await load() } }) }
                 .pageToolbar {
                     ToolbarItem(placement: .navigation) {
                         Picker("时间范围", selection: $period) { ForEach(Period.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()

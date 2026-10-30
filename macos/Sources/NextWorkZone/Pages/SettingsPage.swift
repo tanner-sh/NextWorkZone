@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 设置：工作空间、工具、Jira 本机问题库、Wiki 本机库（修改后立即生效），以及连接的系统地址与凭据（需要保存）。
+/// 设置：工作空间、工具、Jira 本机问题库、Wiki 本机库（修改后立即生效），以及连接的系统地址与凭据（需要保存）。显示在单独的设置窗口中。
 struct SettingsPage: View {
     @Environment(AppModel.self) private var model
     @State private var proxy = ""
@@ -46,23 +46,34 @@ struct SettingsPage: View {
         }
     }
 
+    enum Tab: String { case general, connection, index }
+    @AppStorage("nextworkzone.settings.tab") private var tab: Tab = .general
+
+    /// 设置窗口（⌘,）：通用（工作空间、工具）、连接（地址与凭据，需要保存）、本机库（Jira、Wiki 本机问题库，配置好对应系统后出现）。
     var body: some View {
         Group {
             if let settings = model.settings {
-                form(settings)
-                // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面
-                .safeAreaBar(edge: .bottom) {
-                    if dirty {
-                        HStack {
-                            Text("连接设置有未保存的修改")
-                            Spacer()
-                            Button("放弃修改") { fill(settings) }.disabled(saving)
-                            Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
+                TabView(selection: $tab) {
+                    Form {
+                        WorkspaceSettingsSection()
+                        ToolsSettingsSection()
+                    }
+                    .formStyle(.grouped)
+                    .tabItem { Label("通用", systemImage: "gearshape") }
+                    .tag(Tab.general)
+
+                    connection(settings)
+                        .tabItem { Label("连接", systemImage: "network") }
+                        .tag(Tab.connection)
+
+                    if model.isReady(.jira) || model.isReady(.confluence) {
+                        Form {
+                            if model.isReady(.jira) { JiraToolsSettingsSection() }
+                            if model.isReady(.confluence) { WikiToolsSettingsSection() }
                         }
-                        .padding(.leading, 18)
-                        .padding([.trailing, .vertical], 8)
-                        .glassEffect(.regular, in: Capsule())
-                        .padding(12)
+                        .formStyle(.grouped)
+                        .tabItem { Label("本机库", systemImage: "internaldrive") }
+                        .tag(Tab.index)
                     }
                 }
                 .onAppear {
@@ -75,12 +86,14 @@ struct SettingsPage: View {
                 LoadingView()
             }
         }
+        .frame(width: 660)
+        .frame(minHeight: 460, idealHeight: 620)
     }
 
-    private func form(_ settings: Settings) -> some View {
+    private func connection(_ settings: Settings) -> some View {
         Form {
             Section {
-                Text("工作空间、工具，以及连接的系统地址与凭据。凭据只保存在本机。").foregroundStyle(.secondary)
+                Text("连接的系统地址与凭据，修改后需要保存。凭据只保存在本机。").foregroundStyle(.secondary)
                 #if DEBUG
                 Button("导入 tokens.env", systemImage: "square.and.arrow.down", action: importEnv).help("开发用：从 ~/.nextworkzone/tokens.env 导入")
                 #endif
@@ -88,17 +101,11 @@ struct SettingsPage: View {
                     Text(notice.text).foregroundStyle(notice.ok ? .green : .red)
                 }
             }
-            WorkspaceSettingsSection()
-            ToolsSettingsSection()
-            if model.isReady(.jira) { JiraToolsSettingsSection() }
-            if model.isReady(.confluence) { WikiToolsSettingsSection() }
 
             Section {
                 TextField("代理", text: $proxy, prompt: Text("留空则使用系统代理，例如 http://127.0.0.1:7890"))
             } header: {
                 Label("网络", systemImage: "globe")
-            } footer: {
-                Text("“连接”中的设置修改后需要保存。")
             }
 
             ForEach(settings.services, id: \.service) { s in serviceSection(s) }
@@ -113,6 +120,21 @@ struct SettingsPage: View {
             }
         }
         .formStyle(.grouped)
+        // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面
+        .safeAreaBar(edge: .bottom) {
+            if dirty {
+                HStack {
+                    Text("连接设置有未保存的修改")
+                    Spacer()
+                    Button("放弃修改") { fill(settings) }.disabled(saving)
+                    Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
+                }
+                .padding(.leading, 18)
+                .padding([.trailing, .vertical], 8)
+                .glassEffect(.regular, in: Capsule())
+                .padding(12)
+            }
+        }
     }
 
     @ViewBuilder

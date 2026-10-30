@@ -11,6 +11,17 @@ indirect enum MenuSpec {
     case label(String)
     case separator
 
+    /// 执行菜单项；需要确认的在菜单关闭后再弹出确认框。
+    @MainActor
+    static func perform(confirm: String?, _ action: @escaping @MainActor () -> Void) {
+        guard let confirm else { return action() }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if Confirm.ask(confirm) { action() }
+            }
+        }
+    }
+
     static func action(_ title: String, icon: String? = nil, checked: Bool = false, disabled: Bool = false, _ action: @escaping @MainActor () -> Void) -> MenuSpec {
         .item(title, icon: icon, checked: checked, disabled: disabled, action: action)
     }
@@ -38,18 +49,7 @@ enum MenuBuilder {
                 item.isEnabled = false
                 items.append(item)
             case let .item(title, icon, checked, disabled, _, confirm, action):
-                let item = ClosureMenuItem(title: title) {
-                    if let confirm {
-                        // 菜单关闭后再弹出确认框
-                        DispatchQueue.main.async {
-                            MainActor.assumeIsolated {
-                                if Confirm.ask(confirm) { action() }
-                            }
-                        }
-                    } else {
-                        action()
-                    }
-                }
+                let item = ClosureMenuItem(title: title) { MenuSpec.perform(confirm: confirm, action) }
                 item.state = checked ? .on : .off
                 item.isEnabled = !disabled
                 if let icon { item.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }

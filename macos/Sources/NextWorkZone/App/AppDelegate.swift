@@ -2,14 +2,12 @@ import AppKit
 import SwiftUI
 import NWZCore
 
-/// 应用入口：组装业务服务，创建主窗口、菜单、托盘和全局快捷键。
-/// 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从托盘或程序坞图标重新打开，⌘Q 或托盘菜单“退出”才退出。
+/// 应用的 AppKit 部分：组装业务服务，注册全局快捷键，准备剪贴板面板和快速记录窗口。
+/// 关闭主窗口只是隐藏，应用继续在后台同步、提醒；从菜单栏图标或程序坞图标重新打开，⌘Q 或菜单栏图标的“退出”才退出。
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
-    private var pauseItem: NSMenuItem?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    /// 在 SwiftUI 创建窗口之前组装服务：主窗口的内容一出现就要用到。
+    func applicationWillFinishLaunching(_ notification: Notification) {
         do {
             let paths = AppPaths.current()
             API.shared = try API.make(paths: paths)
@@ -18,15 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.messageText = "启动 NextWorkZone 失败"
             alert.informativeText = errorMessage(error)
             alert.runModal()
-            NSApp.terminate(nil)
-            return
+            exit(1)
         }
-        NSApp.mainMenu = MainMenu.build()
         AppModel.shared.start()
-        MainWindow.create()
-        setupTray()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         setupShortcuts()
-        MainWindow.show()
         // 剪贴板面板和快速记录窗口创建要 0.2 秒左右：主窗口显示后再创建，不推迟启动
         DispatchQueue.main.async {
             ClipboardPanel.shared.prepare()
@@ -44,59 +40,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await jira?.stop(); await wiki?.stop(); await sessions?.stop(); if let service = try? await workspace?.value { await service.stop() } }
     }
 
+    /// 点程序坞图标：显示隐藏的主窗口（不让 SwiftUI 另外处理）。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainWindow.show()
-        return true
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-
-    // MARK: 托盘（菜单栏图标）
-
-    private func setupTray() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let url = Bundle.main.url(forResource: "tray-template", withExtension: "png"), let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            image.size = NSSize(width: 18, height: 18)
-            item.button?.image = image
-        } else {
-            item.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "NextWorkZone")
-        }
-        item.button?.toolTip = "NextWorkZone"
-        let menu = NSMenu()
-        func add(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
-            let i = ClosureMenuItem(title: title, action: action)
-            menu.addItem(i)
-            return i
-        }
-        _ = add("打开 NextWorkZone") { MainWindow.show() }
-        menu.addItem(.separator())
-        _ = add("快速记录…") { CaptureWindow.shared.toggle() }
-        _ = add("记一条待办…") {
-            MainWindow.show()
-            AppModel.shared.quickTodoOpen = true
-        }
-        _ = add("搜索…") {
-            MainWindow.show()
-            AppModel.shared.paletteOpen = true
-        }
-        menu.addItem(.separator())
-        _ = add("剪贴板…") { ClipboardPanel.shared.toggle() }
-        pauseItem = add("暂停记录剪贴板") { API.shared.clipboard.togglePaused() }
-        menu.addItem(.separator())
-        for (page, title) in [(PageID.home, "今天"), (.todos, "待办"), (.notes, "笔记"), (.jira, "Jira"), (.activity, "动态"), (.weekly, "周报"), (.wiki, "Wiki")] {
-            _ = add(title) { AppModel.shared.navigate(page) }
-        }
-        menu.addItem(.separator())
-        _ = add("设置…") { AppModel.shared.navigate(.settings) }
-        _ = add("退出 NextWorkZone") { NSApp.terminate(nil) }
-        item.menu = menu
-        statusItem = item
-    }
-
-    func updateClipboardPause(_ paused: Bool) {
-        pauseItem?.title = paused ? "恢复记录剪贴板" : "暂停记录剪贴板"
-    }
 
     // MARK: 全局快捷键
 
@@ -152,59 +102,12 @@ final class AppHost: NWZCore.AppHost, @unchecked Sendable {
 
     func clipboardPaused(paused: Bool) {
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { (NSApp.delegate as? AppDelegate)?.updateClipboardPause(paused) }
+            MainActor.assumeIsolated { AppModel.shared.clipboardPaused = paused }
         }
     }
 
     private func onMain<T: Sendable>(_ f: @MainActor () -> T) -> T {
         if Thread.isMainThread { return MainActor.assumeIsolated(f) }
         return DispatchQueue.main.sync { MainActor.assumeIsolated(f) }
-    }
-}
-
-/// 主窗口：内容为 SwiftUI 的 [`RootView`]。关闭时只是隐藏。
-@MainActor
-enum MainWindow {
-    private(set) static var window: NSWindow?
-    private static let delegate = WindowDelegate()
-
-    static func create() {
-        #if DEBUG
-        let window = DevBridge.MeasuredWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-        #else
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-        #endif
-        let host = NSHostingController(rootView: RootView().environment(AppModel.shared))
-        host.sceneBridgingOptions = [.toolbars, .title]
-        window.contentViewController = host
-        window.title = "NextWorkZone"
-        window.titlebarAppearsTransparent = true
-        window.toolbarStyle = .unified
-        window.minSize = NSSize(width: 960, height: 600)
-        window.isReleasedWhenClosed = false
-        window.delegate = delegate
-        window.setFrameAutosaveName("NextWorkZoneMain")
-        if window.frame.width < 960 { window.setContentSize(NSSize(width: 1280, height: 820)) }
-        if !window.setFrameUsingName("NextWorkZoneMain") { window.center() }
-        self.window = window
-    }
-
-    static func show() {
-        guard let window else { return }
-        // 在窗口里点侧栏导航时窗口本来就在最前面，不必每次都和窗口服务器往返一趟
-        if NSApp.isActive && window.isKeyWindow && window.isVisible { return }
-        NSApp.unhide(nil)
-        if window.isMiniaturized { window.deminiaturize(nil) }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-    }
-
-    static var isVisible: Bool { window?.isVisible ?? false }
-
-    private final class WindowDelegate: NSObject, NSWindowDelegate {
-        func windowShouldClose(_ sender: NSWindow) -> Bool {
-            sender.orderOut(nil)
-            return false
-        }
     }
 }

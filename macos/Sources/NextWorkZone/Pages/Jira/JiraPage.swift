@@ -79,6 +79,15 @@ struct JiraPage: View {
                     detailPane
                 }
                 .pageToolbar { toolbar }
+                .pageCommands {
+                    let issue = issues?.first { $0.key == selected }
+                    return PageCommands(
+                        title: "问题",
+                        newItem: ("新建问题…", { creating = true }),
+                        refresh: { Task { await load() } },
+                        specs: issue.map { issueMenu.specs(.summary($0), onUpdated: menuUpdated) } ?? []
+                    )
+                }
             }
         }
         .issueMenuDialogs(issueMenu)
