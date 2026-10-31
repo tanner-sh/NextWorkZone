@@ -30,12 +30,22 @@ extension Workspace {
             var following = todo
             following.id = newID(); following.done = false; following.completedAt = nil; following.autoDone = false
             following.due = due; following.source = nil; following.createdAt = stamp(todo.updatedAt); following.updatedAt = following.createdAt; following.updatedBy = device
+            following.nextId = nil; following.sourceTitle = nil; following.sourceDue = nil
             if let previous = todo.due.flatMap(parseDay), let next = parseDay(due), let reminder = todo.remindAt {
                 following.remindAt = reminder + Int64(next.timeIntervalSince(previous) / 86_400) * 86_400_000
             }
             following.checklist = todo.checklist.map { .init(id: $0.id, text: $0.text, done: false) }
             try Store.write(following, db: db)
             todo.repeat = nil
+            todo.nextId = following.id
+        } else if !todo.done && wasDone, let nextId = todo.nextId {
+            // 重复的待办重新标记为未完成：撤回完成时生成的下一次（还没完成的话），重复规则回到这一条
+            if var following = try Store.load(Todo.self, table: "todo", id: nextId, db: db), !following.deleted, !following.done {
+                todo.repeat = todo.repeat ?? following.repeat
+                following.deleted = true; following.updatedAt = stamp(following.updatedAt); following.updatedBy = device
+                try Store.write(following, db: db)
+            }
+            todo.nextId = nil
         }
         try Store.write(todo, db: db)
         return todo
@@ -91,17 +101,22 @@ extension Workspace {
                 let old = try Store.load(Todo.self, table: "todo", id: item.id, db: db)
                 if old?.deleted == true { continue }
                 if var todo = old {
+                    let before = todo
                     let reopen = todo.done && todo.autoDone
-                    let title = source == "jira" && todo.refTitle == todo.title ? item.title : todo.title
-                    if reopen || title != todo.title || todo.refTitle != item.reference {
-                        todo.title = title; todo.refTitle = item.reference
-                        if reopen { todo.done = false; todo.completedAt = nil; todo.autoDone = false; report.reopened += 1 }
+                    // 标题、截止日期没有手动改过（与上次从来源取到的相同）时跟着来源更新；
+                    // 早期的记录没有 sourceTitle，Jira 问题的 refTitle 就是上次的概要
+                    let lastTitle = todo.sourceTitle ?? (source == "jira" ? todo.refTitle : nil)
+                    if lastTitle == todo.title { todo.title = item.title }
+                    if let lastDue = todo.sourceDue, (lastDue.isEmpty ? nil : lastDue) == todo.due { todo.due = item.due }
+                    todo.refTitle = item.reference; todo.sourceTitle = item.title; todo.sourceDue = item.due ?? ""
+                    if reopen { todo.done = false; todo.completedAt = nil; todo.autoDone = false; report.reopened += 1 }
+                    if todo != before {
                         todo.updatedAt = Self.stamp(todo.updatedAt); todo.updatedBy = self.deviceID
                         try Store.write(todo, db: db)
                     }
                 } else {
                     let time = Self.now()
-                    let todo = Todo(id: item.id, title: item.title, due: item.due, sort: try Store.sort("todo", db: db), refSystem: source, refKey: item.key, refTitle: item.reference, source: source, createdAt: time, updatedAt: time, updatedBy: self.deviceID)
+                    let todo = Todo(id: item.id, title: item.title, due: item.due, sort: try Store.sort("todo", db: db), refSystem: source, refKey: item.key, refTitle: item.reference, source: source, createdAt: time, updatedAt: time, updatedBy: self.deviceID, sourceTitle: item.title, sourceDue: item.due ?? "")
                     try Store.write(todo, db: db); report.added += 1
                 }
             }

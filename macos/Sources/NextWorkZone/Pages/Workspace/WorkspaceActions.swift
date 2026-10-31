@@ -9,67 +9,75 @@ enum TodoActions {
     static func fromJiraSync(_ todo: Todo) -> Bool { todo.id.hasPrefix("jira-") }
 
     /// 保存修改；给出 `undo` 时可以在“编辑”菜单中撤销（例如菜单中改截止日期、优先级，不含编辑标题、备注时的逐字保存）。
+    /// 撤销时只改回这次修改过的字段，期间其他字段的变化（例如同步来的标题、详情中改的备注）保留。
     static func save(_ todo: Todo, undo: String? = nil, _ patch: @escaping (inout Todo) -> Void) async throws -> Todo {
         var next = todo
         patch(&next)
         let saved = try await API.shared.wsSaveTodo(TodoInput(next))
         Events.workspaceChanged()
         if let undo {
-            undoable(undo, undo: { _ = try await API.shared.wsSaveTodo(TodoInput(todo)) }, redo: { _ = try await save(todo, patch) })
+            WorkspaceUndo.register(undo, undo: {
+                let current = try await API.shared.wsTodo(todo.id) ?? saved
+                _ = try await API.shared.wsSaveTodo(TodoInput(revert(current, changed: next, to: todo)))
+            }, redo: {
+                var current = try await API.shared.wsTodo(todo.id) ?? todo
+                patch(&current)
+                _ = try await API.shared.wsSaveTodo(TodoInput(current))
+            })
         }
         return saved
     }
 
-    /// 标记完成或未完成（可撤销）。重复的待办完成时会生成下一次，撤销不能把它去掉，所以不登记撤销。
+    /// `current` 中 `changed` 相对 `old` 改过的字段改回 `old` 的值。
+    static func revert(_ current: Todo, changed: Todo, to old: Todo) -> Todo {
+        var t = current
+        if changed.title != old.title { t.title = old.title }
+        if changed.notes != old.notes { t.notes = old.notes }
+        if changed.done != old.done { t.done = old.done }
+        if changed.due != old.due { t.due = old.due }
+        if changed.priority != old.priority { t.priority = old.priority }
+        if changed.refSystem != old.refSystem || changed.refKey != old.refKey || changed.refTitle != old.refTitle { t.refSystem = old.refSystem; t.refKey = old.refKey; t.refTitle = old.refTitle }
+        if changed.remindAt != old.remindAt { t.remindAt = old.remindAt }
+        if changed.repeat != old.repeat { t.repeat = old.repeat }
+        if changed.checklist != old.checklist { t.checklist = old.checklist }
+        return t
+    }
+
+    /// 标记完成或未完成（可撤销）。重复的待办完成时生成的下一次，撤销（标记为未完成）时一并撤回。
     static func setDone(_ todo: Todo, _ done: Bool) async throws -> Todo {
         let saved = try await API.shared.wsSetTodoDone(todo.id, done: done)
         Events.workspaceChanged()
-        if todo.repeat == nil {
-            undoable(done ? "完成待办" : "标记为未完成", undo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: !done) }, redo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: done) })
-        }
+        WorkspaceUndo.register(done ? "完成待办" : "标记为未完成", undo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: !done) }, redo: { _ = try await API.shared.wsSetTodoDone(todo.id, done: done) })
         return saved
+    }
+
+    /// 完成后从“今天”等列表中移走的待办，给一个可以撤销的提示。
+    static func completed(_ todo: Todo) {
+        toastUndo("已完成“\(todo.title.isEmpty ? "无标题" : todo.title)”", undoName: "完成待办")
     }
 
     /// 新建（可撤销，撤销即删除）。
     static func add(_ input: TodoInput) async throws -> Todo {
         let todo = try await API.shared.wsSaveTodo(input)
         Events.workspaceChanged()
-        undoable("添加待办", undo: { try await API.shared.wsDeleteTodo(todo.id) }, redo: { _ = try await API.shared.wsRestoreTodo(todo.id) })
+        WorkspaceUndo.register("添加待办", undo: { try await API.shared.wsDeleteTodo(todo.id) }, redo: { _ = try await API.shared.wsRestoreTodo(todo.id) })
         return todo
     }
 
-    /// 删除（可撤销：删除只是打上删除标记，撤销时去掉）。
+    /// 删除（可撤销：删除只是打上删除标记，撤销时去掉），所以不再确认，删除后给一个可以撤销的提示。
     static func delete(_ todo: Todo) async throws {
         try await API.shared.wsDeleteTodo(todo.id)
         Events.workspaceChanged()
-        undoable("删除待办", undo: { _ = try await API.shared.wsRestoreTodo(todo.id) }, redo: { try await API.shared.wsDeleteTodo(todo.id) })
+        WorkspaceUndo.register("删除待办", undo: { _ = try await API.shared.wsRestoreTodo(todo.id) }, redo: { try await API.shared.wsDeleteTodo(todo.id) })
+        let note = fromJiraSync(todo) ? "，之后不再自动添加" : todo.refSystem == "jira" ? "，Jira 问题不受影响" : todo.source == "wiki" ? "，Wiki 任务不受影响" : ""
+        toastUndo("已删除“\(todo.title.isEmpty ? "无标题" : todo.title)”\(note)", undoName: "删除待办")
     }
 
     /// 调整顺序（可撤销）。
     static func move(_ todo: Todo, sort: Double) async throws {
         try await API.shared.wsMoveTodo(todo.id, sort: sort)
         Events.workspaceChanged()
-        undoable("移动待办", undo: { try await API.shared.wsMoveTodo(todo.id, sort: todo.sort) }, redo: { try await API.shared.wsMoveTodo(todo.id, sort: sort) })
-    }
-
-    /// 在主窗口的撤销记录中登记一步：⌘Z 撤销、⇧⌘Z 重做，完成后各页面按工作空间变化刷新。
-    private static func undoable(_ name: String, undo: @escaping @MainActor () async throws -> Void, redo: @escaping @MainActor () async throws -> Void) {
-        guard let manager = MainWindow.window?.undoManager else { return }
-        manager.registerUndo(withTarget: UndoTarget.shared) { _ in
-            MainActor.assumeIsolated {
-                // 撤销时登记的就是重做
-                undoable(name, undo: redo, redo: undo)
-                guarded {
-                    try await undo()
-                    Events.workspaceChanged()
-                }
-            }
-        }
-        manager.setActionName(name)
-    }
-
-    private final class UndoTarget: Sendable {
-        static let shared = UndoTarget()
+        WorkspaceUndo.register("移动待办", undo: { try await API.shared.wsMoveTodo(todo.id, sort: todo.sort) }, redo: { try await API.shared.wsMoveTodo(todo.id, sort: sort) })
     }
 
     /// `onPromote` 提供时显示“创建为 Jira 问题”。
@@ -119,7 +127,7 @@ enum TodoActions {
         })
         specs.append(.separator)
         let deleteLabel = todo.refSystem == "jira" ? "删除待办（不影响 Jira 问题）" : todo.source == "wiki" ? "删除待办（不影响 Wiki 任务）" : "删除"
-        specs.append(.item(deleteLabel, icon: "trash", destructive: true, confirm: fromJiraSync(todo) ? "确认删除？之后不再自动添加" : "确认删除？") {
+        specs.append(.item(deleteLabel, icon: "trash", destructive: true) {
             guarded {
                 try await delete(todo)
                 onDeleted(todo)
@@ -134,6 +142,30 @@ enum TodoActions {
         let todo = try await API.shared.wsSaveTodo(TodoInput(title: summary, refSystem: .some("jira"), refKey: .some(key), refTitle: .some(summary)))
         Events.workspaceChanged()
         return todo
+    }
+}
+
+/// 工作空间操作的撤销：登记在主窗口的撤销记录中。
+@MainActor
+enum WorkspaceUndo {
+    /// 在主窗口的撤销记录中登记一步：⌘Z 撤销、⇧⌘Z 重做，完成后各页面按工作空间变化刷新。
+    static func register(_ name: String, undo: @escaping @MainActor () async throws -> Void, redo: @escaping @MainActor () async throws -> Void) {
+        guard let manager = MainWindow.window?.undoManager else { return }
+        manager.registerUndo(withTarget: UndoTarget.shared) { _ in
+            MainActor.assumeIsolated {
+                // 撤销时登记的就是重做
+                register(name, undo: redo, redo: undo)
+                guarded {
+                    try await undo()
+                    Events.workspaceChanged()
+                }
+            }
+        }
+        manager.setActionName(name)
+    }
+
+    private final class UndoTarget: Sendable {
+        static let shared = UndoTarget()
     }
 }
 
@@ -169,14 +201,11 @@ enum DocActions {
         }
     }
 
-    /// `beforeDelete` 在删除前调用，用于先关闭正在编辑的文档。
-    static func deleteItem(id: String, label: String, beforeDelete: @escaping @MainActor () -> Void) -> MenuSpec {
-        .item(label, icon: "trash", destructive: true, confirm: "确认删除？") {
-            guarded {
-                beforeDelete()
-                _ = try await API.shared.wsDeleteDoc(id)
-                Events.workspaceChanged()
-            }
-        }
+    /// 删除文档（知识库页面连同子页面）。删除只是打上删除标记，可以撤销，也可以在“最近删除”中恢复，所以不再确认。
+    static func delete(_ id: String, title: String) async throws {
+        let count = try await API.shared.wsDeleteDoc(id)
+        Events.workspaceChanged()
+        WorkspaceUndo.register("删除文档", undo: { _ = try await API.shared.wsRestoreDoc(id) }, redo: { _ = try await API.shared.wsDeleteDoc(id) })
+        toastUndo("已删除“\(title.isEmpty ? "无标题" : title)”\(count > 1 ? "及 \(count - 1) 个子页面" : "")", undoName: "删除文档")
     }
 }

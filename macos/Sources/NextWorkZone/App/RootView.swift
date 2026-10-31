@@ -189,10 +189,11 @@ struct Sidebar: View {
         let count = model.count(entry.id)
         let alert = entry.id == .jira && model.overdue > 0
         let index = AppCommands.pageOrder.firstIndex(of: entry.id)
+        let note = alert ? "\n\(model.overdue) 个问题已逾期或今天到期" : entry.id == .todos ? count.map { "\n\($0) 个待办今天到期或已逾期" } ?? "" : ""
         let label = Label(entry.label, systemImage: entry.icon)
             .badge(count.map { Text("\($0)").foregroundStyle(alert ? Color.red : Color.secondary) })
             .tag(entry.id.rawValue)
-            .help("\(entry.label)\(index.map { "（⌘\(($0 + 1) % 10)）" } ?? "")\(alert ? "\n\(model.overdue) 个问题已逾期或今天到期" : "")")
+            .help("\(entry.label)\(index.map { "（⌘\(($0 + 1) % 10)）" } ?? "")\(note)")
         // 问题、Wiki 页面、合并请求或文字拖到“待办”上加为待办，拖到“笔记”上追加到今天的日记，不用离开当前页面；
         // 停在“待办”“笔记”“知识库”上不放，稍后切换到那个页面（像访达的弹簧文件夹），可以放到页面中的具体位置
         if [.todos, .notes, .kb].contains(entry.id) {

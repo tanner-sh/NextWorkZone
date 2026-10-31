@@ -3,38 +3,52 @@ import NWZCore
 
 extension Workspace {
     /// 调用者传入 v2 同步根目录；每个设备只追加自己的日志。
+    /// 读写同步文件夹在数据库事务之外进行，同步期间界面上的保存不用排队等待；同时发起的同步依次执行。
     public func sync(at directory: URL) async throws -> SyncReport {
+        let previous = syncing
+        let task = Task { [database, deviceID] in
+            _ = await previous?.result
+            return try await Synchronizer.run(database: database, device: deviceID, directory: directory)
+        }
+        syncing = task
+        return try await task.value
+    }
+}
+
+enum Synchronizer {
+    static func run(database: Database, device: String, directory: URL) async throws -> SyncReport {
+        let root = directory.standardizedFileURL.path
         try await database.transaction { db in
-            let root = directory.standardizedFileURL.path
             if try db.query("SELECT value FROM meta WHERE key='sync-root'").first?["value"]?.string != root {
                 try db.execute("UPDATE records SET dirty=1")
                 try db.execute("UPDATE assets SET dirty=1 WHERE data IS NOT NULL")
                 try db.execute("DELETE FROM sync_cursors")
                 try db.execute("INSERT OR REPLACE INTO meta VALUES ('sync-root',?)", [.text(root)])
             }
-            let devices = directory.appendingPathComponent("devices"), assets = directory.appendingPathComponent("assets")
-            try FileManager.default.createDirectory(at: devices, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
-            let ownLog = devices.appendingPathComponent(self.deviceID + ".jsonl")
-            var report = SyncReport(exported: try Synchronizer.export(db: db, file: ownLog, assets: assets, device: self.deviceID))
-            for file in try FileManager.default.contentsOfDirectory(at: devices, includingPropertiesForKeys: nil).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where file.pathExtension == "jsonl" {
-                let device = file.deletingPathExtension().lastPathComponent
-                if device == self.deviceID { continue }
-                report.devices += 1
-                let imported = try Synchronizer.importLog(db: db, file: file, assets: assets, device: device, me: self.deviceID)
-                report.imported += imported.0; report.conflicts += imported.1
-            }
-            for row in try db.query("SELECT id FROM assets WHERE data IS NULL") {
-                guard let id = row["id"]?.string, Synchronizer.safeID(id), let data = try? Data(contentsOf: assets.appendingPathComponent(id)) else { continue }
-                try db.execute("UPDATE assets SET data=? WHERE id=?", [.blob(data), .text(id)])
-            }
-            report.finishedAt = Self.now()
-            return report
         }
+        let devices = directory.appendingPathComponent("devices"), assets = directory.appendingPathComponent("assets")
+        try FileManager.default.createDirectory(at: devices, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        let ownLog = devices.appendingPathComponent(device + ".jsonl")
+        var report = SyncReport(exported: try await export(database: database, file: ownLog, assets: assets, device: device))
+        for file in try FileManager.default.contentsOfDirectory(at: devices, includingPropertiesForKeys: nil).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where file.pathExtension == "jsonl" {
+            let other = file.deletingPathExtension().lastPathComponent
+            if other == device { continue }
+            report.devices += 1
+            let imported = try await importLog(database: database, file: file, assets: assets, device: other, me: device)
+            report.imported += imported.0; report.conflicts += imported.1
+        }
+        let missing = try await database.query("SELECT id FROM assets WHERE data IS NULL").compactMap { $0["id"]?.string }.filter(safeID)
+        let found = missing.compactMap { id in (try? Data(contentsOf: assets.appendingPathComponent(id))).map { (id, $0) } }
+        if !found.isEmpty {
+            try await database.transaction { db in
+                for (id, data) in found { try db.execute("UPDATE assets SET data=? WHERE id=?", [.blob(data), .text(id)]) }
+            }
+        }
+        report.finishedAt = Workspace.now()
+        return report
     }
-}
 
-private enum Synchronizer {
     static func safeID(_ id: String) -> Bool {
         !id.isEmpty && id.utf8.count <= 200 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
     }
@@ -46,9 +60,12 @@ private enum Synchronizer {
     static func assetMeta(_ row: [String: SQLValue]) -> AssetMeta {
         .init(id: row["id"]?.string ?? "", mime: row["mime"]?.string ?? "", createdAt: row["created_at"]?.integer ?? 0)
     }
-    static func export(db: isolated Database, file: URL, assets: URL, device: String) throws -> Int {
-        let records = try db.query("SELECT type,json FROM records WHERE dirty=1")
-        let images = try db.query("SELECT * FROM assets WHERE dirty=1 AND data IS NOT NULL")
+
+    /// 导出有修改的记录：先读出，写完日志后只清除导出期间没有再修改过的记录的脏标记。
+    static func export(database: Database, file: URL, assets: URL, device: String) async throws -> Int {
+        let (records, images) = try await database.transaction { db in
+            (try db.query("SELECT type,id,json FROM records WHERE dirty=1"), try db.query("SELECT * FROM assets WHERE dirty=1 AND data IS NOT NULL"))
+        }
         guard !records.isEmpty || !images.isEmpty else { return 0 }
         var output = Data()
         for row in images {
@@ -70,22 +87,31 @@ private enum Synchronizer {
         let complete = existing.lastIndex(of: 10).map { $0 + 1 } ?? 0
         if complete != existing.count { try handle.truncate(atOffset: UInt64(complete)) }
         try handle.seekToEnd(); try handle.write(contentsOf: output); try handle.synchronize()
-        if complete + output.count > 8 * 1024 * 1024 { try compact(db: db, file: file, device: device) }
-        try db.execute("UPDATE records SET dirty=0 WHERE dirty=1")
-        try db.execute("UPDATE assets SET dirty=0 WHERE dirty=1 AND data IS NOT NULL")
+        if complete + output.count > 8 * 1024 * 1024 { try await compact(database: database, file: file, device: device) }
+        try await database.transaction { db in
+            for row in records {
+                try db.execute("UPDATE records SET dirty=0 WHERE type=? AND id=? AND json=?", [row["type"] ?? .null, row["id"] ?? .null, row["json"] ?? .null])
+            }
+            for row in images { try db.execute("UPDATE assets SET dirty=0 WHERE id=?", [row["id"] ?? .null]) }
+        }
         return records.count + images.count
     }
-    static func compact(db: isolated Database, file: URL, device: String) throws {
+    static func compact(database: Database, file: URL, device: String) async throws {
+        let (images, records) = try await database.transaction { db in
+            (try db.query("SELECT id,mime,created_at FROM assets WHERE data IS NOT NULL"), try db.query("SELECT type,json FROM records WHERE updated_by=?", [.text(device)]))
+        }
         var output = try line("header", ["generation": Workspace.newID()])
-        for row in try db.query("SELECT id,mime,created_at FROM assets WHERE data IS NOT NULL") { output.append(try line("asset", assetMeta(row))) }
-        for row in try db.query("SELECT type,json FROM records WHERE updated_by=?", [.text(device)]) {
+        for row in images { output.append(try line("asset", assetMeta(row))) }
+        for row in records {
             let value = try JSONDecoder().decode(JSONValue.self, from: Data((row["json"]?.string ?? "").utf8))
             output.append(try line(row["type"]?.string ?? "", value))
         }
         try output.write(to: file, options: .atomic)
     }
-    static func importLog(db: isolated Database, file: URL, assets: URL, device: String, me: String) throws -> (Int, Int) {
-        let cursor = try db.query("SELECT offset,generation FROM sync_cursors WHERE device=?", [.text(device)]).first
+
+    /// 导入其他设备的日志：读文件、解析在事务之外，写入数据库和读取位置在一个事务中。
+    static func importLog(database: Database, file: URL, assets: URL, device: String, me: String) async throws -> (Int, Int) {
+        let cursor = try await database.query("SELECT offset,generation FROM sync_cursors WHERE device=?", [.text(device)]).first
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         let length = try handle.seekToEnd()
@@ -99,44 +125,82 @@ private enum Synchronizer {
         try handle.seek(toOffset: offset)
         let data = try handle.readToEnd() ?? Data()
         guard let end = data.lastIndex(of: 10) else { return (0, 0) }
-        var imported = 0, conflicts = 0
-        for bytes in data[...end].split(separator: 10) {
-            guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(bytes)), let type = value["type"]?.string, let row = value["row"] else { continue }
-            switch type {
-            case "todo":
-                guard let incoming = row.decode(Todo.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
-                let local = try Store.load(Todo.self, table: "todo", id: incoming.id, db: db)
-                if local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true {
-                    try Store.write(incoming, dirty: false, db: db); imported += 1
-                }
-            case "doc":
-                guard let incoming = row.decode(Doc.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
-                let local = try Store.load(Doc.self, table: "doc", id: incoming.id, db: db)
-                guard local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true else { continue }
-                if var copy = local, incoming.baseAt != copy.updatedAt, copy.updatedBy == me, !copy.deleted, !incoming.deleted, copy.content != incoming.content {
-                    copy.id = Workspace.newID(); copy.title = (copy.title.isEmpty ? "无标题" : copy.title) + "（冲突副本）"
-                    if copy.kind == "daily" { copy.kind = "note" }
-                    copy.day = nil; copy.createdAt = Workspace.now(); copy.updatedAt = copy.createdAt; copy.updatedBy = me; copy.baseAt = 0
-                    try Store.write(copy, db: db); conflicts += 1
-                }
-                try Store.write(incoming, dirty: false, db: db); imported += 1
-            case "inbox":
-                guard let incoming = row.decode(InboxEntry.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
-                let local = try Store.load(InboxEntry.self, table: "inbox", id: incoming.id, db: db)
-                if local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true {
-                    try Store.write(incoming, dirty: false, db: db); imported += 1
-                }
-            case "asset":
-                guard let meta = row.decode(AssetMeta.self), safeID(meta.id) else { continue }
-                let data = try? Data(contentsOf: assets.appendingPathComponent(meta.id))
-                try db.execute("INSERT OR IGNORE INTO assets VALUES (?,?,?,?,0)", [.text(meta.id), .text(meta.mime), data.map(SQLValue.blob) ?? .null, .integer(meta.createdAt)])
-            default: continue
-            }
+        let lines: [(String, JSONValue)] = data[...end].split(separator: 10).compactMap { bytes in
+            guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(bytes)), let type = value["type"]?.string, let row = value["row"] else { return nil }
+            return (type, row)
         }
-        try db.execute("INSERT OR REPLACE INTO sync_cursors VALUES (?,?,?)", [.text(device), .integer(Int64(offset) + Int64(end) + 1), .text(generation)])
-        return (imported, conflicts)
+        var images: [String: Data] = [:]
+        for (type, row) in lines where type == "asset" {
+            if let meta = row.decode(AssetMeta.self), safeID(meta.id), let data = try? Data(contentsOf: assets.appendingPathComponent(meta.id)) { images[meta.id] = data }
+        }
+        let next = Int64(offset) + Int64(end) + 1
+        return try await database.transaction { [images] db in
+            var imported = 0, conflicts = 0
+            for (type, row) in lines {
+                switch type {
+                case "todo":
+                    guard let incoming = row.decode(Todo.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
+                    let local = try Store.load(Todo.self, table: "todo", id: incoming.id, db: db)
+                    if local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true {
+                        try Store.write(incoming, dirty: false, db: db); imported += 1
+                    }
+                case "doc":
+                    guard let incoming = row.decode(Doc.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
+                    let local = try Store.load(Doc.self, table: "doc", id: incoming.id, db: db)
+                    guard local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true else { continue }
+                    if var copy = local, incoming.baseAt != copy.updatedAt, copy.updatedBy == me, !copy.deleted, !incoming.deleted, copy.content != incoming.content {
+                        // 两台设备各自写了同一天的日记：按行合并两边的内容，合并结果再同步回去，不另存冲突副本
+                        if copy.kind == "daily" && incoming.kind == "daily" {
+                            var merged = incoming
+                            merged.content = mergeLines(incoming.content, copy.content)
+                            merged.baseAt = incoming.updatedAt; merged.updatedAt = Workspace.stamp(incoming.updatedAt); merged.updatedBy = me
+                            try Store.write(merged, db: db); imported += 1
+                            continue
+                        }
+                        copy.id = Workspace.newID(); copy.title = (copy.title.isEmpty ? "无标题" : copy.title) + "（冲突副本）"
+                        if copy.kind == "daily" { copy.kind = "note" }
+                        copy.day = nil; copy.createdAt = Workspace.now(); copy.updatedAt = copy.createdAt; copy.updatedBy = me; copy.baseAt = 0
+                        try Store.write(copy, db: db); conflicts += 1
+                    }
+                    try Store.write(incoming, dirty: false, db: db); imported += 1
+                case "inbox":
+                    guard let incoming = row.decode(InboxEntry.self), !incoming.id.isEmpty, !incoming.updatedBy.isEmpty else { continue }
+                    let local = try Store.load(InboxEntry.self, table: "inbox", id: incoming.id, db: db)
+                    if local.map({ newer(incoming.updatedAt, incoming.updatedBy, $0.updatedAt, $0.updatedBy) }) ?? true {
+                        try Store.write(incoming, dirty: false, db: db); imported += 1
+                    }
+                case "asset":
+                    guard let meta = row.decode(AssetMeta.self), safeID(meta.id) else { continue }
+                    try db.execute("INSERT OR IGNORE INTO assets VALUES (?,?,?,?,0)", [.text(meta.id), .text(meta.mime), images[meta.id].map(SQLValue.blob) ?? .null, .integer(meta.createdAt)])
+                default: continue
+                }
+            }
+            try db.execute("INSERT OR REPLACE INTO sync_cursors VALUES (?,?,?)", [.text(device), .integer(next), .text(generation)])
+            return (imported, conflicts)
+        }
     }
     static func newer(_ time: Int64, _ device: String, _ oldTime: Int64, _ oldDevice: String) -> Bool {
         time > oldTime || time == oldTime && device > oldDevice
+    }
+
+    /// 按行合并两份文字：保留两边的所有行，共同的行只留一份，各自新增的行放在原来的位置（同一处两边都有新行时先放 base 的）。
+    static func mergeLines(_ base: String, _ other: String) -> String {
+        let a = base.components(separatedBy: "\n"), b = other.components(separatedBy: "\n")
+        let diff = b.difference(from: a)
+        var removed: Set<Int> = [], inserted: Set<Int> = []
+        for change in diff {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+        var merged: [String] = [], i = 0, j = 0
+        while i < a.count || j < b.count {
+            if i < a.count && removed.contains(i) { merged.append(a[i]); i += 1; continue }
+            if j < b.count && inserted.contains(j) { merged.append(b[j]); j += 1; continue }
+            if i < a.count { merged.append(a[i]) }
+            i += 1; j += 1
+        }
+        return merged.joined(separator: "\n")
     }
 }

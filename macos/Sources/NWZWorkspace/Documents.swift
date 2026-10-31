@@ -85,6 +85,33 @@ extension Workspace {
             return count
         }
     }
+    /// 最近删除的笔记、日记、知识库页面（不含空文档），每次删除只列出最上层的那篇，按删除时间倒序。
+    public func deletedDocs(since: Int64) async throws -> [DocSummary] {
+        try await database.transaction { db in
+            try Store.list(Doc.self, table: "doc", condition: "deleted=1 AND kind IN ('note','page','daily') AND updated_at>=? AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM records WHERE type='doc' AND deleted=1))", values: [.integer(since)], db: db)
+                .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map(Self.summary)
+        }
+    }
+    /// 恢复删除的文档，以及同一次删除中一起删掉的下级页面；上级已不存在时放到最上层。返回恢复的篇数。
+    @discardableResult
+    public func restoreDoc(_ id: String) async throws -> Int {
+        try await database.transaction { db in
+            guard var root = try Store.load(Doc.self, table: "doc", id: id, db: db), root.deleted else { return 0 }
+            let deletedAt = root.updatedAt
+            if let parent = root.parentId, try Store.load(Doc.self, table: "doc", id: parent, db: db).map({ !$0.deleted }) != true { root.parentId = nil }
+            var queue = [root], visited: Set<String> = [], count = 0
+            while var doc = queue.popLast() {
+                guard visited.insert(doc.id).inserted else { continue }
+                for row in try db.query("SELECT json FROM records WHERE type='doc' AND parent_id=? AND deleted=1 AND updated_at>=?", [.text(doc.id), .integer(deletedAt)]) {
+                    queue.append(try JSONDecoder().decode(Doc.self, from: Data((row["json"]?.string ?? "").utf8)))
+                }
+                doc.deleted = false; doc.baseAt = doc.updatedAt; doc.updatedAt = Self.stamp(doc.updatedAt); doc.updatedBy = self.deviceID
+                try Store.write(doc, db: db); count += 1
+            }
+            return count
+        }
+    }
     public func tags() async throws -> [TagCount] {
         try await database.query("SELECT j.value AS name,COUNT(*) AS count FROM records r,json_each(r.json,'$.tags') j WHERE r.type='doc' AND r.deleted=0 GROUP BY j.value ORDER BY count DESC,name").map {
             TagCount(name: $0["name"]?.string ?? "", count: Int($0["count"]?.integer ?? 0))

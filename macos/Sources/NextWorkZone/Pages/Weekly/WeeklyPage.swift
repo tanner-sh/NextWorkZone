@@ -47,7 +47,7 @@ struct WeeklyPage: View {
             if model.settings == nil {
                 LoadingView()
             } else if !configured {
-                NotConfigured(label: "Wiki 或周报页面")
+                NotConfigured(label: model.isReady(.confluence) ? "周报页面" : "Wiki", settingsTab: model.isReady(.confluence) ? "general" : "connection")
             } else if let error {
                 ErrorBox(message: error) { Task { await load(entry?.sectionTitle) } }.padding(28)
             } else if let view {

@@ -51,6 +51,42 @@ struct WorkspaceSyncTests {
         _ = try await a.sync(at: shared); _ = try await b.sync(at: shared)
         #expect(try await b.todos().isEmpty == true)
     }
+    @Test func dailyNotesWrittenOnBothDevicesAreMerged() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try await Workspace(), b = try await Workspace()
+        _ = try await a.saveDoc(.init(id: "daily-2026-10-31", kind: "daily", title: "2026-10-31", content: "上午\n- 站会"))
+        try await Task.sleep(for: .milliseconds(5))
+        _ = try await b.saveDoc(.init(id: "daily-2026-10-31", kind: "daily", title: "2026-10-31", content: "上午\n- 评审"))
+        _ = try await a.sync(at: directory)
+        _ = try await b.sync(at: directory)
+        #expect(try await a.sync(at: directory).conflicts == 0)
+        _ = try await a.sync(at: directory)
+        _ = try await b.sync(at: directory)
+        let merged = "上午\n- 评审\n- 站会"
+        #expect(try await a.doc("daily-2026-10-31")?.content == merged)
+        #expect(try await b.doc("daily-2026-10-31")?.content == merged)
+        #expect(try await a.docs(kind: "note").isEmpty)
+        #expect(try await b.docs(kind: "note").isEmpty)
+    }
+    @Test func mergeLinesKeepsBothSides() {
+        #expect(Synchronizer.mergeLines("a\nb\nc", "a\nx\nc") == "a\nb\nx\nc")
+        #expect(Synchronizer.mergeLines("a", "a\nb") == "a\nb")
+        #expect(Synchronizer.mergeLines("", "b") == "\nb" || Synchronizer.mergeLines("", "b") == "b\n")
+    }
+    @Test func editsDuringSyncStayDirty() async throws {
+        let directory = try directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let a = try await Workspace(), b = try await Workspace()
+        let todo = try await a.saveTodo(.init(title: "第一版"))
+        async let syncing = a.sync(at: directory)
+        var input = TodoInput(todo); input.title = "第二版"
+        _ = try await a.saveTodo(input)
+        _ = try await syncing
+        _ = try await a.sync(at: directory)
+        _ = try await b.sync(at: directory)
+        #expect(try await b.todo(todo.id)?.title == "第二版")
+    }
     @Test func incompleteLinesWaitForNextSync() async throws {
         let directory = try directory()
         defer { try? FileManager.default.removeItem(at: directory) }

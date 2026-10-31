@@ -8,8 +8,6 @@ struct SettingsPage: View {
     @State private var baseUrls: [Service: String] = [:]
     @State private var tokens: [Service: String] = [:]
     @State private var accounts: [Service: WebAccountInput] = [:]
-    @State private var weeklyPage = ""
-    @State private var weeklyName = ""
     @State private var tests: [Service: TestState] = [:]
     @State private var notice: (ok: Bool, text: String)?
     @State private var saving = false
@@ -32,18 +30,19 @@ struct SettingsPage: View {
         baseUrls = Dictionary(uniqueKeysWithValues: s.services.map { ($0.service, $0.baseUrl) })
         tokens = [:]
         accounts = Dictionary(uniqueKeysWithValues: s.services.filter(\.supportsWebLogin).map { ($0.service, WebAccountInput(username: $0.webUsername, password: "")) })
-        weeklyPage = s.weeklyPageId
-        weeklyName = s.weeklyPersonName
     }
 
     private var dirty: Bool {
         guard let s = model.settings else { return false }
-        return proxy != s.proxy || weeklyPage != s.weeklyPageId || weeklyName != s.weeklyPersonName || s.services.contains { svc in
-            let account = accounts[svc.service]
-            return (baseUrls[svc.service] ?? "") != svc.baseUrl
-                || !(tokens[svc.service] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
-                || (svc.supportsWebLogin && account != nil && (account!.username != svc.webUsername || !account!.password.isEmpty))
-        }
+        return proxy != s.proxy || s.services.contains(where: serviceDirty)
+    }
+
+    /// 这个系统的地址或凭据有没保存的修改
+    private func serviceDirty(_ svc: ServiceSettings) -> Bool {
+        let account = accounts[svc.service]
+        return (baseUrls[svc.service] ?? "") != svc.baseUrl
+            || !(tokens[svc.service] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+            || (svc.supportsWebLogin && account != nil && (account!.username != svc.webUsername || !account!.password.isEmpty))
     }
 
     enum Tab: String { case general, connection, index }
@@ -56,6 +55,7 @@ struct SettingsPage: View {
                 TabView(selection: $tab) {
                     Form {
                         WorkspaceSettingsSection()
+                        WeeklySettingsSection()
                         ToolsSettingsSection()
                     }
                     .formStyle(.grouped)
@@ -93,10 +93,7 @@ struct SettingsPage: View {
     private func connection(_ settings: Settings) -> some View {
         Form {
             Section {
-                Text("连接的系统地址与凭据，修改后需要保存。凭据只保存在本机。").foregroundStyle(.secondary)
-                if let notice {
-                    Text(notice.text).foregroundStyle(notice.ok ? .green : .red)
-                }
+                Text("连接的系统地址与凭据，修改后需要保存，保存后自动测试连接。凭据只保存在本机。").foregroundStyle(.secondary)
             }
 
             Section {
@@ -106,30 +103,28 @@ struct SettingsPage: View {
             }
 
             ForEach(settings.services, id: \.service) { s in serviceSection(s) }
-
-            Section {
-                TextField("周报页面", text: $weeklyPage, prompt: Text("Wiki 页面地址或页面 ID"))
-                TextField("我的名字", text: $weeklyName, prompt: Text("表格第一列中你的名字，留空则使用 Wiki 显示名"))
-            } header: {
-                Label("周报", systemImage: "square.and.pencil")
-            } footer: {
-                Text("每周一个以日期范围开头的一级标题，表格中第一列是人名的那一行即为你的周报。")
-            }
         }
         .formStyle(.grouped)
-        // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面
+        // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面。保存的结果也显示在这里（几秒后消失）
         .safeAreaBar(edge: .bottom) {
             if dirty {
                 HStack {
-                    Text("连接设置有未保存的修改")
+                    if let notice, !notice.ok { Text(notice.text).foregroundStyle(.red).lineLimit(2) } else { Text("连接设置有未保存的修改") }
                     Spacer()
-                    Button("放弃修改") { fill(settings) }.disabled(saving)
+                    Button("放弃修改") { fill(settings); notice = nil }.disabled(saving)
                     Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
                 }
                 .padding(.leading, 18)
                 .padding([.trailing, .vertical], 8)
                 .glassEffect(.regular, in: Capsule())
                 .padding(12)
+            } else if let notice {
+                Label(notice.text, systemImage: notice.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(notice.ok ? .green : .red)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular, in: Capsule())
+                    .padding(12)
             }
         }
     }
@@ -142,9 +137,9 @@ struct SettingsPage: View {
             TextField("地址", text: Binding(get: { baseUrls[s.service] ?? "" }, set: { baseUrls[s.service] = $0 }), prompt: Text(meta.placeholder))
             SecureField("访问令牌", text: Binding(get: { tokens[s.service] ?? "" }, set: { tokens[s.service] = $0 }), prompt: Text(s.hasToken ? "已保存（留空则不修改）" : "个人访问令牌（Personal Access Token）"))
             HStack {
-                Button("测试连接") { test(s.service) }.disabled(dirty || s.baseUrl.isEmpty || !s.hasToken || { if case .testing = tests[s.service] { return true }; return false }())
+                Button("测试连接") { test(s.service) }.disabled(serviceDirty(s) || s.baseUrl.isEmpty || !s.hasToken || { if case .testing = tests[s.service] { return true }; return false }())
                 if s.hasToken { Button("删除令牌", role: .destructive) { clearToken(s.service) } }
-                if dirty { Text("保存后可测试").font(.caption).foregroundStyle(.secondary) }
+                if serviceDirty(s) { Text("保存后自动测试").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 switch tests[s.service] {
                 case .testing: ProgressView().controlSize(.small)
@@ -181,27 +176,41 @@ struct SettingsPage: View {
     }
 
     private func save() {
+        guard let current = model.settings else { return }
         saving = true
+        // 改了代理时所有系统都重新测试，否则只测改过的
+        let changed = current.services.filter { proxy != current.proxy || serviceDirty($0) }.map(\.service)
         Task {
             do {
                 let input = SettingsInput(
                     proxy: proxy,
                     baseUrls: Dictionary(uniqueKeysWithValues: baseUrls.map { ($0.key.rawValue, $0.value) }),
                     tokens: Dictionary(uniqueKeysWithValues: tokens.map { ($0.key.rawValue, $0.value) }),
-                    weeklyPage: weeklyPage,
-                    weeklyPersonName: weeklyName,
+                    weeklyPage: current.weeklyPageId,
+                    weeklyPersonName: current.weeklyPersonName,
                     webAccounts: Dictionary(uniqueKeysWithValues: accounts.map { ($0.key.rawValue, $0.value) })
                 )
                 let next = try await API.shared.saveSettings(input)
                 model.setSettings(next)
                 fill(next)
                 tests = [:]
-                notice = (true, "设置已保存")
+                showNotice(true, "设置已保存")
+                for svc in next.services where changed.contains(svc.service) && !svc.baseUrl.isEmpty && svc.hasToken { test(svc.service) }
             } catch {
                 guard !isCancellation(error) else { return }
                 notice = (false, errorMessage(error))
             }
             saving = false
+        }
+    }
+
+    /// 成功的提示几秒后消失，失败的一直显示到下次修改
+    private func showNotice(_ ok: Bool, _ text: String) {
+        notice = (ok, text)
+        guard ok else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if notice?.text == text { notice = nil }
         }
     }
 
@@ -212,6 +221,7 @@ struct SettingsPage: View {
                 model.setSettings(next)
                 fill(next)
                 tests[service] = nil
+                showNotice(true, "已删除 \(service.label) 的令牌")
             } catch {
                 guard !isCancellation(error) else { return }
                 notice = (false, errorMessage(error))
@@ -275,6 +285,57 @@ struct ShortcutField: View {
 // MARK: - 工作空间
 
 /// 工作空间设置：同步文件夹、快速记录快捷键、Jira 问题自动加入待办。修改后立即生效。
+/// 周报：周报所在的 Wiki 页面和表格中自己的名字。改完（回车或离开输入框）立即保存。
+private struct WeeklySettingsSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var page = ""
+    @State private var name = ""
+    @State private var status: (ok: Bool, text: String)?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Section {
+            TextField("周报页面", text: $page, prompt: Text("Wiki 页面地址或页面 ID"))
+                .focused($focused)
+                .onSubmit(save)
+            TextField("我的名字", text: $name, prompt: Text("表格第一列中你的名字，留空则使用 Wiki 显示名"))
+                .focused($focused)
+                .onSubmit(save)
+            if let status { Text(status.text).font(.callout).foregroundStyle(status.ok ? .green : .red) }
+        } header: {
+            Label("周报", systemImage: "square.and.pencil")
+        } footer: {
+            Text("每周一个以日期范围开头的一级标题，表格中第一列是人名的那一行即为你的周报。\(model.isReady(.confluence) ? "" : "需要先在“连接”中配置 Wiki。")")
+        }
+        .onAppear {
+            page = model.settings?.weeklyPageId ?? ""
+            name = model.settings?.weeklyPersonName ?? ""
+        }
+        .onChange(of: focused) { if !focused { save() } }
+    }
+
+    private func save() {
+        guard let s = model.settings else { return }
+        let p = page.trimmingCharacters(in: .whitespacesAndNewlines), n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard p != s.weeklyPageId || n != s.weeklyPersonName else { return }
+        Task {
+            do {
+                // 只改周报两项，代理、地址、凭据保持原样
+                let next = try await API.shared.saveSettings(SettingsInput(proxy: s.proxy, weeklyPage: p, weeklyPersonName: n))
+                model.setSettings(next)
+                page = next.weeklyPageId
+                name = next.weeklyPersonName
+                status = (true, "已保存")
+                try? await Task.sleep(for: .seconds(2))
+                if status?.ok == true { status = nil }
+            } catch {
+                guard !isCancellation(error) else { return }
+                status = (false, errorMessage(error))
+            }
+        }
+    }
+}
+
 private struct WorkspaceSettingsSection: View {
     @State private var settings: WorkspaceSettings?
     @State private var busy = false

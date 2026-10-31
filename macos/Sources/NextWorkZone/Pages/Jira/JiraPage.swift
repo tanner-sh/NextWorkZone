@@ -41,7 +41,7 @@ struct JiraPage: View {
     @State private var error: String?
     @State private var filter = ""
     @State private var selected: String?
-    /// 菜单操作修改了问题后递增，让详情重新加载
+    /// 菜单操作修改了问题后递增，让详情原地重新加载
     @State private var detailVersion = 0
     @State private var collapsed: Set<String> = []
     @State private var creating = false
@@ -468,8 +468,8 @@ struct JiraPage: View {
     @ViewBuilder
     private var detailPane: some View {
         if let selected {
-            IssueView(issueKey: selected, onChanged: onIssueChanged)
-                .id("\(selected):\(detailVersion)")
+            IssueView(issueKey: selected, version: detailVersion, onChanged: onIssueChanged)
+                .id(selected)
         } else {
             Text("选择左侧的问题查看详情").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }

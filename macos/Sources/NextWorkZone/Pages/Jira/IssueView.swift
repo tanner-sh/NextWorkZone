@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// 问题详情：标题、流转、字段、描述、子任务、关联、相似问题、代码、Wiki、工作空间、附件、评论和历史。
 struct IssueView: View {
     var issueKey: String
+    /// 在别处（例如列表的右键菜单）改过这个问题后递增：原地重新加载，不重建视图（滚动位置、展开状态、评论草稿保留）
+    var version = 0
     var onChanged: (IssueSummary) -> Void
 
     static let collapsedFieldCount = 10
@@ -36,8 +38,9 @@ struct IssueView: View {
     /// 下面的区块（子任务、关联、相似问题、评论等）晚一帧再创建：先尽快显示标题、字段和描述
     @State private var showRest = false
 
-    init(issueKey: String, onChanged: @escaping (IssueSummary) -> Void) {
+    init(issueKey: String, version: Int = 0, onChanged: @escaping (IssueSummary) -> Void) {
         self.issueKey = issueKey
+        self.version = version
         self.onChanged = onChanged
         // 看过的问题先显示上次的内容，后台再刷新：在列表里来回点时不必每次都等网络
         let cached = IssueCache.shared.get(issueKey)
@@ -76,6 +79,7 @@ struct IssueView: View {
             if me == nil { me = try? await API.shared.jiraMe() }
             await load()
         }
+        .onChange(of: version) { Task { await load() } }
         // 这个问题有了新动态（评论、流转等）：重新加载
         .onEvent(Events.local.jiraActivity) { n in
             let keys = (n.userInfo?["payload"] as? String).flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? []

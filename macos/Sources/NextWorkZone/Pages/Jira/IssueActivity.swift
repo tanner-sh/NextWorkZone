@@ -31,11 +31,28 @@ struct IssueActivity: View {
     }
 }
 
+/// 还没发出的评论，按问题保存：切换到别的问题、详情重新加载后再回来，草稿还在（只保存在内存中）。
+@MainActor
+enum CommentDrafts {
+    private static var drafts: [String: String] = [:]
+    static func text(_ key: String) -> String { drafts[key] ?? "" }
+    static func set(_ key: String, _ text: String) {
+        drafts[key] = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+    }
+}
+
 private struct Comments: View {
     var issue: IssueDetail
     var newSince: Int64?
     var onChange: ([Comment]) -> Void
-    @State private var draft = ""
+    @State private var draft: String
+
+    init(issue: IssueDetail, newSince: Int64?, onChange: @escaping ([Comment]) -> Void) {
+        self.issue = issue
+        self.newSince = newSince
+        self.onChange = onChange
+        _draft = State(initialValue: CommentDrafts.text(issue.key))
+    }
     @State private var visibility: CommentVisibility?
     @State private var sending = false
     @State private var error: String?
@@ -69,6 +86,7 @@ private struct Comments: View {
                 if let error { ErrorBox(message: error) }
             }
         }
+        .onChange(of: draft) { CommentDrafts.set(issue.key, draft) }
     }
 
     private func send() {

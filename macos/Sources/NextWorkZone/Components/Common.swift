@@ -196,12 +196,14 @@ struct Notice: View {
 /// 某个系统尚未配置时的占位提示。
 struct NotConfigured: View {
     var label: String
+    /// 设置窗口中打开哪一页
+    var settingsTab = "connection"
 
     var body: some View {
         ContentUnavailableView {
             Label("尚未配置 \(label)", systemImage: "powerplug")
         } actions: {
-            Button("前往设置") { AppModel.shared.navigate(.settings) }.buttonStyle(.borderedProminent)
+            Button("前往设置") { AppModel.shared.navigate(NavTarget(.settings, toolTab: settingsTab)) }.buttonStyle(.borderedProminent)
         }
     }
 }
@@ -260,6 +262,10 @@ final class Toasts {
         var error: Bool
         /// 进行中的操作（例如上传）的进度；有进度的提示一直显示到操作结束
         var progress: Double?
+        /// 提示中的按钮（例如“撤销”）
+        var action: (label: String, run: @MainActor () -> Void)?
+
+        static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.message == b.message && a.error == b.error && a.progress == b.progress }
     }
 
     var items: [Item] = []
@@ -280,18 +286,28 @@ final class Toasts {
         items.removeAll { $0.id == id }
     }
 
-    func show(_ message: String, error: Bool = false) {
-        let item = Item(message: message, error: error)
+    func show(_ message: String, error: Bool = false, action: (label: String, run: @MainActor () -> Void)? = nil) {
+        let item = Item(message: message, error: error, action: action)
         items = Array(items.suffix(2)) + [item]
         Task {
-            try? await Task.sleep(for: .seconds(error ? 4.4 : 2.2))
+            try? await Task.sleep(for: .seconds(error || action != nil ? 4.4 : 2.2))
             items.removeAll { $0.id == item.id }
         }
     }
+
+    func dismiss(_ id: UUID) { items.removeAll { $0.id == id } }
 }
 
 @MainActor func toast(_ message: String, error: Bool = false) {
     Toasts.shared.show(message, error: error)
+}
+
+/// 带“撤销”按钮的提示：点击时撤销主窗口撤销记录中名为 `undoName` 的那一步（之后又有别的操作时不撤销）。
+@MainActor func toastUndo(_ message: String, undoName: String) {
+    Toasts.shared.show(message, action: ("撤销", {
+        guard let manager = MainWindow.window?.undoManager, manager.canUndo, manager.undoActionName == undoName else { return }
+        manager.undo()
+    }))
 }
 
 /// 上传文件，期间在窗口底部显示进度；`onProgress` 另外收到进度（0...1）。
@@ -340,18 +356,27 @@ struct ToastOverlay: View {
                         ProgressView(value: p).frame(width: 120)
                         Text("\(Int(p * 100))%").monospacedDigit().foregroundStyle(.secondary)
                     }
+                    if let action = t.action {
+                        Button(action.label) {
+                            toasts.dismiss(t.id)
+                            action.run()
+                        }
+                        .buttonStyle(.borderless)
+                        .fontWeight(.semibold)
+                    }
                 }
                     .font(.callout)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .glassEffect(t.error ? .regular.tint(.red.opacity(0.35)) : .regular, in: Capsule())
+                    // 只有带按钮的提示接收点击，其余不挡住下面的内容
+                    .allowsHitTesting(t.action != nil)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.snappy, value: toasts.items)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .allowsHitTesting(false)
     }
 }
 

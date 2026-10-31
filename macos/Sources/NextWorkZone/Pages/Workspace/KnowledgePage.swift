@@ -11,6 +11,7 @@ struct KnowledgePage: View {
     @State private var filter = ""
     @State private var tag: String?
     @State private var importKind: ImportKind?
+    @State private var showDeleted = false
     @State private var pageDialog: PageDialog?
     @State private var error: String?
 
@@ -47,9 +48,9 @@ struct KnowledgePage: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar.frame(width: 300)
-            Divider()
+        SplitPane("kb", minWidth: 240, idealWidth: 300, maxWidth: 440, trailingMin: 420) {
+            sidebar
+        } trailing: {
             Group {
                 if let selected {
                     let tree = byParent
@@ -86,6 +87,7 @@ struct KnowledgePage: View {
         .pageToolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button("新建页面", systemImage: "square.and.pencil") { create(parent: nil) }.help("新建页面")
+                Button("最近删除", systemImage: "trash.slash") { showDeleted = true }.help("最近删除的页面")
                 Menu {
                     Button("从 Jira 沉淀…", systemImage: "smallcircle.filled.circle") { importKind = .jira }
                     Button("剪藏 Wiki 页面…", systemImage: "square.and.arrow.down") { importKind = .wiki }
@@ -108,6 +110,14 @@ struct KnowledgePage: View {
         .onChange(of: pages) { expandAncestors() }
         .sheet(item: $importKind) { kind in
             ImportSheet(kind: kind, parentId: selected.flatMap { id in pages?.contains { $0.id == id } == true ? id : nil }) { doc in
+                Task {
+                    await load()
+                    selected = doc.id
+                }
+            }
+        }
+        .sheet(isPresented: $showDeleted) {
+            RecentlyDeletedSheet(kinds: ["page"]) { doc in
                 Task {
                     await load()
                     selected = doc.id
@@ -196,7 +206,7 @@ struct KnowledgePage: View {
         specs += [
             DocMenus.copyTitle(page.title),
             .separator,
-            DocMenus.delete(page.id, label: below.isEmpty ? "删除" : "删除（含子页面）") { if let s = selected, ([page.id] + below).contains(s) { selected = nil } },
+            DocMenus.delete(page.id, title: page.title, label: below.isEmpty ? "删除" : "删除（含子页面）") { if let s = selected, ([page.id] + below).contains(s) { selected = nil } },
         ]
         return specs
     }
@@ -230,13 +240,9 @@ struct KnowledgePage: View {
         // ⌫ 或“编辑 > 删除”：删除选中的页面（含子页面）
         .onDeleteCommand {
             guard let page = pages?.first(where: { $0.id == selected }) else { return }
-            let hasChildren = pages?.contains { $0.parentId == page.id } ?? false
-            Confirm.ask("删除页面“\(page.title.isEmpty ? "无标题" : page.title)”\(hasChildren ? "（含子页面）" : "")？", confirm: "删除") {
-                guarded {
-                    self.selected = nil
-                    _ = try await API.shared.wsDeleteDoc(page.id)
-                    Events.workspaceChanged()
-                }
+            guarded {
+                self.selected = nil
+                try await DocActions.delete(page.id, title: page.title)
             }
         }
         .listHeader {

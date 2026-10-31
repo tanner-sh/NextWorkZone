@@ -37,8 +37,10 @@ struct TodoPage: View {
     @State private var newTitle = ""
     @FocusState private var newFocused: Bool
     @State private var dropTargeted = false
+    /// 刚勾选完成的待办在列表中多停留一会儿再移走，看得到对勾，也来得及撤销
+    @State private var lingering: Set<String> = []
 
-    private var day: String { Fmt.today() }
+    private var day: String { model.today }
 
     static func inView(_ todo: Todo, _ view: ViewKind, _ day: String) -> Bool {
         if view == .done { return todo.done }
@@ -61,7 +63,26 @@ struct TodoPage: View {
     }
 
     private var visible: [Todo] {
-        (todos ?? []).filter { Self.inView($0, view, day) }.sorted { Self.ordered($0, $1, view) }
+        (todos ?? []).filter { Self.inView($0, view, day) || view != .done && lingering.contains($0.id) }.sorted { Self.ordered($0, $1, view) }
+    }
+
+    /// “已完成”按完成日期分组：今天、昨天、最近 7 天、更早。
+    private var doneGroups: [(String, [Todo])] {
+        let today = Fmt.date(ofDay: day) ?? Date()
+        let start = Calendar.current.startOfDay(for: today).timeIntervalSince1970 * 1000
+        func label(_ t: Todo) -> String {
+            let at = Double(t.completedAt ?? 0)
+            if at >= start { return "今天" }
+            if at >= start - 86_400_000 { return "昨天" }
+            if at >= start - 6 * 86_400_000 { return "最近 7 天" }
+            return "更早"
+        }
+        var groups: [(String, [Todo])] = []
+        for t in visible {
+            let l = label(t)
+            if groups.last?.0 == l { groups[groups.count - 1].1.append(t) } else { groups.append((l, [t])) }
+        }
+        return groups
     }
 
     private func count(_ v: ViewKind) -> Int { (todos ?? []).filter { Self.inView($0, v, day) }.count }
@@ -88,7 +109,10 @@ struct TodoPage: View {
             let todo = todos?.first { $0.id == selected }
             return PageCommands(
                 title: "待办",
-                newItem: ("新建待办", { newFocused = true }),
+                newItem: ("新建待办", {
+                    if view == .done { view = .today }
+                    newFocused = true
+                }),
                 refresh: { Task { await load() } },
                 specs: todo.map { TodoActions.menu($0, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) } ?? []
             )
@@ -142,13 +166,17 @@ struct TodoPage: View {
 
     private var listPane: some View {
         List(selection: $selected) {
-            ForEach(visible) { todo in
-                TodoRow(todo: todo, day: day, onToggle: { toggle(todo) }, onPlan: view == .unscheduled ? { due in plan(todo, due) } : nil)
-                    .tag(todo.id)
-                    .contextMenu(specs: { TodoActions.menu(todo, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) })
+            if view == .done {
+                ForEach(doneGroups, id: \.0) { group in
+                    Section(group.0) {
+                        ForEach(group.1) { todo in row(todo) }
+                    }
+                }
+            } else {
+                ForEach(visible) { todo in row(todo) }
+                    // 拖动调整顺序（已完成的按完成时间排列，不能调整）
+                    .onMove(perform: moveAction)
             }
-            // 拖动调整顺序（已完成的按完成时间排列，不能调整）
-            .onMove(perform: moveAction)
             if todos != nil && visible.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(view.empty).foregroundStyle(.secondary)
@@ -167,26 +195,27 @@ struct TodoPage: View {
             return !items.isEmpty
         } isTargeted: { dropTargeted = $0 }
         .overlay { if dropTargeted { DropHighlight(text: "加为待办") } }
-        // ⌫ 或“编辑 > 删除”：删除选中的待办（可撤销）
+        // ⌫ 或“编辑 > 删除”：删除选中的待办（可以撤销，不再确认）
         .onDeleteCommand {
             guard let todo = todos?.first(where: { $0.id == selected }) else { return }
-            Confirm.ask(TodoActions.fromJiraSync(todo) ? "确认删除？之后不再自动添加" : "确认删除“\(todo.title)”？", confirm: "删除") {
-                guarded {
-                    try await TodoActions.delete(todo)
-                    removeLocal(todo)
-                }
+            guarded {
+                try await TodoActions.delete(todo)
+                removeLocal(todo)
             }
         }
         .listHeader(inset: 12) {
-            HStack {
-                Image(systemName: "plus").foregroundStyle(.secondary)
-                TextField(view == .today ? "添加今天的待办，回车保存" : "添加待办，回车保存", text: $newTitle)
-                    .textFieldStyle(.plain)
-                    .focused($newFocused)
-                    .onSubmit(add)
+            // “已完成”中添加的待办不会显示在这里，不提供输入框
+            if view != .done {
+                HStack {
+                    Image(systemName: "plus").foregroundStyle(.secondary)
+                    TextField(view == .today ? "添加今天的待办，回车保存" : view == .upcoming ? "添加明天的待办，回车保存" : "添加待办，回车保存", text: $newTitle)
+                        .textFieldStyle(.plain)
+                        .focused($newFocused)
+                        .onSubmit(add)
+                }
+                .padding(8)
+                .fieldBackground()
             }
-            .padding(8)
-            .fieldBackground()
             if let syncNote {
                 HStack {
                     Text(syncNote).font(.callout)
@@ -205,17 +234,34 @@ struct TodoPage: View {
         let text = newTitle.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         // 在“今天”“计划”视图中添加的待办分别默认今天、明天到期
-        let due: String? = view == .today ? Fmt.today() : view == .upcoming ? Fmt.addDays(Fmt.today(), 1) : nil
+        let due: String? = view == .today ? day : view == .upcoming ? Fmt.addDays(day, 1) : nil
+        newTitle = ""
         guarded {
-            let todo = try await API.shared.wsSaveTodo(TodoInput(title: text, due: .some(due)))
+            let todo = try await TodoActions.add(TodoInput(title: text, due: .some(due)))
             replace(todo)
             selected = todo.id
-            newTitle = ""
         }
     }
 
+    private func row(_ todo: Todo) -> some View {
+        TodoRow(todo: todo, day: day, onToggle: { toggle(todo) }, onPlan: view == .unscheduled && !todo.done ? { due in plan(todo, due) } : nil)
+            .tag(todo.id)
+            .contextMenu(specs: { TodoActions.menu(todo, onSaved: replace, onDeleted: removeLocal, onPromote: model.isReady(.jira) ? { promoting = $0 } : nil) })
+    }
+
     private func toggle(_ todo: Todo) {
-        guarded { replace(try await TodoActions.setDone(todo, !todo.done)) }
+        let done = !todo.done
+        if done && view != .done {
+            lingering.insert(todo.id)
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                withAnimation { _ = lingering.remove(todo.id) }
+            }
+        }
+        guarded {
+            replace(try await TodoActions.setDone(todo, done))
+            if done && view != .done { TodoActions.completed(todo) }
+        }
     }
 
     private var moveAction: ((IndexSet, Int) -> Void)? {
@@ -404,6 +450,10 @@ private struct TodoDetail: View {
     @State private var newCheck = ""
     @State private var debouncer = Debouncer()
     @State private var typing = false
+    /// 保存依次进行：排在前面的保存完成后才开始下一次
+    @State private var chain: Task<Void, Never>?
+    /// 还没完成的保存数
+    @State private var pending = 0
 
     init(todo: Todo, onSaved: @escaping (Todo) -> Void, onDeleted: @escaping () -> Void) {
         self.todo = todo
@@ -416,7 +466,7 @@ private struct TodoDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
-                    CheckCircle(done: draft.done, priority: draft.priority, size: 22) { update { $0.done.toggle() } }
+                    CheckCircle(done: draft.done, priority: draft.priority, size: 22) { toggleDone() }
                     TextField("待办标题", text: Binding(get: { draft.title }, set: { v in update(debounce: true) { $0.title = v } }), axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.title2.weight(.semibold))
@@ -538,19 +588,19 @@ private struct TodoDetail: View {
                 }
             }
             ToolbarItem {
+                // 可以撤销（⌘Z 或提示中的“撤销”），不再确认
                 Button(draft.refSystem == "jira" ? "删除待办" : "删除", systemImage: "trash", role: .destructive) {
-                    let note = draft.refSystem == "jira" ? (TodoActions.fromJiraSync(todo) ? "只删除待办，不影响 Jira 问题，之后也不会再自动添加。" : "只删除待办，不影响 Jira 问题。") : ""
-                    Confirm.ask("确认删除这个待办？" + (note.isEmpty ? "" : "\n" + note)) {
-                        guarded {
-                            try await TodoActions.delete(todo)
-                            onDeleted()
-                        }
+                    guarded {
+                        try await TodoActions.delete(todo)
+                        onDeleted()
                     }
                 }
-                .help(draft.refSystem == "jira" ? "删除待办（不影响 Jira 问题）" : "删除待办")
+                .help(draft.refSystem == "jira" ? "删除待办（不影响 Jira 问题）" : draft.source == "wiki" ? "删除待办（不影响 Wiki 任务）" : "删除待办")
             }
         }
         .onChange(of: todo) { _, new in
+            // 还有没保存完的修改时以本地为准（否则先到的旧结果会让界面跳回旧值），保存完会再更新
+            guard pending == 0 else { return }
             // 外部更新（例如同步、勾选完成）时刷新未在编辑的字段
             let (title, notes) = (draft.title, draft.notes)
             draft = new
@@ -615,13 +665,36 @@ private struct TodoDetail: View {
     }
 
     private func save(_ next: Todo) {
-        Task {
+        enqueue { try await API.shared.wsSaveTodo(TodoInput(next)) }
+    }
+
+    /// 勾选完成走“标记完成”（Wiki 页面任务同步到 Wiki，可以撤销，重复的待办生成下一次）；正在输入的标题、备注先保存。
+    private func toggleDone() {
+        let done = !draft.done
+        let flush = typing ? draft : nil
+        debouncer.cancel()
+        typing = false
+        draft.done = done
+        if let flush { enqueue { try await API.shared.wsSaveTodo(TodoInput(flush)) } }
+        enqueue { try await TodoActions.setDone(todo, done) }
+    }
+
+    /// 排队保存。只有最后一次的结果交给列表（中间的结果已经过时）；失败时按库中的数据恢复界面。
+    private func enqueue(_ work: @escaping @MainActor () async throws -> Todo) {
+        pending += 1
+        let previous = chain
+        chain = Task {
+            await previous?.value
             do {
-                onSaved(try await API.shared.wsSaveTodo(TodoInput(next)))
+                let saved = try await work()
+                pending -= 1
                 error = nil
+                if pending == 0 { onSaved(saved) }
             } catch {
+                pending -= 1
                 guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
+                if pending == 0, let current = try? await API.shared.wsTodo(todo.id) { draft = current; onSaved(current) }
             }
         }
     }
@@ -667,8 +740,7 @@ struct QuickTodoSheet: View {
         saving = true
         Task {
             do {
-                _ = try await API.shared.wsSaveTodo(TodoInput(title: text, due: .some(options[due].1())))
-                Events.workspaceChanged()
+                _ = try await TodoActions.add(TodoInput(title: text, due: .some(options[due].1())))
                 dismiss()
             } catch {
                 guard !isCancellation(error) else { return }

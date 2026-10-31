@@ -230,6 +230,7 @@ final class API: @unchecked Sendable {
     // MARK: 工作空间
 
     func wsTodos() async throws -> [Todo] { try await workspace.value.store.todos() }
+    func wsTodo(_ id: String) async throws -> Todo? { try await workspace.value.store.todo(id) }
     func wsSaveTodo(_ input: TodoInput) async throws -> Todo { try await workspace.value.store.saveTodo(input.serviceInput) }
     func wsSetTodoDone(_ id: String, done: Bool) async throws -> Todo { try await workspace.value.setTodoDone(id, done: done) }
     func wsMoveTodo(_ id: String, sort: Double) async throws { try await workspace.value.store.moveTodo(id, sort: sort) }
@@ -244,6 +245,8 @@ final class API: @unchecked Sendable {
     func wsSaveDoc(_ input: DocInput) async throws -> Doc { try await workspace.value.store.saveDoc(input.serviceInput) }
     func wsMoveDoc(_ id: String, parentId: String?, sort: Double) async throws -> Doc { try await workspace.value.store.moveDoc(id, parentId: parentId, sort: sort) }
     func wsDeleteDoc(_ id: String) async throws -> Int { try await workspace.value.store.deleteDoc(id) }
+    func wsRestoreDoc(_ id: String) async throws -> Int { try await workspace.value.store.restoreDoc(id) }
+    func wsDeletedDocs(since: Int64) async throws -> [DocSummary] { try await workspace.value.store.deletedDocs(since: since) }
     func wsTags() async throws -> [TagCount] { try await workspace.value.store.tags() }
     func wsBacklinks(system: String, key: String) async throws -> [Backlink] { try await workspace.value.store.backlinks(system: system, key: key) }
     func wsSearch(_ query: String) async throws -> [WorkspaceHit] { try await workspace.value.store.search(query) }

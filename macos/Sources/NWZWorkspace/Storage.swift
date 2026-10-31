@@ -6,6 +6,8 @@ import NWZCore
 public actor Workspace {
     let database: Database
     public nonisolated let deviceID: String
+    /// 正在进行的同步：同时发起的同步依次执行（见 sync(at:)）
+    var syncing: Task<SyncReport, Error>?
 
     public init(path: String = ":memory:") async throws {
         let database = try Database(path: path, migrations: [.init(version: 1, sql: Self.schema)])

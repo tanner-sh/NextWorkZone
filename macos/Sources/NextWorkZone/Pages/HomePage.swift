@@ -5,38 +5,62 @@ struct HomePage: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let now = Date()
-        let hour = Calendar.current.component(.hour, from: now)
-        ScrollView {
+        // 读设置后才知道连接了哪些系统；没连接的系统不显示卡片，底部用一行提示代替
+        let loaded = model.settings != nil
+        let missing = loaded ? [Service.jira, .confluence, .gitlab].filter { !model.isReady($0) } : []
+        var half: [AnyView] = [AnyView(TodayTodosCard())]
+        if model.isReady(.confluence) { half.append(AnyView(WeeklyCard())) }
+        half.append(AnyView(WorkLogCard()))
+        if model.isReady(.confluence) { half.append(AnyView(WikiRecentCard())) }
+        if model.isReady(.gitlab) { half.append(AnyView(ProjectsCard())) }
+        let rows = stride(from: 0, to: half.count, by: 2).map { Array(half[$0..<min($0 + 2, half.count)]) }
+        return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(hour < 12 ? "上午好" : hour < 18 ? "下午好" : "晚上好").font(.largeTitle.weight(.semibold))
-                    Text("\(Calendar.current.component(.month, from: now)) 月 \(Calendar.current.component(.day, from: now)) 日 · \(Fmt.weekday(Fmt.today()))")
-                        .foregroundStyle(.secondary)
+                // 每分钟更新一次，问候语、日期跟着时间变
+                TimelineView(.everyMinute) { context in
+                    let hour = Calendar.current.component(.hour, from: context.date)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(hour < 12 ? "上午好" : hour < 18 ? "下午好" : "晚上好").font(.largeTitle.weight(.semibold))
+                        Text("\(Calendar.current.component(.month, from: context.date)) 月 \(Calendar.current.component(.day, from: context.date)) 日 · \(Fmt.weekday(Fmt.day(context.date)))")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 AttentionCard()
                 Grid(horizontalSpacing: 16, verticalSpacing: 16) {
-                    GridRow {
-                        TodayTodosCard()
-                        WeeklyCard()
+                    ForEach(rows.indices, id: \.self) { i in
+                        GridRow {
+                            ForEach(rows[i].indices, id: \.self) { j in rows[i][j] }
+                            if rows[i].count == 1 { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
+                        }
+                        // 我的未解决问题占一整行，放在第一行之后
+                        if i == 0 && model.isReady(.jira) {
+                            GridRow { MyIssuesCard().gridCellColumns(2) }
+                        }
                     }
-                    GridRow {
-                        MyIssuesCard().gridCellColumns(2)
+                }
+                if !missing.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "link").foregroundStyle(.secondary)
+                        Text("连接 \(missing.map(\.label).joined(separator: "、")) 后，\(Self.benefit(missing))也会显示在这里。").foregroundStyle(.secondary)
+                        Button("去设置") { model.navigate(NavTarget(.settings, toolTab: "connection")) }.buttonStyle(.link)
                     }
-                    GridRow {
-                        WorkLogCard()
-                        WikiRecentCard()
-                    }
-                    GridRow {
-                        ProjectsCard()
-                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                    }
+                    .font(.callout)
                 }
             }
             .padding(28)
             .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private static func benefit(_ missing: [Service]) -> String {
+        missing.map { s in
+            switch s {
+            case .jira: "分配给你的问题"
+            case .confluence: "周报和最近的 Wiki"
+            case .gitlab: "活跃的项目和待审核的合并请求"
+            }
+        }.joined(separator: "、")
     }
 }
 
@@ -96,6 +120,7 @@ enum Loadable<T> {
 struct LoadableBody<T, Content: View>: View {
     var state: Loadable<T>
     var offLabel: String
+    var settingsTab = "connection"
     @ViewBuilder var content: (T) -> Content
 
     var body: some View {
@@ -105,7 +130,7 @@ struct LoadableBody<T, Content: View>: View {
         case .off:
             HStack(spacing: 4) {
                 Text("尚未配置 \(offLabel)。").foregroundStyle(.secondary)
-                Button("去设置") { AppModel.shared.navigate(.settings) }.buttonStyle(.link)
+                Button("去设置") { AppModel.shared.navigate(NavTarget(.settings, toolTab: settingsTab)) }.buttonStyle(.link)
             }
             .font(.callout)
         case .ok(let v): content(v)
@@ -165,7 +190,7 @@ struct AttentionCard: View {
                 }
             }
         }
-        .task(id: visit) {
+        .task(id: "\(visit)|\(model.today)") {
             await refresh()
             await loadTodos()
         }
@@ -231,21 +256,42 @@ struct AttentionCard: View {
     }
 
     private func row(_ item: InboxItem) -> some View {
-        let detail = InboxText.detail(item)
-        return HomeRow(action: { open(item) }) {
-            ItemIcon(item: item)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title.isEmpty ? "无标题" : item.title).lineLimit(1)
-                if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+        AttentionRow(item: item, open: { open(item) }, today: { toTodo(item, Fmt.today()) }, snooze: { MenuBuilder.popUp(snoozeMenu(item)) }, handled: { run { await model.handle(item) } }, more: { MenuBuilder.popUp(moreMenu(item)) })
+            .contextMenu(specs: { moreMenu(item) })
+    }
+
+    /// 一行需要处理的事：常用的“已处理”一直显示，其余按钮在鼠标移到这一行上时出现（右键菜单中也有）。
+    private struct AttentionRow: View {
+        var item: InboxItem
+        var open: () -> Void
+        var today: () -> Void
+        var snooze: () -> Void
+        var handled: () -> Void
+        var more: () -> Void
+        @State private var hover = false
+
+        var body: some View {
+            let detail = InboxText.detail(item)
+            HomeRow(action: open) {
+                ItemIcon(item: item)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title.isEmpty ? "无标题" : item.title).lineLimit(1)
+                    if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer(minLength: 8)
+                if item.source != "due" { Text(Fmt.time(ms: item.at)).font(.caption).foregroundStyle(.secondary) }
+                HStack(spacing: 8) {
+                    Button("今天", action: today).controlSize(.small).help("转为今天的待办")
+                    Button(action: snooze) { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒").accessibilityLabel("稍后提醒")
+                    Button(action: more) { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多").accessibilityLabel("更多")
+                }
+                // 不显示时仍占位，鼠标移入时这一行不跳动
+                .opacity(hover ? 1 : 0)
+                .allowsHitTesting(hover)
+                Button(action: handled) { Image(systemName: "checkmark") }.buttonStyle(.borderless).help("已处理").accessibilityLabel("已处理")
             }
-            Spacer(minLength: 8)
-            if item.source != "due" { Text(Fmt.time(ms: item.at)).font(.caption).foregroundStyle(.secondary) }
-            Button("今天") { toTodo(item, Fmt.today()) }.controlSize(.small).help("转为今天的待办")
-            Button { MenuBuilder.popUp(snoozeMenu(item)) } label: { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒").accessibilityLabel("稍后提醒")
-            Button { run { await model.handle(item) } } label: { Image(systemName: "checkmark") }.buttonStyle(.borderless).help("已处理").accessibilityLabel("已处理")
-            Button { MenuBuilder.popUp(moreMenu(item)) } label: { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多").accessibilityLabel("更多")
+            .onHover { hover = $0 }
         }
-        .contextMenu(specs: { moreMenu(item) })
     }
 
     private struct ItemIcon: View {
@@ -265,9 +311,11 @@ struct TodayTodosCard: View {
     @Environment(\.page) private var pageState
     private var visit: Int { pageState.visit }
     @State private var todos: [Todo]?
+    /// 刚勾选完成、稍后移走的待办
+    @State private var finishing: Set<String> = []
 
     var body: some View {
-        let day = Fmt.today()
+        let day = model.today
         let sorted = (todos ?? []).sorted { ($0.due ?? "", -$0.priority) < ($1.due ?? "", -$1.priority) }
         Card(title: "今天的待办", count: (todos?.isEmpty ?? true) ? nil : todos?.count, actions: {
             Button("写日记", systemImage: "calendar") { model.navigate(NavTarget(.notes, docId: "daily-\(day)")) }.buttonStyle(.borderless)
@@ -276,7 +324,7 @@ struct TodayTodosCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(sorted) { t in
                     HomeRow(action: { model.navigate(NavTarget(.todos, todoId: t.id)) }) {
-                        CheckCircle(done: false, priority: t.priority, size: 15) { complete(t) }
+                        CheckCircle(done: finishing.contains(t.id), priority: t.priority, size: 15) { complete(t) }
                         Text(t.title).lineLimit(1)
                         Spacer(minLength: 4)
                         if let key = t.refKey, t.refSystem == "jira" { Chip(text: key, icon: "smallcircle.filled.circle") }
@@ -290,19 +338,25 @@ struct TodayTodosCard: View {
                 }
             }
         }
-        .task(id: visit) { await load() }
+        .task(id: "\(visit)|\(model.today)") { await load() }
         .onWorkspaceChange { Task { await load() } }
     }
 
     private func load() async {
-        let day = Fmt.today()
-        todos = (try? await API.shared.wsTodos())?.filter { !$0.done && ($0.due.map { $0 <= day } ?? false) } ?? []
+        let day = model.today
+        todos = (try? await API.shared.wsTodos())?.filter { !$0.done && ($0.due.map { $0 <= day } ?? false) || finishing.contains($0.id) } ?? []
     }
 
+    /// 勾选后对勾先显示一会儿再移走，提示中可以撤销
     private func complete(_ todo: Todo) {
-        todos?.removeAll { $0.id == todo.id }
+        guard !finishing.contains(todo.id) else { return }
+        finishing.insert(todo.id)
         guarded {
             _ = try await TodoActions.setDone(todo, true)
+            TodoActions.completed(todo)
+            try? await Task.sleep(for: .seconds(1.5))
+            finishing.remove(todo.id)
+            withAnimation { todos?.removeAll { $0.id == todo.id } }
         }
     }
 }
@@ -317,7 +371,7 @@ struct WeeklyCard: View {
 
     var body: some View {
         Card(title: "本周周报", actions: { Button("去填写") { model.navigate(.weekly) }.buttonStyle(.borderless) }) {
-            LoadableBody(state: state, offLabel: "Wiki 或周报页面") { view in status(view) }
+            LoadableBody(state: state, offLabel: "周报页面", settingsTab: "general") { view in status(view) }
         }
         .task(id: "\(model.isReady(.confluence))|\(model.settings?.weeklyPageId ?? "")|\(visit)") {
             guard model.settings != nil else { return }
@@ -420,7 +474,7 @@ struct WorkLogCard: View {
     @State private var report: String?
 
     var body: some View {
-        let day = Fmt.today()
+        let day = model.today
         Card(title: "今天的工作记录", count: (state.value?.events.isEmpty ?? true) ? nil : state.value?.events.count, actions: {
             Button("生成日报") { if let log = state.value { report = WorkLogText.report(log) } }.buttonStyle(.borderless).disabled(state.value == nil)
             Button("日记") { model.navigate(NavTarget(.notes, docId: "daily-\(day)")) }.buttonStyle(.borderless)
@@ -443,12 +497,16 @@ struct WorkLogCard: View {
                 }
             }
         }
-        .task(id: visit) {
-            do { state = .ok(try await API.shared.wsWorklog(day)) } catch { if !isCancellation(error) { state = .failed(errorMessage(error)) } }
-        }
+        .task(id: "\(visit)|\(day)") { await load(day) }
+        // 完成待办等本机操作也会记进工作记录
+        .onWorkspaceChange { Task { await load(day) } }
         .sheet(item: Binding(get: { report.map { ReportText(text: $0) } }, set: { report = $0?.text })) { r in
             ReportSheet(day: day, text: r.text)
         }
+    }
+
+    private func load(_ day: String) async {
+        do { state = .ok(try await API.shared.wsWorklog(day)) } catch { if !isCancellation(error) { state = .failed(errorMessage(error)) } }
     }
 }
 

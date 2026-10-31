@@ -122,6 +122,65 @@ struct WorkspaceTests {
         _ = try await ws.setTodoDone(todo.id, done: true)
         #expect(try await ws.todos().count == 2)
     }
+    @Test func uncompletingRepeatingTodoWithdrawsNext() async throws {
+        let ws = try await Workspace()
+        let today = Workspace.today()
+        let todo = try await ws.saveTodo(.init(title: "站会", due: today, repeat: "daily"))
+        _ = try await ws.setTodoDone(todo.id, done: true)
+        #expect(try await ws.todos().count == 2)
+        let undone = try await ws.setTodoDone(todo.id, done: false)
+        #expect(!undone.done && undone.repeat == "daily" && undone.nextId == nil)
+        #expect(try await ws.todos().map(\.id) == [todo.id])
+        // 通过保存整条待办（详情页）取消完成也一样
+        let again = try await ws.setTodoDone(todo.id, done: true)
+        var input = TodoInput(again)
+        input.done = false
+        let saved = try await ws.saveTodo(input)
+        #expect(saved.repeat == "daily")
+        #expect(try await ws.todos().count == 1)
+        // 下一次已经完成的话保留，不再恢复重复规则
+        _ = try await ws.setTodoDone(todo.id, done: true)
+        let following = try #require(await ws.todos().first { !$0.done })
+        _ = try await ws.setTodoDone(following.id, done: true)
+        let reopened = try await ws.setTodoDone(todo.id, done: false)
+        #expect(reopened.repeat == nil)
+        #expect(try await ws.todo(following.id)?.deleted == false)
+    }
+    @Test func sourceTodosFollowUntouchedTitleAndDue() async throws {
+        let ws = try await Workspace()
+        _ = try await ws.syncJiraTodos([.init(key: "ABC-1", summary: "修复导出", due: "2026-11-01"), .init(key: "ABC-2", summary: "优化查询", due: "2026-11-02")])
+        var input = TodoInput(try #require(await ws.todo("jira-ABC-2")))
+        input.due = "2026-11-10"
+        _ = try await ws.saveTodo(input)
+        _ = try await ws.syncJiraTodos([.init(key: "ABC-1", summary: "修复导出", due: "2026-11-05"), .init(key: "ABC-2", summary: "优化查询", due: "2026-11-06")])
+        #expect(try await ws.todo("jira-ABC-1")?.due == "2026-11-05")
+        #expect(try await ws.todo("jira-ABC-2")?.due == "2026-11-10")
+        _ = try await ws.syncJiraTodos([.init(key: "ABC-1", summary: "修复导出", due: nil)])
+        #expect(try await ws.todo("jira-ABC-1")?.due == nil)
+        _ = try await ws.syncWikiTodos([.init(pageId: "9", pageTitle: "会议纪要", taskId: "2", text: "整理方案", due: nil)])
+        _ = try await ws.syncWikiTodos([.init(pageId: "9", pageTitle: "会议纪要", taskId: "2", text: "整理方案初稿", due: nil)])
+        #expect(try await ws.todo("wiki-9-2")?.title == "整理方案初稿")
+    }
+    @Test func deletedDocsCanBeRestored() async throws {
+        let ws = try await Workspace()
+        let parent = try await ws.saveDoc(.init(kind: "page", title: "方案"))
+        let child = try await ws.saveDoc(.init(kind: "page", title: "细节", parentId: parent.id))
+        let earlier = try await ws.saveDoc(.init(kind: "page", title: "早删的", parentId: parent.id))
+        _ = try await ws.deleteDoc(earlier.id)
+        _ = try await ws.saveDoc(.init(kind: "note", title: "", content: ""))
+        let empty = try #require(await ws.docs(kind: "note").first)
+        _ = try await ws.deleteDoc(empty.id)
+        try await Task.sleep(for: .milliseconds(5))
+        #expect(try await ws.deleteDoc(parent.id) == 2)
+        #expect(try await ws.deletedDocs(since: 0).map(\.title) == ["方案"])
+        #expect(try await ws.restoreDoc(parent.id) == 2)
+        #expect(Set(try await ws.docs(kind: "page").map(\.id)) == [parent.id, child.id])
+        #expect(try await ws.deletedDocs(since: 0).map(\.title) == ["早删的"])
+        // 上级已删除时恢复到最上层
+        _ = try await ws.deleteDoc(parent.id)
+        #expect(try await ws.restoreDoc(earlier.id) == 1)
+        #expect(try await ws.doc(earlier.id)?.parentId == nil)
+    }
     @Test func capturesBecomeTodos() async throws {
         let ws = try await Workspace()
         _ = try await ws.capture(title: "看一下这个链接", body: "", url: "https://example.com/x")

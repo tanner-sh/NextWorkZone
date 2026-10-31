@@ -34,6 +34,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    /// 退出前把还没同步的修改写到同步文件夹（最多等 3 秒），在另一台电脑上不用等这台下次打开。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard API.shared != nil else { return .terminateNow }
+        Task {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { _ = try? await API.shared.wsSync() }
+                group.addTask { try? await Task.sleep(for: .seconds(3)) }
+                await group.next()
+                group.cancelAll()
+            }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         let workspace = API.shared?.workspace
         let jira = API.shared?.jira, wiki = API.shared?.wiki, sessions = API.shared?.sessions

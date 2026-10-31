@@ -11,8 +11,11 @@ struct NotesPage: View {
     @State private var filter = ""
     @State private var selected = "daily-\(Fmt.today())"
     @State private var error: String?
+    @State private var showDeleted = false
+    /// 刚新建、还没写内容的笔记：切到别处时还是空的就删掉，不留下空笔记
+    @State private var fresh: String?
 
-    private var today: String { Fmt.today() }
+    private var today: String { model.today }
     private var dayList: [String] { [today] + days.filter { $0 != today } }
     private var visibleNotes: [DocSummary] {
         let q = filter.trimmingCharacters(in: .whitespaces).lowercased()
@@ -20,9 +23,9 @@ struct NotesPage: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar.frame(width: 300)
-            Divider()
+        SplitPane("notes", minWidth: 240, idealWidth: 300, maxWidth: 440, trailingMin: 420) {
+            sidebar
+        } trailing: {
             // 切换文档时重新创建面板
             DocPane(docId: selected, onSaved: { doc in
                 // 列表里的标题、摘要随编辑更新
@@ -51,9 +54,24 @@ struct NotesPage: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
-            ToolbarItem(placement: .navigation) {
-                Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记")
+            ToolbarItemGroup(placement: .navigation) {
+                Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记（⌘N）")
+                Button("最近删除", systemImage: "trash.slash") { showDeleted = true }.help("最近删除的笔记和日记")
             }
+        }
+        .sheet(isPresented: $showDeleted) {
+            RecentlyDeletedSheet(kinds: ["note", "daily"]) { doc in
+                Task {
+                    await load()
+                    tab = doc.kind == "daily" ? .daily : .notes
+                    selected = doc.id
+                }
+            }
+        }
+        .onChange(of: selected) { old, _ in discardIfEmpty(old) }
+        // 过了零点：正看着的“今天”的日记换成新的一天
+        .onChange(of: model.today) { old, new in
+            if selected == "daily-\(old)" { selected = "daily-\(new)" }
         }
         .pageCommands { PageCommands(title: "笔记", newItem: ("新建笔记", createNote), refresh: { Task { await load() } }) }
         .task { await load() }
@@ -89,11 +107,25 @@ struct NotesPage: View {
                 tab = .notes
                 filter = ""
                 selected = doc.id
+                fresh = doc.id
                 await load()
             } catch {
                 guard !isCancellation(error) else { return }
                 self.error = errorMessage(error)
             }
+        }
+    }
+
+    /// 新建后什么都没写就切走的笔记直接删掉（不进“最近删除”，也不提示）。
+    private func discardIfEmpty(_ id: String) {
+        guard let fresh, fresh == id else { return }
+        self.fresh = nil
+        Task {
+            // 稍等片刻，切走前刚输入的内容先保存好；保存过（修改时间变了）就不算空笔记
+            try? await Task.sleep(for: .seconds(1))
+            guard let doc = try? await API.shared.wsDoc(id), doc.updatedAt == doc.createdAt, doc.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, doc.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, doc.tags.isEmpty else { return }
+            _ = try? await API.shared.wsDeleteDoc(id)
+            Events.workspaceChanged()
         }
     }
 
@@ -124,7 +156,7 @@ struct NotesPage: View {
                     .contextMenu(specs: { noteMenu(n) })
                 }
                 if notes != nil && visibleNotes.isEmpty {
-                    Text(filter.isEmpty ? "还没有笔记，点击工具栏中的 + 新建" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
+                    Text(filter.isEmpty ? "还没有笔记，按 ⌘N 或点击工具栏中的新建按钮" : "没有匹配的笔记").foregroundStyle(.secondary).lineLimit(4)
                 }
             }
         }
@@ -133,12 +165,9 @@ struct NotesPage: View {
         // ⌫ 或“编辑 > 删除”：删除选中的笔记（日记不在这里删除）
         .onDeleteCommand {
             guard tab == .notes, let n = notes?.first(where: { $0.id == selected }) else { return }
-            Confirm.ask("删除笔记“\(n.title.isEmpty ? "无标题" : n.title)”？", confirm: "删除") {
-                guarded {
-                    selected = "daily-\(today)"
-                    _ = try await API.shared.wsDeleteDoc(n.id)
-                    Events.workspaceChanged()
-                }
+            guarded {
+                selected = "daily-\(today)"
+                try await DocActions.delete(n.id, title: n.title)
             }
         }
         .listHeader {
@@ -163,7 +192,7 @@ struct NotesPage: View {
         ]
         // 今天的日记还没写时不能删除
         if days.contains(day) {
-            specs += [.separator, DocMenus.delete("daily-\(day)", label: "删除这天的日记") { if selected == "daily-\(day)" { selected = "daily-\(today)" } }]
+            specs += [.separator, DocMenus.delete("daily-\(day)", title: "\(day) 的日记", label: "删除这天的日记") { if selected == "daily-\(day)" { selected = "daily-\(today)" } }]
         }
         return specs
     }
@@ -177,7 +206,7 @@ struct NotesPage: View {
             DocMenus.pin(n),
             DocMenus.copyTitle(n.title),
             .separator,
-            DocMenus.delete(n.id, label: "删除") { if selected == n.id { selected = "daily-\(today)" } },
+            DocMenus.delete(n.id, title: n.title, label: "删除") { if selected == n.id { selected = "daily-\(today)" } },
         ]
     }
 }
@@ -205,12 +234,11 @@ enum DocMenus {
     }
 
     /// `beforeDelete` 在删除前调用，用于先关闭正在编辑的文档。
-    static func delete(_ id: String, label: String, beforeDelete: @escaping () -> Void) -> MenuSpec {
-        .item(label, icon: "trash", destructive: true, confirm: "确认删除") {
+    static func delete(_ id: String, title: String, label: String, beforeDelete: @escaping () -> Void) -> MenuSpec {
+        .item(label, icon: "trash", destructive: true) {
             guarded {
                 beforeDelete()
-                _ = try await API.shared.wsDeleteDoc(id)
-                Events.workspaceChanged()
+                try await DocActions.delete(id, title: title)
             }
         }
     }

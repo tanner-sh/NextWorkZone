@@ -63,8 +63,11 @@ final class AppModel {
     }
 
     func navigate(_ target: NavTarget) {
-        // 设置在单独的设置窗口中
-        if target.page == .settings { return openSettings() }
+        // 设置在单独的设置窗口中；toolTab 指定打开哪一页（general、connection、index）
+        if target.page == .settings {
+            if let tab = target.toolTab { UserDefaults.standard.set(tab, forKey: "nextworkzone.settings.tab") }
+            return openSettings()
+        }
         current = target
         pending = target
         NotificationCenter.default.post(name: Self.navigated, object: nil)
@@ -93,8 +96,10 @@ final class AppModel {
     var activity: ActivityFeed?
     var reminders: Reminders?
     var issueCount: Int?
-    /// 未安排日期的待办（新分配的 Jira 问题也在这里）
-    var unscheduled: Int?
+    /// 今天到期和已逾期的未完成待办（侧栏“待办”的数字，与待办页默认的“今天”视图一致）
+    var dueTodos: Int?
+    /// 今天的日期（yyyy-MM-dd）。过了零点、从睡眠中唤醒、回到应用时检查；保留的页面据此换成新的一天。
+    var today = Fmt.today()
     /// 每次本机数据变化时递增，页面据此刷新。
     var workspaceVersion = 0
 
@@ -102,7 +107,7 @@ final class AppModel {
     func count(_ page: PageID) -> Int? {
         let n: Int? = switch page {
         case .home: inbox?.items.count
-        case .todos: unscheduled
+        case .todos: dueTodos
         case .jira: issueCount
         case .activity: activity?.unread
         default: nil
@@ -126,7 +131,21 @@ final class AppModel {
         Task { hiddenTools = (try? await API.shared.toolsHidden()) ?? [] }
         Task { await refreshInbox() }
         Task { activity = try? await API.shared.jiraActivity() }
-        loadUnscheduled()
+        loadDueTodos()
+
+        // 日期变化：过了零点（系统发出 NSCalendarDayChanged）、唤醒、回到应用时都检查一次
+        for name in [Notification.Name.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                Task { @MainActor in AppModel.shared.checkDay() }
+            }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppModel.shared.checkDay() }
+        }
+        // 睡眠前把还没同步的修改写到同步文件夹，另一台电脑上马上能看到
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            Task { _ = try? await API.shared.wsSync() }
+        }
 
         NotificationCenter.default.addObserver(forName: Events.name(AppEvent.webSession), object: nil, queue: .main) { _ in
             Task { @MainActor in await AppModel.shared.refreshSessions() }
@@ -138,7 +157,7 @@ final class AppModel {
             NotificationCenter.default.addObserver(forName: Events.name(name), object: nil, queue: .main) { _ in
                 Task { @MainActor in
                     AppModel.shared.workspaceVersion += 1
-                    AppModel.shared.loadUnscheduled()
+                    AppModel.shared.loadDueTodos()
                 }
             }
         }
@@ -168,11 +187,20 @@ final class AppModel {
         ImageCache.shared.clearFailures()
     }
 
-    func loadUnscheduled() {
+    func loadDueTodos() {
         Task {
             guard let list = try? await API.shared.wsTodos() else { return }
-            unscheduled = list.filter { !$0.done && $0.due == nil }.count
+            let day = Fmt.today()
+            dueTodos = list.filter { !$0.done && ($0.due.map { $0 <= day } ?? false) }.count
         }
+    }
+
+    func checkDay() {
+        let day = Fmt.today()
+        guard day != today else { return }
+        today = day
+        loadDueTodos()
+        Task { await refreshInbox() }
     }
 
     // MARK: 需要处理的事

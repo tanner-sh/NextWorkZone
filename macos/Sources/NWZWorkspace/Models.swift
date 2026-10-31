@@ -21,7 +21,12 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
     public var remindAt: Int64?
     public var `repeat`: String?
     public var checklist: [ChecklistItem]
-    public init(id: String = "", title: String = "", notes: String = "", done: Bool = false, completedAt: Int64? = nil, due: String? = nil, priority: Int = 0, sort: Double = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, source: String? = nil, autoDone: Bool = false, createdAt: Int64 = 0, updatedAt: Int64 = 0, updatedBy: String = "", deleted: Bool = false, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = []) {
+    /// 重复的待办完成时生成的下一次；标记为未完成时据此撤回
+    public var nextId: String?
+    /// 自动同步的待办上次从来源取到的标题、截止日期（"" 表示没有）：待办的值与之相同说明没有手动改过，来源变化时跟着更新
+    public var sourceTitle: String?
+    public var sourceDue: String?
+    public init(id: String = "", title: String = "", notes: String = "", done: Bool = false, completedAt: Int64? = nil, due: String? = nil, priority: Int = 0, sort: Double = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, source: String? = nil, autoDone: Bool = false, createdAt: Int64 = 0, updatedAt: Int64 = 0, updatedBy: String = "", deleted: Bool = false, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = [], nextId: String? = nil, sourceTitle: String? = nil, sourceDue: String? = nil) {
         self.id = id
         self.title = title
         self.notes = notes
@@ -42,8 +47,11 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
         self.remindAt = remindAt
         self.`repeat` = `repeat`
         self.checklist = checklist
+        self.nextId = nextId
+        self.sourceTitle = sourceTitle
+        self.sourceDue = sourceDue
     }
-    private enum CodingKeys: String, CodingKey { case id, title, notes, done, completedAt, due, priority, sort, refSystem, refKey, refTitle, source, autoDone, createdAt, updatedAt, updatedBy, deleted, remindAt, `repeat`, checklist }
+    private enum CodingKeys: String, CodingKey { case id, title, notes, done, completedAt, due, priority, sort, refSystem, refKey, refTitle, source, autoDone, createdAt, updatedAt, updatedBy, deleted, remindAt, `repeat`, checklist, nextId, sourceTitle, sourceDue }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
@@ -66,6 +74,9 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
         remindAt = try c.decodeIfPresent(Int64.self, forKey: .remindAt)
         `repeat` = try c.decodeIfPresent(String.self, forKey: .`repeat`)
         checklist = try c.decodeIfPresent([ChecklistItem].self, forKey: .checklist) ?? []
+        nextId = try c.decodeIfPresent(String.self, forKey: .nextId)
+        sourceTitle = try c.decodeIfPresent(String.self, forKey: .sourceTitle)
+        sourceDue = try c.decodeIfPresent(String.self, forKey: .sourceDue)
     }
 }
 
