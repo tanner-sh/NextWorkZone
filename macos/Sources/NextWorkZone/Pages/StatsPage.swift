@@ -331,7 +331,8 @@ private struct Breakdown: View {
             if rows.isEmpty { Text("没有数据").font(.callout).foregroundStyle(.secondary) }
             ForEach(rows, id: \.0) { name, count in
                 HStack(spacing: 8) {
-                    Text(name).lineLimit(1).frame(width: 110, alignment: .leading)
+                    // 名称给更多宽度（项目、模块名常常很长，之前 110 点截得只剩几个字），条形相应变短
+                    Text(name).lineLimit(1).truncationMode(.middle).frame(width: 160, alignment: .leading)
                     GeometryReader { geo in
                         Capsule().fill(Color.accentColor.opacity(0.7)).frame(width: max(2, geo.size.width * CGFloat(count) / CGFloat(maxCount)))
                     }

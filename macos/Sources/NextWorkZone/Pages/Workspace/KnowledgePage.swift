@@ -73,6 +73,22 @@ struct KnowledgePage: View {
                         }
                     }, footer: { _ in EmptyView() })
                     .id(selected)
+                } else if pages?.isEmpty == true {
+                    // 知识库还是空的：直接给出开始的方式（之前只有一句“选择左侧的页面”）
+                    ContentUnavailableView {
+                        Label("知识库还是空的", systemImage: "book")
+                    } description: {
+                        Text("记下常用的做法和资料，或把解决过的 Jira 问题、常看的 Wiki 页面沉淀进来。")
+                    } actions: {
+                        VStack(spacing: 10) {
+                            Button("新建页面") { create(parent: nil) }.buttonStyle(.borderedProminent)
+                            HStack(spacing: 16) {
+                                Button("从 Jira 沉淀…") { importKind = .jira }
+                                Button("剪藏 Wiki 页面…") { importKind = .wiki }
+                            }
+                            .buttonStyle(.link)
+                        }
+                    }
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "book").font(.largeTitle)
@@ -229,9 +245,6 @@ struct KnowledgePage: View {
                     treeRow(row.page, depth: row.depth, hasChildren: !(tree[row.page.id] ?? []).isEmpty)
                         .tag(row.page.id)
                         .contextMenu(specs: { pageMenu(row.page) })
-                }
-                if pages?.isEmpty == true {
-                    Text("知识库还是空的。可以新建页面，或把解决过的 Jira 问题、常看的 Wiki 页面沉淀进来。").foregroundStyle(.secondary).lineLimit(4)
                 }
             }
         }

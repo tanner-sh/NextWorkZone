@@ -131,19 +131,36 @@ private struct ClipHistory: View {
                             .buttonStyle(.borderless).help("新建置顶板")
                     }
                 }
-                HStack {
-                    Picker("", selection: Binding(get: { list.kind }, set: { list.kind = $0; list.schedule() })) {
-                        Text("全部类型").tag(String?.none)
-                        ForEach(ClipKinds.all, id: \.self) { Text(ClipKinds.of($0).label).tag(String?.some($0)) }
+                // 类型、来源筛选：轻量的文字菜单（之前是两个弹出按钮）；筛选中时着色
+                HStack(spacing: 14) {
+                    Menu {
+                        Picker("类型", selection: Binding(get: { list.kind }, set: { list.kind = $0; list.schedule() })) {
+                            Text("全部类型").tag(String?.none)
+                            ForEach(ClipKinds.all, id: \.self) { Label(ClipKinds.of($0).label, systemImage: ClipKinds.of($0).icon).tag(String?.some($0)) }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } label: {
+                        Text(list.kind.map { ClipKinds.of($0).label } ?? "全部类型")
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    Picker("", selection: Binding(get: { list.app }, set: { list.app = $0; list.schedule() })) {
-                        Text("全部来源").tag(String?.none)
-                        ForEach(apps) { Text("\($0.name)（\($0.count)）").tag(String?.some($0.id)) }
+                    .tint(list.kind == nil ? .secondary : .accentColor)
+                    Menu {
+                        Picker("来源", selection: Binding(get: { list.app }, set: { list.app = $0; list.schedule() })) {
+                            Text("全部来源").tag(String?.none)
+                            ForEach(apps) { Text("\($0.name)（\($0.count)）").tag(String?.some($0.id)) }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } label: {
+                        Text(list.app.flatMap { id in apps.first { $0.id == id }?.name } ?? "全部来源")
                     }
-                    .labelsHidden()
+                    .tint(list.app == nil ? .secondary : .accentColor)
+                    Spacer()
                 }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, 12)
             if let settings {
@@ -302,9 +319,11 @@ private struct ClipDetail: View {
                     }
                 }
             } else {
+                // 图片、文件、代码铺满剩余高度；文字、链接、颜色按内容高度（之前一行字也撑满整块）
+                let fills = ["image", "file", "code"].contains(item.kind)
                 ClipPreviewBody(item: item, text: text, issues: issues)
                     .padding(12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
                     .groupBackground()
             }
             if !actions.isEmpty {
@@ -317,6 +336,8 @@ private struct ClipDetail: View {
                     }
                 }
             }
+            // 内容按高度显示时，余下的空白留在最下面
+            Spacer(minLength: 0)
         }
         .padding(24)
         .pageToolbar {

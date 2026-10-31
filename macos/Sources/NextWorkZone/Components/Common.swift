@@ -239,6 +239,16 @@ struct WebLoginHint: View {
     }
 }
 
+/// 鼠标是否在这一块上，用于只在悬停时显示的按钮。
+struct HoverReveal<Content: View>: View {
+    @ViewBuilder var content: (Bool) -> Content
+    @State private var hover = false
+
+    var body: some View {
+        content(hover).onHover { hover = $0 }
+    }
+}
+
 /// 侧栏底部：有系统需要网页登录时显示一个入口（代替在每篇内容上方重复显示的提示条）。
 struct SidebarLoginStatus: View {
     @Environment(AppModel.self) private var model

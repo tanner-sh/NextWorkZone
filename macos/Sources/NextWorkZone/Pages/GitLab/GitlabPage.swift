@@ -256,21 +256,26 @@ struct GitlabPage: View {
     private var projectPane: some View {
         List(selection: Binding(get: { selected }, set: { if let id = $0 { openProject(id) } })) {
             ForEach(visible) { p in
+                HoverReveal { hover in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(p.name).fontWeight(.medium).lineLimit(1)
                         Spacer()
                         Text(Fmt.time(p.lastActivityAt)).font(.caption).foregroundStyle(.secondary)
+                        // 已收藏的一直显示实心星标；没收藏的只在鼠标移到这一行上时出现（之前每行都有空心星标，很乱）
+                        let isStarred = starred.contains(p.id)
                         Button { toggleStar(p.id) } label: {
-                            Image(systemName: starred.contains(p.id) ? "star.fill" : "star").foregroundStyle(starred.contains(p.id) ? Color.yellow : Color.secondary)
+                            Image(systemName: isStarred ? "star.fill" : "star").foregroundStyle(isStarred ? Color.yellow : Color.secondary)
                         }
                         .buttonStyle(.borderless)
-                        .help(starred.contains(p.id) ? "取消收藏" : "收藏")
+                        .opacity(isStarred || hover ? 1 : 0)
+                        .help(isStarred ? "取消收藏" : "收藏")
                     }
                     Text("\(p.pathWithNamespace)\(p.description.map { $0.isEmpty ? "" : " · \($0)" } ?? "")").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         .help(p.description.map { "\(p.pathWithNamespace)\n\($0)" } ?? p.pathWithNamespace)
                 }
                 .padding(.vertical, 2)
+                }
                 .tag(p.id)
                 .contextMenu(specs: { projectMenu(p) })
             }

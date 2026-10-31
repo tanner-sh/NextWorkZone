@@ -172,10 +172,9 @@ struct NotesPage: View {
         }
         .listHeader {
             if tab == .daily {
-                DatePicker("跳到日期", selection: Binding(get: {
+                DayJumpButton(date: Binding(get: {
                     Fmt.date(ofDay: selected.hasPrefix("daily-") ? String(selected.dropFirst(6)) : today) ?? Date()
-                }, set: { selected = "daily-\(Fmt.day($0))" }), in: ...Date(), displayedComponents: .date)
-                .font(.callout)
+                }, set: { selected = "daily-\(Fmt.day($0))" }))
             } else {
                 FilterField(prompt: "筛选笔记", text: $filter)
             }
@@ -240,6 +239,28 @@ enum DocMenus {
                 beforeDelete()
                 try await DocActions.delete(id, title: title)
             }
+        }
+    }
+}
+
+/// 跳到某天的日记：点按钮弹出日历（之前是带上下箭头的日期输入框，要逐位调整）。
+private struct DayJumpButton: View {
+    @Binding var date: Date
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Label("跳到日期…", systemImage: "calendar")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.borderless)
+        .font(.callout)
+        .help("选择一天，查看那天的日记")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            DatePicker("", selection: Binding(get: { date }, set: { date = $0; open = false }), in: ...Date(), displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding(12)
         }
     }
 }

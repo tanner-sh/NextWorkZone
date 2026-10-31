@@ -428,11 +428,14 @@ struct ClipPreviewBody: View {
                 if item.kind == "code" {
                     CodeView(code: text, path: ClipCode.guessPath(text))
                 } else {
-                    ScrollView {
-                        Text(text.count > 200_000 ? String(text.prefix(200_000)) + "…" : text)
-                            .font(.callout)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    // 短文本按内容高度显示，放不下时才滚动
+                    let shown = Text(text.count > 200_000 ? String(text.prefix(200_000)) + "…" : text)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ViewThatFits(in: .vertical) {
+                        shown.fixedSize(horizontal: false, vertical: true)
+                        ScrollView { shown }
                     }
                 }
             }
