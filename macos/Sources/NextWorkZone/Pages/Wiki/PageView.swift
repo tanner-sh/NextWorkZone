@@ -128,7 +128,8 @@ struct PageView: View {
         }
     }
 
-    /// 页面的操作放在窗口工具栏右侧：收藏；编辑、新建子页面、历史版本、更多。
+    /// 页面的操作放在窗口工具栏右侧，按用途分成三块玻璃：收藏、观看；编辑；共享、更多。
+    /// 新建子页面、历史版本等不常用的在“更多”中（工具栏太长时系统会把右边的按钮挤进溢出菜单）。
     @ToolbarContentBuilder
     private func toolbar(_ page: WikiPageDetail) -> some ToolbarContent {
         let favorite = favorites.contains(page.id)
@@ -145,10 +146,13 @@ struct PageView: View {
                 .help(meta?.watching == true ? "停止观看（不再收到这个页面的更新通知）" : "观看（页面更新时通知我）")
         }
         ToolbarSpacer(.fixed)
+        if page.canEdit {
+            ToolbarItem {
+                Button("编辑", systemImage: "pencil", action: onEdit).labelStyle(.titleAndIcon).help("编辑页面")
+            }
+            ToolbarSpacer(.fixed)
+        }
         ToolbarItemGroup {
-            if page.canEdit { Button("编辑", systemImage: "pencil", action: onEdit).help("编辑页面") }
-            Button("新建子页面", systemImage: "doc.badge.plus") { onNewChild() }.help("新建子页面")
-            Button("历史版本", systemImage: "clock.arrow.circlepath") { history = true }.help("历史版本")
             if let link = URL(string: WikiMenus.pageUrl(page.id)) {
                 ShareLink(item: link, subject: Text(page.title)).help("共享")
             }

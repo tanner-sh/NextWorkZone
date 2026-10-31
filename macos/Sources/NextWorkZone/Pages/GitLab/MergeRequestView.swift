@@ -165,7 +165,7 @@ struct MergeRequestView: View {
         return specs
     }
 
-    /// 合并请求的操作放在窗口工具栏右侧：批准、合并、重新打开；刷新、在浏览器中打开、更多。
+    /// 合并请求的操作放在窗口工具栏右侧：批准、合并、重新打开；刷新、共享、更多（在浏览器中打开在“更多”中）。
     @ToolbarContentBuilder
     private func toolbar(_ mr: MergeRequest) -> some ToolbarContent {
         ToolbarItemGroup {
@@ -190,7 +190,7 @@ struct MergeRequestView: View {
         ToolbarSpacer(.fixed)
         ToolbarItemGroup {
             Button("刷新", systemImage: "arrow.clockwise") { refresh() }.help("刷新")
-            Button("在浏览器中打开", systemImage: "safari") { Links.openInBrowser(mr.webUrl) }.help("在浏览器中打开")
+            if let link = URL(string: mr.webUrl) { ShareLink(item: link, subject: Text(mr.title)).help("共享") }
             Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(moreEntries(mr)) }.help("更多")
         }
     }

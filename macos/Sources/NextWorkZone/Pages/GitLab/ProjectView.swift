@@ -101,7 +101,8 @@ struct ProjectView: View {
             }
             ToolbarItemGroup {
                 Button("新建合并请求", systemImage: "plus") { creating = NewMrRequest(source: ref != project.defaultBranch ? ref : nil) }.help("新建合并请求")
-                Button("在浏览器中打开", systemImage: "safari") { Links.openInBrowser(project.webUrl) }.help("在浏览器中打开")
+                // 在浏览器中打开：点上方的项目路径
+                if let link = URL(string: project.webUrl) { ShareLink(item: link, subject: Text(project.pathWithNamespace)).help("共享") }
             }
         }
     }

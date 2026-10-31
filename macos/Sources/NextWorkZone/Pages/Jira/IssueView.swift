@@ -135,7 +135,8 @@ struct IssueView: View {
                         specs += templates.map { tpl, t in .action("\(tpl.name)（\(t.name)）", icon: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) } }
                         MenuBuilder.popUp(specs)
                     } label: {
-                        Label("更多", systemImage: "chevron.down").labelStyle(.titleAndIcon)
+                        // 只显示箭头：右边还有“更多操作”，两个“更多”容易混；也让窄窗口中工具栏放得下
+                        Label("更多流转", systemImage: "chevron.down").labelStyle(.iconOnly)
                     }
                     .help("更多流转和流转模板")
                 }
