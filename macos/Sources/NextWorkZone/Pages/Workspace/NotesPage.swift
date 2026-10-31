@@ -56,7 +56,7 @@ struct NotesPage: View {
             }
             ToolbarItemGroup(placement: .navigation) {
                 Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记（⌘N）")
-                Button("最近删除", systemImage: "trash") { showDeleted = true }.help("最近删除的笔记和日记")
+                Button("最近删除", systemImage: "clock.arrow.circlepath") { showDeleted = true }.help("最近删除的笔记和日记")
             }
         }
         .sheet(isPresented: $showDeleted) {

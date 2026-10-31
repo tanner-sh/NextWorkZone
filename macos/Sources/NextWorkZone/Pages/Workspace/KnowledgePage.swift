@@ -103,7 +103,7 @@ struct KnowledgePage: View {
         .pageToolbar {
             ToolbarItemGroup {
                 Button("新建页面", systemImage: "square.and.pencil") { create(parent: nil) }.help("新建页面")
-                Button("最近删除", systemImage: "trash") { showDeleted = true }.help("最近删除的页面")
+                Button("最近删除", systemImage: "clock.arrow.circlepath") { showDeleted = true }.help("最近删除的页面")
                 Menu {
                     Button("从 Jira 沉淀…", systemImage: "smallcircle.filled.circle") { importKind = .jira }
                     Button("剪藏 Wiki 页面…", systemImage: "square.and.arrow.down") { importKind = .wiki }
