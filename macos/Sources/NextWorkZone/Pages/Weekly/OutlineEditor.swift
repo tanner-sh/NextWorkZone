@@ -37,10 +37,12 @@ struct OutlineEditor: View {
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         Circle()
                             .fill(item.level == 0 ? Color.primary : Color.secondary)
                             .frame(width: item.level == 0 ? 6 : 5, height: item.level == 0 ? 6 : 5)
+                            // 圆点与第一行文字的中线对齐（长条目会换成多行）
+                            .padding(.top, item.level == 0 ? 7 : 7.5)
                         OutlineField(
                             text: Binding(get: { items.indices.contains(index) ? items[index].text : "" }, set: { if items.indices.contains(index) { items[index].text = $0 } }),
                             placeholder: index == 0 ? placeholder : "",
@@ -156,8 +158,12 @@ private struct OutlineField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.lineBreakMode = .byTruncatingTail
-        field.cell?.isScrollable = true
+        // 长条目换行显示（之前单行滚动，超出宽度的部分看不到）；回车由代理拦截为新增一项
+        field.usesSingleLineMode = false
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.lineBreakMode = .byWordWrapping
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.delegate = context.coordinator
         return field
     }
@@ -182,8 +188,31 @@ private struct OutlineField: NSViewRepresentable {
         }
     }
 
+    /// 按给定宽度换行后的高度。
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView field: PasteField, context: Context) -> CGSize? {
+        let width = proposal.width ?? field.bounds.width
+        guard width > 0, width.isFinite else { return nil }
+        // HStack 最终给的宽度可能比提议的略宽几点：排好版后按实际宽度换行（宽度变化时会重新计算）
+        let measure = field.bounds.width > 0 ? field.bounds.width : width
+        return CGSize(width: width, height: field.wrappedHeight(width: measure))
+    }
+
     final class PasteField: NSTextField {
         var onPaste: ((String) -> Bool)?
+
+        override func setFrameSize(_ newSize: NSSize) {
+            let changed = newSize.width != frame.width
+            super.setFrameSize(newSize)
+            if changed { invalidateIntrinsicContentSize() }
+        }
+
+        func wrappedHeight(width: CGFloat) -> CGFloat {
+            guard let cell = cell?.copy() as? NSTextFieldCell else { return 18 }
+            // 编辑中以字段编辑器里的文字为准；空的时候按一行（或占位文字）计算
+            let string = currentEditor()?.string ?? stringValue
+            cell.stringValue = string.isEmpty ? (placeholderString ?? " ") : string
+            return ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height)
+        }
     }
 
     @MainActor
@@ -191,8 +220,10 @@ private struct OutlineField: NSViewRepresentable {
         var parent: OutlineField!
 
         func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
+            guard let field = obj.object as? PasteField else { return }
             parent.text = field.stringValue
+            // 换行数变化时重新计算高度
+            field.invalidateIntrinsicContentSize()
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -326,3 +357,4 @@ enum WeeklyText {
         return out
     }
 }
+

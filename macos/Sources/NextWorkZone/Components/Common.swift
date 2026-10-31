@@ -58,14 +58,19 @@ struct SysImage: View {
     var service: Service
     var src: String?
     var size: CGFloat? = nil
+    /// 图标读不到（如未网页登录）时显示的 SF Symbol，免得留下一块空位、旁边的文字看起来没对齐
+    var fallback: String? = nil
     @Environment(AppModel.self) private var model
     @State private var image: NSImage?
+    @State private var failed = false
 
     var body: some View {
         // 加载前用透明占位（空视图不会执行 task）
         ZStack {
             if let image {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else if failed, let fallback {
+                Image(systemName: fallback).resizable().aspectRatio(contentMode: .fit).foregroundStyle(.tertiary).padding(1)
             } else {
                 Color.clear
             }
@@ -77,12 +82,14 @@ struct SysImage: View {
     }
 
     private func load() async {
-        guard let src, !src.isEmpty else { image = nil; return }
+        guard let src, !src.isEmpty else { image = nil; failed = true; return }
         if let path = ImageCache.path(service: service, src: src) {
             image = await ImageCache.shared.load(path)
         } else if let url = URL(string: src), let (data, _) = try? await URLSession.shared.data(from: url) {
             image = NSImage(data: data)
         }
+        if Task.isCancelled { return }
+        failed = image == nil
     }
 }
 

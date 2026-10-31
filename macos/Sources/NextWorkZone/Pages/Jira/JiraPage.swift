@@ -492,7 +492,7 @@ private struct IssueRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 if unseen { Circle().fill(Color.accentColor).frame(width: 6, height: 6).help("上次查看之后有新变化").accessibilityLabel("有新变化") }
-                SysImage(service: .jira, src: issue.issueType.iconUrl, size: 16)
+                SysImage(service: .jira, src: issue.issueType.iconUrl, size: 16, fallback: "ticket")
                 Text(issue.key).font(.callout.monospaced()).foregroundStyle(.secondary)
                 if issue.resolution == nil, let r = reminder { Chip(text: AppModel.reminderLabel(r.kind, r.days), tint: r.kind == "overdue" || r.kind == "today" ? .red : .orange) }
                 if let res = issue.resolution, issue.status.category == "done" { Text(res).font(.caption).foregroundStyle(.secondary).lineLimit(1) }

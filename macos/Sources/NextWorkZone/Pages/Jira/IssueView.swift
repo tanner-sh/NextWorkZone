@@ -276,13 +276,13 @@ struct IssueView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     if let parent = issue.parent {
-                        SysImage(service: .jira, src: parent.issueType?.iconUrl, size: 16)
+                        SysImage(service: .jira, src: parent.issueType?.iconUrl, size: 16, fallback: "ticket")
                         Button("\(parent.key) \(parent.summary)") { model.navigate(NavTarget(.jira, issueKey: parent.key)) }
                             .buttonStyle(.link).lineLimit(1)
                             .contextMenu(specs: { issueMenu.specs(.key(parent.key, summary: parent.summary)) })
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }
-                    SysImage(service: .jira, src: issue.issueType.iconUrl, size: 16)
+                    SysImage(service: .jira, src: issue.issueType.iconUrl, size: 16, fallback: "ticket")
                     Button(issue.key) { Links.openInBrowser("\(model.baseUrl(.jira))/browse/\(issue.key)") }.buttonStyle(.link).help("在浏览器中打开")
                     Text("·").foregroundStyle(.secondary)
                     Text(issue.project.name).foregroundStyle(.secondary).lineLimit(1)

@@ -15,7 +15,7 @@ struct IssueRefRow<Actions: View>: View {
     var body: some View {
         HStack(spacing: 6) {
             if let prefix { Text(prefix).foregroundStyle(.secondary).lineLimit(1) }
-            SysImage(service: .jira, src: icon, size: 16)
+            SysImage(service: .jira, src: icon, size: 16, fallback: "ticket")
             Button(key) { AppModel.shared.navigate(NavTarget(.jira, issueKey: key)) }.buttonStyle(.link)
             Text(summary).lineLimit(1)
             Spacer(minLength: 4)
@@ -268,7 +268,7 @@ private struct SimilarItem: View {
         let comments = expanded ? hit.lastComments : Array(hit.lastComments.suffix(1))
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                SysImage(service: .jira, src: hit.issueType.iconUrl, size: 16)
+                SysImage(service: .jira, src: hit.issueType.iconUrl, size: 16, fallback: "ticket")
                 Text(hit.key).font(.callout.monospaced()).foregroundStyle(.secondary)
                 Text(hit.summary).lineLimit(1).help(hit.summary)
                 Spacer(minLength: 4)

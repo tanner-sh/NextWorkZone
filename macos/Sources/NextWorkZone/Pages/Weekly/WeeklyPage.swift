@@ -119,6 +119,36 @@ struct WeeklyPage: View {
         toast(parts.isEmpty ? "这些条目已在周报中" : "已\(parts.joined(separator: "，"))")
     }
 
+    /// 周次切换：前后一周的按钮和列出全部周次的菜单（周次很多，分段控件放不下）。页面中新的周次在前。
+    private func weekSwitcher(_ view: WeeklyView) -> some View {
+        let titles = view.sections.map(\.title)
+        let current = titles.firstIndex(of: entry?.sectionTitle ?? "")
+        func label(_ s: SectionInfo) -> String { s.coversToday ? "\(s.title) · 本周" : s.title }
+        return HStack(spacing: 6) {
+            Button("上一周", systemImage: "chevron.left") { if let current { switchSection(titles[current + 1]) } }
+                .labelStyle(.iconOnly)
+                .disabled(current.map { $0 + 1 >= titles.count } ?? true)
+            Menu {
+                Picker("周次", selection: Binding(get: { entry?.sectionTitle ?? "" }, set: { switchSection($0) })) {
+                    ForEach(view.sections, id: \.title) { s in Text(label(s)).tag(s.title) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                Text(current.map { label(view.sections[$0]) } ?? "选择周次").monospacedDigit()
+            }
+            .fixedSize()
+            .help("选择周次")
+            Button("下一周", systemImage: "chevron.right") { if let current { switchSection(titles[current - 1]) } }
+                .labelStyle(.iconOnly)
+                .disabled(current.map { $0 == 0 } ?? true)
+            if let current, let thisWeek = view.sections.firstIndex(where: \.coversToday), thisWeek != current {
+                Button("回到本周") { switchSection(titles[thisWeek]) }.buttonStyle(.link).padding(.leading, 6)
+            }
+        }
+        .controlSize(.large)
+    }
+
     private func editor(_ view: WeeklyView) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -137,14 +167,7 @@ struct WeeklyPage: View {
                     .noticeBackground(.orange)
                 }
                 if let notice { Text(notice).foregroundStyle(.green) }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Picker("", selection: Binding(get: { entry?.sectionTitle ?? "" }, set: { switchSection($0) })) {
-                        ForEach(view.sections, id: \.title) { s in Text(s.coversToday ? "\(s.title) · 本周" : s.title).tag(s.title) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
+                weekSwitcher(view)
                 if let entry, !entry.rowFound {
                     ErrorBox(message: "在「\(entry.sectionTitle)」中没有找到第一列为「\(view.personName)」的行。请确认你已被加入表格，或在设置中修改“我的名字”。")
                 }
@@ -180,9 +203,11 @@ struct WeeklyPage: View {
             }
             ToolbarSpacer(.fixed)
             ToolbarItem {
-                Button("预览并保存", systemImage: "square.and.arrow.down") { actionError = nil; confirmSave = true }
+                // 没有修改时显示“已保存”，不再是一个看不出原因的灰色按钮
+                Button(dirty ? "预览并保存" : "已保存", systemImage: dirty ? "square.and.arrow.down" : "checkmark") { actionError = nil; confirmSave = true }
                     .labelStyle(.titleAndIcon)
                     .prominentToolbarButton(dirty && !busy)
+                    .help(dirty ? "预览改动后保存到 Wiki 页面" : "没有未保存的修改")
             }
         }
         .pageSubtitle(.weekly, entry?.sectionTitle ?? "")

@@ -163,7 +163,7 @@ struct ActivityPage: View {
                         Image(systemName: "text.book.closed").foregroundStyle(.secondary)
                         Text(first.issueSummary).lineLimit(1)
                     } else {
-                        SysImage(service: .jira, src: first.issueTypeIcon, size: 16)
+                        SysImage(service: .jira, src: first.issueTypeIcon, size: 16, fallback: "ticket")
                         Text(first.issueKey).font(.callout.monospaced()).foregroundStyle(.secondary)
                         Text(first.issueSummary).lineLimit(1)
                     }

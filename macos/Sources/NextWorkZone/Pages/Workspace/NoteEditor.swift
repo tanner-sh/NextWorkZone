@@ -40,7 +40,7 @@ struct NoteEditor<Footer: View>: View {
                     service: .confluence,
                     controller: controller,
                     placeholder: placeholder,
-                    minHeight: 160,
+                    minHeight: 100,
                     onChange: save,
                     onOpenLink: openLink,
                     onOpenIssue: { model.navigate(NavTarget(.jira, issueKey: $0)) },
