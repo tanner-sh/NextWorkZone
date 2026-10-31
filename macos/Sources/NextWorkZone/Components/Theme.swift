@@ -18,6 +18,24 @@ enum Theme {
     static var groupFill: some ShapeStyle { .quaternary.opacity(0.35) }
     /// 小标签（分支名、已选项）的底色
     static var chipFill: some ShapeStyle { .quaternary.opacity(0.6) }
+
+    /// 浮动面板的外形
+    static var panelShape: RoundedRectangle { RoundedRectangle(cornerRadius: panelRadius) }
+
+    /// 与所在容器（浮动面板、窗口、表单）同心的圆角：离容器边缘越近，圆角越接近容器的圆角减去间距，
+    /// 离得远的不小于 `minimum`。手算“面板圆角 − 内边距”在改了内边距后就对不上了，交给系统算。
+    static func concentric(minimum: CGFloat = controlRadius) -> ConcentricRectangle {
+        ConcentricRectangle(corners: .concentric(minimum: .fixed(minimum)), isUniform: true)
+    }
+}
+
+extension View {
+    /// 浮动面板（⌘K、剪贴板面板、快速记录窗口）：玻璃底，并把面板的外形告诉其中的内容，
+    /// 里面用 `Theme.concentric()` 的选中底色、卡片随面板圆角同心。
+    func floatingPanel(_ glass: Glass = .regular) -> some View {
+        containerShape(Theme.panelShape)
+            .glassEffect(glass, in: Theme.panelShape)
+    }
 }
 
 /// 淡色底：开启“增强对比度”时加深并加一圈分隔线（玻璃由系统处理，这里只管自己画的底色）。

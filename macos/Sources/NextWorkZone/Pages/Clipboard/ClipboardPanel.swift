@@ -453,7 +453,7 @@ struct ClipPanelView: View {
                 ClipPreviewLayer(model: model, item: current, edit: mode == .edit).id("\(current.id)-\(mode == .edit)")
             }
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
+        .floatingPanel()
         .onChange(of: model.opening) {
             searchFocused = true
             entering = true
@@ -607,11 +607,12 @@ struct ClipPanelView: View {
             .padding(.bottom, 8)
         }
         .frame(width: 230, height: 236)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Color(nsColor: .textBackgroundColor))
+        // 同心圆角没有 strokeBorder：描双倍宽的线，再连同内容按同一形状裁掉外面的一半
         .overlay {
-            RoundedRectangle(cornerRadius: 12).strokeBorder(selected || mark != nil ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 3 : mark != nil ? 2 : 1)
+            Theme.concentric(minimum: Theme.cardRadius).stroke(selected || mark != nil ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 6 : mark != nil ? 4 : 2)
         }
+        .clipShape(Theme.concentric(minimum: Theme.cardRadius))
         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         .scaleEffect(selected ? 1.0 : 0.98)
         .animation(.snappy(duration: 0.15), value: selected)
@@ -788,7 +789,7 @@ struct ClipPreviewLayer: View {
             .frame(width: 300)
         }
         // 盖在面板上的同一种玻璃（两层叠起来更不透明，预览的文字更好读）
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
+        .glassEffect(.regular, in: Theme.concentric(minimum: Theme.cardRadius))
         .task {
             text = item.text
             title = item.title

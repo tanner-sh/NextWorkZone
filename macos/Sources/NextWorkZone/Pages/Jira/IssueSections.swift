@@ -449,21 +449,24 @@ struct AttachmentTile: View {
                 }
             }
             .frame(height: 80)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius))
             .overlay(alignment: .topTrailing) {
                 if hover {
-                    HStack(spacing: 4) {
-                        Button { AttachmentViewer.copy(a, service: service) } label: {
-                            Image(systemName: "doc.on.doc").font(.caption).padding(5).background(.regularMaterial, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("复制文件，可以粘贴到访达、聊天或邮件中")
-                        if let onDelete {
-                            Button(action: onDelete) {
-                                Image(systemName: "trash").font(.caption).padding(5).background(.regularMaterial, in: Circle())
+                    // 浮在缩略图上的按钮用玻璃（与查看器、工具栏的按钮一致），两个靠在一起时融成一块
+                    GlassEffectContainer(spacing: 4) {
+                        HStack(spacing: 4) {
+                            Button { AttachmentViewer.copy(a, service: service) } label: {
+                                Image(systemName: "doc.on.doc").font(.caption).padding(5).glassEffect(.regular.interactive(), in: Circle())
                             }
                             .buttonStyle(.plain)
-                            .help("删除附件")
+                            .help("复制文件，可以粘贴到访达、聊天或邮件中")
+                            if let onDelete {
+                                Button(action: onDelete) {
+                                    Image(systemName: "trash").font(.caption).padding(5).glassEffect(.regular.interactive(), in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("删除附件")
+                            }
                         }
                     }
                     .padding(4)

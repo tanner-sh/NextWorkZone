@@ -348,30 +348,34 @@ struct ToastOverlay: View {
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
-        VStack(spacing: 6) {
-            ForEach(appearsActive ? toasts.items : []) { t in
-                HStack(spacing: 10) {
-                    Text(t.message)
-                    if let p = t.progress {
-                        ProgressView(value: p).frame(width: 120)
-                        Text("\(Int(p * 100))%").monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    if let action = t.action {
-                        Button(action.label) {
-                            toasts.dismiss(t.id)
-                            action.run()
+        // 提示出现时玻璃从无到有凝结、消失时消散（materialize）；融合距离为 0，叠在一起的几条不会粘成一块
+        GlassEffectContainer(spacing: 0) {
+            VStack(spacing: 6) {
+                ForEach(appearsActive ? toasts.items : []) { t in
+                    HStack(spacing: 10) {
+                        Text(t.message)
+                        if let p = t.progress {
+                            ProgressView(value: p).frame(width: 120)
+                            Text("\(Int(p * 100))%").monospacedDigit().foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.borderless)
-                        .fontWeight(.semibold)
+                        if let action = t.action {
+                            Button(action.label) {
+                                toasts.dismiss(t.id)
+                                action.run()
+                            }
+                            .buttonStyle(.borderless)
+                            .fontWeight(.semibold)
+                        }
                     }
+                        .font(.callout)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .glassEffect(t.error ? .regular.tint(.red.opacity(0.35)) : .regular, in: Capsule())
+                        .glassEffectTransition(.materialize)
+                        // 只有带按钮的提示接收点击，其余不挡住下面的内容
+                        .allowsHitTesting(t.action != nil)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                    .font(.callout)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .glassEffect(t.error ? .regular.tint(.red.opacity(0.35)) : .regular, in: Capsule())
-                    // 只有带按钮的提示接收点击，其余不挡住下面的内容
-                    .allowsHitTesting(t.action != nil)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.snappy, value: toasts.items)

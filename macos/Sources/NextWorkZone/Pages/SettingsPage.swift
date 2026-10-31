@@ -10,6 +10,7 @@ struct SettingsPage: View {
     @State private var accounts: [Service: WebAccountInput] = [:]
     @State private var tests: [Service: TestState] = [:]
     @State private var notice: (ok: Bool, text: String)?
+    @Namespace private var saveBar
     @State private var saving = false
     @State private var filled = false
 
@@ -106,26 +107,32 @@ struct SettingsPage: View {
         }
         .formStyle(.grouped)
         // 有未保存的修改时浮在底部，滚到哪里都能保存；表单可以滚到它下面。保存的结果也显示在这里（几秒后消失）
+        // 保存条与保存结果是同一块玻璃：保存后整条收缩成结果提示，几秒后消散
         .safeAreaBar(edge: .bottom) {
-            if dirty {
-                HStack {
-                    if let notice, !notice.ok { Text(notice.text).foregroundStyle(.red).lineLimit(2) } else { Text("连接设置有未保存的修改") }
-                    Spacer()
-                    Button("放弃修改") { fill(settings); notice = nil }.disabled(saving)
-                    Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
-                }
-                .padding(.leading, 18)
-                .padding([.trailing, .vertical], 8)
-                .glassEffect(.regular, in: Capsule())
-                .padding(12)
-            } else if let notice {
-                Label(notice.text, systemImage: notice.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(notice.ok ? .green : .red)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+            GlassEffectContainer {
+                if dirty {
+                    HStack {
+                        if let notice, !notice.ok { Text(notice.text).foregroundStyle(.red).lineLimit(2) } else { Text("连接设置有未保存的修改") }
+                        Spacer()
+                        Button("放弃修改") { fill(settings); notice = nil }.disabled(saving)
+                        Button(saving ? "保存中…" : "保存", action: save).buttonStyle(.borderedProminent).disabled(saving).keyboardShortcut("s", modifiers: .command)
+                    }
+                    .padding(.leading, 18)
+                    .padding([.trailing, .vertical], 8)
                     .glassEffect(.regular, in: Capsule())
-                    .padding(12)
+                    .glassEffectID("bar", in: saveBar)
+                } else if let notice {
+                    Label(notice.text, systemImage: notice.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(notice.ok ? .green : .red)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .glassEffect(.regular, in: Capsule())
+                        .glassEffectID("bar", in: saveBar)
+                }
             }
+            .padding(12)
+            .animation(.snappy, value: dirty)
+            .animation(.snappy, value: notice?.text)
         }
     }
 

@@ -237,7 +237,7 @@ struct CommandPalette: View {
                                     .padding(.vertical, 6)
                                     .background {
                                         if index == active {
-                                            RoundedRectangle(cornerRadius: Theme.panelRadius - 8)
+                                            Theme.concentric(minimum: 10)
                                                 .fill(Color.accentColor.opacity(0.18))
                                                 .matchedGeometryEffect(id: "active", in: selection)
                                         }
@@ -274,7 +274,7 @@ struct CommandPalette: View {
                 .padding(.vertical, 8)
             }
             .frame(width: 640)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.panelRadius))
+            .floatingPanel()
             .padding(.top, 80)
         }
         .onAppear { focused = true }
