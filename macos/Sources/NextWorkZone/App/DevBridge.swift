@@ -20,6 +20,10 @@ import NWZServices
 /// - `/key?chars=<文字>`：向主窗口发送按键（测试键盘操作）。
 /// - `/hit?x=&y=`：主窗口中某点（窗口坐标，左上角为原点）所在的视图及其各级上层（排查绘制问题）。
 /// - `/menu[?path=菜单/项目]`：列出菜单栏项目，或执行某项（按标题前缀匹配）。
+/// - `/click?x=&y=[&button=right][&count=2][&move=1]`、`/type?text=`、`/press?key=&mods=`：点击、输入文字、按键（屏幕锁定时也能操作窗口）。
+/// - `/day[?set=yyyy-MM-dd]`：模拟过了零点（换掉应用的“今天”）。
+/// - `/toast[?tap=1]`：当前的提示，或点提示中的按钮（例如“撤销”）。
+/// - `/undo[?do=undo|redo]`：主窗口撤销记录中的操作名，或执行一步。
 /// - `/responder`：键盘焦点所在的视图及其各级上层；`/focus-at?x=&y=`：让某点所在的列表等视图获得焦点。
 @MainActor
 enum DevBridge {
@@ -28,6 +32,13 @@ enum DevBridge {
         if let tv = view as? EditorTextView { return tv }
         for sub in view.subviews { if let tv = findEditor(sub) { return tv } }
         return nil
+    }
+
+    /// 视图及其下层的悬停提示和读屏标签（SwiftUI 工具栏项目没有 label，按这些找）
+    static func helpTexts(_ view: NSView) -> [String] {
+        var list = [view.toolTip, view.accessibilityLabel()].compactMap { $0 }.filter { !$0.isEmpty }
+        for sub in view.subviews { list += helpTexts(sub) }
+        return list
     }
 
     private static var listener: NWListener?
@@ -231,9 +242,18 @@ enum DevBridge {
             while let cur = v { chain.append("\(type(of: cur)) \(cur.frame)"); v = cur.superview }
             return String(data: (try? JSONSerialization.data(withJSONObject: chain)) ?? Data(), encoding: .utf8) ?? "[]"
         case "/toolbar":
-            // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）
+            // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）；press=<标题> 点击显示着的那一项
+            if let label = query["press"], let window = MainWindow.window,
+               let item = window.toolbar?.items.first(where: { !$0.isHidden && ($0.label == label || $0.itemIdentifier.rawValue == label || $0.view.map { Self.helpTexts($0) }?.contains(label) == true) }), let view = item.view {
+                let center = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    if let e = NSEvent.mouseEvent(with: type, location: center, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                        window.sendEvent(e)
+                    }
+                }
+            }
             let items = MainWindow.window?.toolbar?.items.map { item in
-                ["id": item.itemIdentifier.rawValue, "label": item.label, "hidden": item.isHidden ? "1" : "0"]
+                ["id": item.itemIdentifier.rawValue, "label": item.label, "hidden": item.isHidden ? "1" : "0", "help": item.view.map { Self.helpTexts($0).joined(separator: "|") } ?? "", "frame": item.view.map { "\($0.convert($0.bounds, to: nil))" } ?? ""]
             } ?? []
             let title = MainWindow.window.map { ["title": $0.title, "subtitle": $0.subtitle] } ?? [:]
             return String(data: (try? JSONSerialization.data(withJSONObject: ["items": items, "window": title])) ?? Data(), encoding: .utf8) ?? "{}"
@@ -274,6 +294,68 @@ enum DevBridge {
                 return String(decoding: data, as: UTF8.self)
             default: break
             }
+        case "/click":
+            // 在主窗口中点击（窗口坐标，左上角为原点；/snapshot 的像素除以缩放倍数）：button=right 右键，count=2 双击，move=1 只移动鼠标（悬停）
+            guard let window = MainWindow.window, let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return "{}" }
+            // 应用在后台时窗口不是主窗口，点击不会让输入框获得焦点
+            if !window.isKeyWindow { NSApp.activate(); window.makeKeyAndOrderFront(nil) }
+            let point = NSPoint(x: x, y: window.frame.height - y)
+            let right = query["button"] == "right"
+            func post(_ type: NSEvent.EventType, _ count: Int) {
+                if let e = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1) {
+                    NSApp.sendEvent(e)
+                }
+            }
+            if query["move"] != nil {
+                post(.mouseMoved, 0)
+            } else {
+                for i in 1...(Int(query["count"] ?? "1") ?? 1) {
+                    post(right ? .rightMouseDown : .leftMouseDown, i)
+                    post(right ? .rightMouseUp : .leftMouseUp, i)
+                }
+            }
+            return "{\"width\":\(window.frame.width),\"height\":\(window.frame.height)}"
+        case "/type":
+            // 向键盘焦点输入文字（含中文）
+            if let text = query["text"], let responder = (NSApp.keyWindow ?? MainWindow.window?.attachedSheet ?? MainWindow.window)?.firstResponder as? NSTextInputClient {
+                responder.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        case "/press":
+            // 按键：key=return|delete|escape|tab|up|down 或单个字符，mods=cmd,shift,option,ctrl（菜单快捷键也经过这里）
+            guard let key = query["key"] else { return "{}" }
+            let codes: [String: (UInt16, String)] = ["return": (36, "\r"), "delete": (51, "\u{7f}"), "escape": (53, "\u{1b}"), "tab": (48, "\t"), "up": (126, "\u{F700}"), "down": (125, "\u{F701}")]
+            let (code, chars) = codes[key] ?? (0, key)
+            var flags: NSEvent.ModifierFlags = []
+            for m in (query["mods"] ?? "").split(separator: ",") {
+                switch m { case "cmd": flags.insert(.command); case "shift": flags.insert(.shift); case "option": flags.insert(.option); case "ctrl": flags.insert(.control); default: break }
+            }
+            let window = NSApp.keyWindow ?? MainWindow.window?.attachedSheet ?? MainWindow.window
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window?.windowNumber ?? 0, context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+                    NSApp.sendEvent(e)
+                }
+            }
+        case "/undo":
+            // 主窗口的撤销记录：do=undo|redo 执行一步；返回当前可撤销、可重做的操作名
+            let manager = MainWindow.window?.undoManager
+            switch query["do"] {
+            case "undo": if manager?.canUndo == true { manager?.undo() }
+            case "redo": if manager?.canRedo == true { manager?.redo() }
+            default: break
+            }
+            let info = ["undo": manager?.canUndo == true ? manager!.undoActionName : "", "redo": manager?.canRedo == true ? manager!.redoActionName : ""]
+            return String(data: (try? JSONSerialization.data(withJSONObject: info)) ?? Data(), encoding: .utf8) ?? "{}"
+        case "/day":
+            // 模拟日期变化（过了零点）：set=yyyy-MM-dd 把应用的“今天”换成这一天，不带参数恢复
+            model.today = query["set"] ?? Fmt.today()
+        case "/toast":
+            // 当前的提示（窗口不在前台时不显示，在这里读）；tap=1 点最后一条提示中的按钮
+            if query["tap"] != nil, let item = Toasts.shared.items.last(where: { $0.action != nil }) {
+                Toasts.shared.dismiss(item.id)
+                item.action?.run()
+            }
+            let list = Toasts.shared.items.map { ["message": $0.message, "action": $0.action?.label ?? ""] }
+            return String(data: (try? JSONSerialization.data(withJSONObject: list)) ?? Data(), encoding: .utf8) ?? "[]"
         case "/responder":
             // 键盘焦点：主窗口的第一响应者及其各级上层
             var chain: [String] = []
