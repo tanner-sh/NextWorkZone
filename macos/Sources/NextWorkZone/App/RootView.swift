@@ -26,6 +26,10 @@ struct RootView: View {
                 KeptPages(pages: kept, active: model.current.page, visits: visits) { page, state in
                     AnyView(pageView(page).environment(\.page, state).environment(model))
                 }
+                // 宿主视图铺到窗口工具栏下面：各页面的 NSHostingView 按窗口算出顶部安全区，正文仍从工具栏下方开始，
+                // 但滚动时能滚进工具栏下面，由工具栏的滚动边缘效果模糊（否则在工具栏下沿被硬生生切掉）。
+                // 这个边缘效果由窗口按 AppKit 默认样式（模糊加一条细线）画，SwiftUI 的 scrollEdgeEffectStyle 改不了它
+                .ignoresSafeArea(.container, edges: .top)
                 if !Self.keepAlive.contains(model.current.page) {
                     pageView(model.current.page)
                         .id(model.current.page)

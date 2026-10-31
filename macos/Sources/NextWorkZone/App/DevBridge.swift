@@ -218,8 +218,9 @@ enum DevBridge {
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         case "/scroll":
-            // 滚动主窗口中某点（窗口坐标，左上角为原点）所在的滚动区：dy 为向下滚动的点数
-            guard let window = MainWindow.window, let root = window.contentView,
+            // 滚动主窗口（或 win 指定编号的窗口）中某点（窗口坐标，左上角为原点）所在的滚动区：dy 为向下滚动的点数
+            let target = query["win"].flatMap(Int.init).flatMap { n in NSApp.windows.first { $0.windowNumber == n } } ?? MainWindow.window
+            guard let window = target, let root = window.contentView,
                   let x = query["x"].flatMap(Double.init), let y = query["y"].flatMap(Double.init) else { return #"{"error":"scroll"}"# }
             let point = NSPoint(x: x, y: root.bounds.height - y)
             guard let scroll = root.hitTest(point)?.enclosingScrollView else { return #"{"error":"no scroll view"}"# }

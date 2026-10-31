@@ -24,7 +24,9 @@ private struct ImageViewerView: View {
     var body: some View {
         Group {
             if let image {
+                // 图片铺到窗口顶边，标题栏透明地浮在图片上（与“预览”、快速查看一致）；按钮仍在标题栏下方
                 ZoomableImage(image: image, actualSize: actualSize) { actualSize.toggle() }
+                    .ignoresSafeArea(.container, edges: .top)
                     .overlay(alignment: .topTrailing) {
                         HStack(spacing: 8) {
                             Button("复制图片", systemImage: "doc.on.doc") {
@@ -46,6 +48,7 @@ private struct ImageViewerView: View {
             }
         }
         .frame(minWidth: 400, minHeight: 300)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .task {
             if let path = ImageCache.path(service: service, src: src) {
                 image = await ImageCache.shared.load(path)
