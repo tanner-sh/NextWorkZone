@@ -279,15 +279,17 @@ struct AttentionCard: View {
                     if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer(minLength: 8)
-                if item.source != "due" { Text(Fmt.time(ms: item.at)).font(.caption).foregroundStyle(.secondary) }
-                HStack(spacing: 8) {
-                    Button("今天", action: today).controlSize(.small).help("转为今天的待办")
-                    Button(action: snooze) { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒").accessibilityLabel("稍后提醒")
-                    Button(action: more) { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多").accessibilityLabel("更多")
+                // 操作按钮在鼠标移入时盖住时间显示（之前不显示时也占着位置，时间和右侧的“已处理”之间空出一大块）
+                ZStack(alignment: .trailing) {
+                    if item.source != "due" { Text(Fmt.time(ms: item.at)).font(.caption).foregroundStyle(.secondary).opacity(hover ? 0 : 1) }
+                    HStack(spacing: 8) {
+                        Button("今天", action: today).controlSize(.small).help("转为今天的待办")
+                        Button(action: snooze) { Image(systemName: "alarm") }.buttonStyle(.borderless).help("稍后提醒").accessibilityLabel("稍后提醒")
+                        Button(action: more) { Image(systemName: "chevron.down") }.buttonStyle(.borderless).help("更多").accessibilityLabel("更多")
+                    }
+                    .opacity(hover ? 1 : 0)
+                    .allowsHitTesting(hover)
                 }
-                // 不显示时仍占位，鼠标移入时这一行不跳动
-                .opacity(hover ? 1 : 0)
-                .allowsHitTesting(hover)
                 Button(action: handled) { Image(systemName: "checkmark") }.buttonStyle(.borderless).help("已处理").accessibilityLabel("已处理")
             }
             .onHover { hover = $0 }
@@ -297,7 +299,9 @@ struct AttentionCard: View {
     private struct ItemIcon: View {
         var item: InboxItem
         var body: some View {
-            let (icon, tint): (String, Color) = item.source == "due" ? ("clock", .orange) : item.source == "mr" ? ("arrow.triangle.pull", .purple) : item.system == "wiki" ? ("text.book.closed", .teal) : ("smallcircle.filled.circle", .blue)
+            // 动态按最新一条的类型区分（分配、评论、提到、状态变化……），一眼看出是什么事
+            let kind = item.events.first.flatMap { ActivityPage.kindIcons[$0.kind] }
+            let (icon, tint): (String, Color) = item.source == "due" ? ("clock", .orange) : item.source == "mr" ? ("arrow.triangle.pull", .purple) : item.system == "wiki" ? (kind ?? "text.book.closed", .teal) : (kind ?? "smallcircle.filled.circle", .blue)
             Image(systemName: icon).foregroundStyle(tint).frame(width: 18)
         }
     }

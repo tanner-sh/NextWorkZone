@@ -122,23 +122,33 @@ struct IssueView: View {
     @ToolbarContentBuilder
     private func toolbar(_ issue: IssueDetail) -> some ToolbarContent {
         if !transitions.isEmpty || !quickTemplates.isEmpty {
-            ToolbarItemGroup {
-                // 前两个流转直接显示（与 Jira 网页一致），其余和模板收进“更多”
-                ForEach(transitions.prefix(2)) { t in
-                    Button(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) }.help("流转到「\(t.to.name)」")
-                }
-                if transitions.count + quickTemplates.count > 2 {
-                    Button {
-                        let templates = quickTemplates
-                        var specs: [MenuSpec] = transitions.dropFirst(2).map { t in .action(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) } }
-                        if !templates.isEmpty && transitions.count > 2 { specs.append(.separator) }
-                        specs += templates.map { tpl, t in .action("\(tpl.name)（\(t.name)）", icon: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) } }
-                        MenuBuilder.popUp(specs)
+            ToolbarItem {
+                // 流转合成一个分体按钮：点按钮执行第一个流转（与 Jira 网页最左边的按钮一致），箭头列出其余流转和模板。
+                // 之前前两个流转各占一个按钮、再加一个箭头，和编辑、关注、更多挤在一起
+                let templates = quickTemplates
+                if let first = transitions.first {
+                    Menu {
+                        ForEach(transitions) { t in
+                            Button(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) }
+                        }
+                        if !templates.isEmpty {
+                            Divider()
+                            ForEach(templates, id: \.0.id) { tpl, t in
+                                Button("\(tpl.name)（\(t.name)）", systemImage: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) }
+                            }
+                        }
                     } label: {
-                        // 只显示箭头：右边还有“更多操作”，两个“更多”容易混；也让窄窗口中工具栏放得下
-                        Label("更多流转", systemImage: "chevron.down").labelStyle(.iconOnly)
+                        Text(first.name)
+                    } primaryAction: {
+                        activeTransition = .init(issue: issue.summaryValue, transition: first)
                     }
-                    .help("更多流转和流转模板")
+                    .help("流转到「\(first.to.name)」；箭头中有其余流转和流转模板")
+                } else {
+                    Menu("流转") {
+                        ForEach(templates, id: \.0.id) { tpl, t in
+                            Button("\(tpl.name)（\(t.name)）", systemImage: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) }
+                        }
+                    }
                 }
             }
             ToolbarSpacer(.fixed)
@@ -392,8 +402,9 @@ struct IssueView: View {
         let inline = fieldsShown(issue).filter { $0.html == nil && $0.id != "assignee" }
         let assigneeName = issue.fields.first { $0.id == "assignee" }?.name ?? ""
         VStack(alignment: .leading, spacing: 8) {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 9) {
-            GridRow {
+        // 宽度够时排成两列（之前一长列把描述推到首屏下面），窄时一列
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 24, alignment: .topLeading)], alignment: .leading, spacing: 9) {
+            FieldCell {
                 FieldName(name: "经办人", changed: changed.contains("经办人") || changed.contains("Assignee") || changed.contains(assigneeName))
                 HStack(spacing: 6) {
                     if let a = issue.assignee {
@@ -408,7 +419,7 @@ struct IssueView: View {
                     Button("更改") { assigning = true }.buttonStyle(.borderless)
                 }
             }
-            GridRow {
+            FieldCell {
                 FieldName(name: "优先级", changed: changed.contains("优先级") || changed.contains("Priority"))
                 Button {
                     Task {
@@ -435,7 +446,7 @@ struct IssueView: View {
                 .help("修改优先级")
             }
             ForEach(inline) { f in
-                GridRow {
+                FieldCell {
                     FieldName(name: f.name, changed: changed.contains(f.name))
                     HStack(spacing: 6) {
                         if f.id == "assignee" || f.id == "reporter" { Avatar(name: f.text, size: 20) }
@@ -451,7 +462,7 @@ struct IssueView: View {
             }
             // 与网页“人员”一栏一致：投票、关注
             if let votes {
-                GridRow {
+                FieldCell {
                     FieldName(name: "投票")
                     HStack(spacing: 6) {
                         Text("\(votes.count)").monospacedDigit().padding(.horizontal, 6).chipBackground()
@@ -461,7 +472,7 @@ struct IssueView: View {
                 }
             }
             if let watchers {
-                GridRow {
+                FieldCell {
                     FieldName(name: "关注")
                     HStack(spacing: 6) {
                         Text("\(watchers.count)").monospacedDigit().padding(.horizontal, 6).chipBackground()
@@ -475,7 +486,7 @@ struct IssueView: View {
                 }
             }
             if let tt = issue.timeTracking {
-                GridRow {
+                FieldCell {
                     FieldName(name: "时间跟踪")
                     TimeTrackingValue(tt: tt)
                 }
@@ -491,6 +502,16 @@ struct IssueView: View {
     }
 }
 
+/// 字段区中的一项：字段名和值。
+private struct FieldCell<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// 字段名：别人刚修改过的标为橙色。
 private struct FieldName: View {
     var name: String
@@ -500,7 +521,8 @@ private struct FieldName: View {
         Text(name)
             .foregroundStyle(changed ? Color.orange : Color.secondary)
             .fontWeight(changed ? .semibold : .regular)
-            .frame(width: 110, alignment: .leading)
+            // 两列时字段名不能太宽；六个字以内的名字放得下，更长的换行
+            .frame(width: 88, alignment: .leading)
             .help(changed ? "上次查看之后有人修改了这个字段" : "")
     }
 }
