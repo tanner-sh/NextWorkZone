@@ -29,7 +29,6 @@ struct ClipboardPage: View {
         .pageToolbar {
             ToolbarItem(placement: .navigation) { switcher }
         }
-        .pageSubtitle(.tools, "记录复制过的内容，随时搜索、粘贴")
     }
 }
 

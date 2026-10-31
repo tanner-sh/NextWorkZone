@@ -85,7 +85,7 @@ struct KnowledgePage: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .pageToolbar {
-            ToolbarItemGroup(placement: .navigation) {
+            ToolbarItemGroup {
                 Button("新建页面", systemImage: "square.and.pencil") { create(parent: nil) }.help("新建页面")
                 Button("最近删除", systemImage: "trash") { showDeleted = true }.help("最近删除的页面")
                 Menu {

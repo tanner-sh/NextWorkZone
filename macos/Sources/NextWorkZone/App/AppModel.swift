@@ -15,6 +15,8 @@ final class AppModel {
     var webAccess: [Service: WebAccess] = [:]
     /// 每次网页访问状态变化时递增，用于让图片重新加载。
     var sessionVersion = 0
+    /// 本次运行中点过“稍后”的网页登录提示（侧栏底部仍有入口）
+    var loginHintDismissed: Set<Service> = []
     /// 不在侧边栏显示的工具。
     var hiddenTools: [String] = []
 

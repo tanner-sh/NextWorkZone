@@ -74,7 +74,6 @@ struct ActivityPage: View {
                 content
                     .pageToolbar { toolbar }
                     .pageCommands { PageCommands(title: "动态", refresh: { Task { await refresh() } }) }
-                    .pageSubtitle(.activity, model.activity?.lastCheck.map { "上次检查 \(Fmt.time($0))" } ?? "")
             }
         }
         .issueMenuDialogs(issueMenu)
@@ -129,8 +128,10 @@ struct ActivityPage: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("你经办、报告、关注的问题和提到你的评论，以及 Wiki 上的评论、提到、分享和你关注的页面的修改。每 3 分钟检查一次。")
+                // 上次检查时间（之前在窗口副标题中）；包含哪些动态放在悬停提示中
+                Text(model.activity?.lastCheck.map { "上次检查 \(Fmt.time($0)) · 每 3 分钟检查一次" } ?? "每 3 分钟检查一次")
                     .font(.callout).foregroundStyle(.secondary)
+                    .help("包括你经办、报告、关注的问题和提到你的评论，以及 Wiki 上的评论、提到、分享和你关注的页面的修改")
                 if let error { ErrorBox(message: error) { Task { await refresh() } } }
                 if model.activity == nil { ProgressView() }
                 let days = self.days
@@ -139,8 +140,9 @@ struct ActivityPage: View {
                 }
                 ForEach(days, id: \.0) { day, groups in
                     VStack(alignment: .leading, spacing: 6) {
+                        // “昨天 · 星期五”“10月29日 · 星期四”（之前是“10月29日 · 2026-10-29”，日期写了两遍）
                         let label = Fmt.dayLabel(day)
-                        Text(label + (label != day && day != Fmt.today() ? " · \(day)" : "")).font(.caption).foregroundStyle(.secondary)
+                        Text(day == Fmt.today() || label.hasPrefix("周") ? label : "\(label) · \(Fmt.weekday(day))").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                         ForEach(groups, id: \.first!.id) { group in row(group) }
                     }
                 }
@@ -155,6 +157,10 @@ struct ActivityPage: View {
         let first = group[0]
         let unread = group.contains { !$0.read }
         return HStack(alignment: .top, spacing: 10) {
+            // 未读只用一个小蓝点标出（之前整行着色加左侧蓝条，未读多时满屏都是蓝色，反而看不出哪条是新的）
+            Circle().fill(unread ? Color.accentColor : .clear).frame(width: 7, height: 7).padding(.top, 11)
+                .accessibilityLabel(unread ? "未读" : "")
+                .accessibilityHidden(!unread)
             Avatar(name: first.actor, size: 28)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -180,9 +186,10 @@ struct ActivityPage: View {
                 }
             }
         }
-        .padding(10)
-        .groupBackground(tint: unread ? Color.accentColor : nil)
-        .overlay(alignment: .leading) { if unread { Capsule().fill(Color.accentColor).frame(width: 3).padding(.vertical, 8) } }
+        .padding(.vertical, 10)
+        .padding(.leading, 4)
+        .padding(.trailing, 10)
+        .groupBackground()
         .rowTap { open(group) }
         .contextMenu(specs: {
             var specs: [MenuSpec] = [

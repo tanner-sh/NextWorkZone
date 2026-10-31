@@ -88,8 +88,8 @@ struct StatsPage: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         let range = period.range
-                        Text("处理过：你修改过状态的问题；解决：这段时间内解决、经办人是你或由你流转的问题；解决用时：从创建到解决")
-                            .font(.callout).foregroundStyle(.secondary)
+                        // 时间范围（之前在窗口副标题中）；各指标的含义放在卡片的悬停提示中
+                        Text("\(range.from) 至 \(range.to)").font(.callout).foregroundStyle(.secondary).monospacedDigit()
                         if let error { ErrorBox(message: error) }
                         if let stats { StatsBody(stats: stats, range: range, menu: issueMenu).opacity(loading ? 0.6 : 1) } else if error == nil { ProgressView() }
                     }
@@ -106,7 +106,6 @@ struct StatsPage: View {
                         Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.refreshing(loading).disabled(loading).help("刷新")
                     }
                 }
-                .pageSubtitle(.stats, "\(period.range.from) 至 \(period.range.to)")
             }
         }
         .issueMenuDialogs(issueMenu)
@@ -160,11 +159,11 @@ private struct StatsBody: View {
         let open: (String) -> Void = { AppModel.shared.navigate(NavTarget(.jira, jql: $0)) }
         VStack(alignment: .leading, spacing: 16) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                Kpi(label: "处理过的问题", value: "\(stats.handled.total)") { open(q.handled) }
-                Kpi(label: "解决的问题", value: "\(stats.resolved.total)") { open(q.resolved) }
-                Kpi(label: "新分配给我", value: "\(stats.assigned)") { open(q.assigned) }
-                Kpi(label: "当前未解决", value: "\(stats.unresolved)") { open(JQL.myUnresolved) }
-                Kpi(label: "解决用时（中位数）", value: median.map(Self.formatDays) ?? "—", hint: durations.isEmpty ? nil : "共 \(durations.count) 个问题")
+                Kpi(label: "处理过的问题", value: "\(stats.handled.total)", explain: "这段时间内你修改过状态的问题") { open(q.handled) }
+                Kpi(label: "解决的问题", value: "\(stats.resolved.total)", explain: "这段时间内解决、经办人是你或由你流转的问题") { open(q.resolved) }
+                Kpi(label: "新分配给我", value: "\(stats.assigned)", explain: "这段时间内分配给你的问题") { open(q.assigned) }
+                Kpi(label: "当前未解决", value: "\(stats.unresolved)", explain: "经办人是你、还没有解决的问题") { open(JQL.myUnresolved) }
+                Kpi(label: "解决用时（中位数）", value: median.map(Self.formatDays) ?? "—", hint: durations.isEmpty ? nil : "共 \(durations.count) 个问题", explain: "解决的问题从创建到解决用了多久")
                 Kpi(label: "登记工时", value: stats.worklogSeconds.map { s in let h = Double(s) / 3600; return h < 10 ? "\((h * 10).rounded() / 10)h" : "\(Int(h.rounded()))h" } ?? "—", hint: stats.worklogSeconds == 0 ? "这段时间没有登记" : nil)
             }
             let buckets = bucketize(resolved)
@@ -292,6 +291,8 @@ private struct Kpi: View {
     var label: String
     var value: String
     var hint: String? = nil
+    /// 指标的含义，悬停时显示
+    var explain: String? = nil
     var onClick: (() -> Void)? = nil
 
     var body: some View {
@@ -299,14 +300,15 @@ private struct Kpi: View {
             Text(label).font(.callout).foregroundStyle(.secondary)
             // 切换时间范围时数字滚动变化
             Text(value).font(.title.weight(.semibold)).contentTransition(.numericText()).animation(.snappy, value: value)
-            if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
+            // 没有说明时也占一行，一排卡片高度一致
+            Text(hint ?? " ").font(.caption).foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .groupBackground()
         .contentShape(Rectangle())
         .onTapGesture { onClick?() }
-        .help(onClick != nil ? "在问题列表中查看" : "")
+        .help([explain, onClick != nil ? "点击在问题列表中查看" : nil].compactMap { $0 }.joined(separator: "。"))
     }
 }
 

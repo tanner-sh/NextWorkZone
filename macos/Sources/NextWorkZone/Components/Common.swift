@@ -215,22 +215,55 @@ struct NotConfigured: View {
     }
 }
 
-/// 网页路径（附件、图片）需要网页登录时显示提示。
+/// 网页路径（附件、图片）需要网页登录时显示提示。只放在确实有附件或图片的内容上方；
+/// 点“稍后”后本次运行中不再显示，侧栏底部的入口（SidebarLoginStatus）一直都在。
 struct WebLoginHint: View {
     var service: Service
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.access(service) == .loginRequired {
+        if model.access(service) == .loginRequired && !model.loginHintDismissed.contains(service) {
             HStack(spacing: 8) {
                 Image(systemName: "key.fill").foregroundStyle(.orange)
-                Text("\(service.label) 的附件和图片需要网页登录后才能显示，登录一次即可。")
+                Text("\(service.label) 的附件和图片需要网页登录后才能显示")
                 Spacer()
+                Button("稍后") { withAnimation { _ = model.loginHintDismissed.insert(service) } }
+                    .buttonStyle(.borderless)
+                    .help("本次运行中不再提示，可以随时从侧栏底部登录")
                 Button("网页登录") { WebLogin.open(service) }
             }
             .font(.callout)
             .padding(10)
             .noticeBackground(.orange)
+        }
+    }
+}
+
+/// 侧栏底部：有系统需要网页登录时显示一个入口（代替在每篇内容上方重复显示的提示条）。
+struct SidebarLoginStatus: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let pending = Service.allCases.filter { $0.supportsWebLogin && model.access($0) == .loginRequired }
+        if !pending.isEmpty {
+            Menu {
+                ForEach(pending, id: \.self) { s in
+                    Button("登录 \(s.label)…") { WebLogin.open(s) }
+                }
+            } label: {
+                Label("\(pending.map(\.label).joined(separator: "、")) 需要网页登录", systemImage: "key.fill")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } primaryAction: {
+                if pending.count == 1 { WebLogin.open(pending[0]) }
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(pending.count > 1 ? .visible : .hidden)
+            .help("附件和图片需要网页登录后才能显示，登录一次即可")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
     }
 }

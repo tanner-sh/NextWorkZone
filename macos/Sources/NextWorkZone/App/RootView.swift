@@ -11,8 +11,9 @@ struct RootView: View {
     /// 各保留页面第几次显示
     @State private var visits: [PageID: Int] = [:]
 
-    /// 不在窗口中显示标题的页面：侧栏已经标明当前页面，标题夹在列表和详情两组工具栏按钮之间显得突兀；条数等信息放在列表上方
-    static let untitled: Set<PageID> = [.jira, .gitlab]
+    /// 不在窗口中显示标题的页面：工具栏左侧有切换视图的分段控件（它本身就说明了在哪儿，侧栏也标明了当前页面），
+    /// 标题只会排在分段控件后面、夹在几组按钮之间。没有分段控件的页面（今天、知识库、周报）标题在最左边。
+    static let untitled: Set<PageID> = [.todos, .notes, .jira, .wiki, .gitlab, .activity, .stats, .tools, .search]
 
     static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats]
 
@@ -186,6 +187,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom, spacing: 0) { SidebarLoginStatus() }
     }
 
     @ViewBuilder

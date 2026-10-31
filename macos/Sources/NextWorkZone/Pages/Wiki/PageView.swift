@@ -264,7 +264,8 @@ struct PageView: View {
             .padding(.top, 4)
             .padding(.bottom, 18)
 
-            WebLoginHint(service: .confluence).padding(.bottom, 10)
+            // 只在页面中有图片时提示（附件区自己会显示读不到的缩略图）
+            if page.html.contains("<img") { WebLoginHint(service: .confluence).padding(.bottom, 10) }
 
             if doc != nil {
                 ForEach(sections.indices, id: \.self) { i in

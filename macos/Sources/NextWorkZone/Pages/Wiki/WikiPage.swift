@@ -49,7 +49,6 @@ struct WikiPage: View {
                     detailPane
                 }
                 .pageToolbar { toolbar }
-                .pageSubtitle(.wiki, editing != nil ? (pageEditing ? "编辑页面" : "新建页面") : detail?.spaceName ?? "")
             }
         }
         .onAppear { takeTarget() }
