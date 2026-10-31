@@ -7,6 +7,21 @@ Jira 问题自动进入待办、笔记里的问题键实时显示状态、问题
 macOS 原生应用：Swift 6 + SwiftUI（部分控件用 AppKit），支持 macOS 26 及以上；只使用系统框架和系统库，没有第三方依赖。
 跨平台的 Tauri 版已停止维护，见 [NextWorkZone-Tauri](https://github.com/tanner-sh/NextWorkZone-Tauri)。
 
+## 安装
+
+从 [Releases](https://github.com/tanner-sh/NextWorkZone/releases) 下载 `NextWorkZone-<版本>-macos-arm64.zip`，解压后把 `NextWorkZone.app` 拖到“应用程序”。
+
+- 需要 macOS 26 及以上、Apple 芯片的 Mac。
+- 应用没有经过 Apple 公证，第一次打开时系统会提示无法验证开发者。可以在“系统设置 > 隐私与安全性”中点“仍要打开”，
+  或者在终端中去掉下载带来的隔离属性后再打开：
+
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/NextWorkZone.app
+  ```
+
+- 发布包是临时签名的，每次更新后第一次读取钥匙串中的凭据时，系统会再询问一次是否允许，选择“始终允许”即可。
+- 第一次打开后在设置（⌘,）的“连接”中填写 Jira、Wiki、GitLab 的地址和个人访问令牌；不用的系统可以不填。
+
 ## 开发
 
 ```sh
@@ -14,6 +29,7 @@ macos/build.sh             # 开发版：macos/build.noindex/NextWorkZone.app
 macos/build.sh release     # 正式版（同一位置）
 ditto macos/build.noindex/NextWorkZone.app /Applications/NextWorkZone.app   # 安装正式版
 macos/test.sh              # 测试（swift-testing）
+macos/release.sh           # 打包发布：临时签名的正式版 zip 和 sha256，放在 macos/build.noindex/dist/
 macos/icon.sh              # 重新生成应用图标（需要 Xcode）
 ```
 
@@ -87,3 +103,7 @@ $TOOL jira-search "assignee = currentUser()"
 - **知识库与 Wiki**：剪藏和发布时在地址中记下版本（`pageVersion=`），原页面有更新时提示并可查看变化、重新剪藏；再次发布时更新上次发布的页面，页面被别人改过时需确认才覆盖。
 - **剪贴板历史**：每 300 毫秒比较一次剪贴板的变化序号，有变化才读取内容；带“不要记录”标记的内容（密码管理器复制的密码等）、疑似密钥和随机密码、忽略的应用中复制的内容都不记录。相同内容只保存一份，再次复制时移到最前面；本应用写回剪贴板的内容不算新条目。数据只保存在本机，不参与同步。
 - **统一搜索（⌘K）**：分两步。输入停顿 100 毫秒后查本机的工作空间、本机问题库、本机 Wiki 库和剪贴板历史（同时查询）；停顿 250 毫秒后查服务器（本机库不可用的系统，以及本机库中没有的问题键、GitLab 项目和合并请求）。
+
+## 许可证
+
+[MIT](LICENSE)
