@@ -1,15 +1,80 @@
+<div align="center">
+
+<img src="docs/images/icon.png" width="128" alt="NextWorkZone 图标">
+
 # NextWorkZone
 
-个人工作空间：自带待办、笔记（含每日日记）、知识库，并与 Jira、Confluence（Wiki）、GitLab 集成——
-Jira 问题自动进入待办、笔记里的问题键实时显示状态、问题可一键沉淀到知识库、知识库页面可发布到 Wiki。
-工作空间数据保存在本机，可通过同步文件夹在多台电脑间同步。系统地址与凭据均可配置，目前支持 Jira / Confluence 的 Server 与 Data Center 版本。
+**把待办、笔记、知识库和 Jira、Wiki、GitLab 放进同一个 Mac 原生应用**
 
-macOS 原生应用：Swift 6 + SwiftUI（部分控件用 AppKit），支持 macOS 26 及以上；只使用系统框架和系统库，没有第三方依赖。
-跨平台的 Tauri 版已停止维护，见 [NextWorkZone-Tauri](https://github.com/tanner-sh/NextWorkZone-Tauri)。
+[![Release](https://img.shields.io/github/v/release/tanner-sh/NextWorkZone?label=%E4%B8%8B%E8%BD%BD&color=0A84FF)](https://github.com/tanner-sh/NextWorkZone/releases/latest)
+![macOS 26+](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple)
+![Apple 芯片](https://img.shields.io/badge/Apple%20%E8%8A%AF%E7%89%87-arm64-555555)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-34C759)](LICENSE)
+
+[下载](https://github.com/tanner-sh/NextWorkZone/releases/latest) · [功能](#功能) · [安装](#安装) · [数据与隐私](#数据与隐私) · [开发](#开发)
+
+<img src="docs/images/tour.gif" width="900" alt="NextWorkZone 界面轮播：今天、Jira、日记、Wiki、周报、搜索、深色模式">
+
+</div>
+
+每天的工作散落在 Jira、Wiki、GitLab 和一堆便签里。NextWorkZone 把它们收拢到一个窗口：
+分配给你的问题自动变成待办，笔记里写下问题键就能看到实时状态，解决过的问题一键沉淀到知识库，周报按这一周做过的事自动起草。
+
+- **原生**：Swift 6 + SwiftUI，适配 macOS 26 的 Liquid Glass；只用系统框架，没有第三方依赖
+- **本机优先**：工作空间数据存在本机 SQLite，凭据存在钥匙串；可以通过同步文件夹在多台 Mac 之间同步
+- **连接你自己的服务器**：Jira、Confluence 的 Server / Data Center 版和 GitLab，地址和令牌都可配置，不用的系统可以不填
+
+> 下面的截图都使用虚构的演示数据。
+
+## 功能
+
+### 今天
+
+打开应用先看到今天要处理的事：分配给你的问题、评论和 @、到期提醒、等你审核的合并请求；
+可以标为已处理、稍后提醒或转成待办。下面是今天的待办、本周周报、我的未解决问题、今天的工作记录和最近看过的 Wiki。
+
+<img src="docs/images/home.png" alt="今天页">
+
+### 待办 · 笔记 · 知识库
+
+| | |
+|:---:|:---:|
+| <img src="docs/images/todos.png" alt="待办"> | <img src="docs/images/notes.png" alt="日记"> |
+| **待办**：今天、计划、未安排分组；截止日期、优先级、提醒、重复、检查项，全部可撤销。Jira 问题和 Wiki 页面中的任务自动进入待办，随时按 ⌘⇧N 快速记录 | **笔记与日记**：所见即所得的编辑器，问题键显示实时状态，`[[` 链接其他文档，可以粘贴截图；日记下方汇总当天的工作记录，一键写入日记或生成日报 |
+| <img src="docs/images/kb.png" alt="知识库"> | <img src="docs/images/palette.png" alt="统一搜索"> |
+| **知识库**：树状页面和标签；把解决过的 Jira 问题、常看的 Wiki 页面沉淀进来，也可以发布到 Wiki | **统一搜索（⌘K）**：一次搜索工作空间、本机问题库、本机 Wiki 库、剪贴板历史和服务器，也可以直接跳到任何页面 |
+
+### Jira · Wiki · GitLab
+
+不用打开浏览器就能完成日常操作。
+
+| | |
+|:---:|:---:|
+| <img src="docs/images/jira.png" alt="Jira"> | <img src="docs/images/wiki.png" alt="Wiki"> |
+| **Jira**：常用查询、JQL、排序分组；详情中流转、编辑字段、评论、附件、工作日志、关注投票；相似问题和本机问题库，搜索不必等服务器 | **Wiki**：最近、收藏、空间和页面树；阅读时自动生成目录，Jira 宏显示实时状态；编辑、历史版本对比、评论、导出 |
+| <img src="docs/images/gitlab.png" alt="GitLab"> | <img src="docs/images/activity.png" alt="动态"> |
+| **GitLab**：我发起的、请我审核的合并请求，流水线和合并状态、改动、评论；项目的代码、提交、分支和对比 | **动态**：每 3 分钟检查你经办、报告、关注的问题和 Wiki 页面，别人的评论、@、流转和修改都在这里，可以按类型筛选、发系统通知 |
+
+### 周报 · 统计
+
+| | |
+|:---:|:---:|
+| <img src="docs/images/weekly.png" alt="周报"> | <img src="docs/images/stats.png" alt="统计"> |
+| **周报**：直接编辑共享 Wiki 页面中自己那一行；按这一周的推送、合并请求、流转和完成的待办起草，沿用往周的分组和写法，保存前对比改动，不会覆盖别人的内容 | **统计**：按本周、本月、近 90 天等时间段统计处理和解决的问题、解决用时，按项目、模块、类型分布 |
+
+### 还有
+
+- **剪贴板历史**：记录复制过的文字、图片和文件，⌥⌘V 在任何应用中搜索、粘贴，常用内容可以置顶；自动跳过密码等敏感内容
+- **快速记录**：⌥Space 在任何应用中记一条待办或一段日记
+- **多窗口**：问题、Wiki 页面、笔记都可以在新窗口中打开
+- **深色模式**、菜单栏图标、系统通知、系统共享、VoiceOver 读屏标签
+
+<img src="docs/images/jira-dark.png" alt="深色模式">
 
 ## 安装
 
-从 [Releases](https://github.com/tanner-sh/NextWorkZone/releases) 下载 `NextWorkZone-<版本>-macos-arm64.zip`，解压后把 `NextWorkZone.app` 拖到“应用程序”。
+从 [Releases](https://github.com/tanner-sh/NextWorkZone/releases/latest) 下载 `NextWorkZone-<版本>-macos-arm64.zip`，解压后把 `NextWorkZone.app` 拖到“应用程序”。
 
 - 需要 macOS 26 及以上、Apple 芯片的 Mac。
 - 应用没有经过 Apple 公证，第一次打开时系统会提示无法验证开发者。可以在“系统设置 > 隐私与安全性”中点“仍要打开”，
@@ -22,7 +87,16 @@ macOS 原生应用：Swift 6 + SwiftUI（部分控件用 AppKit），支持 macO
 - 发布包是临时签名的，每次更新后第一次读取钥匙串中的凭据时，系统会再询问一次是否允许，选择“始终允许”即可。
 - 第一次打开后在设置（⌘,）的“连接”中填写 Jira、Wiki、GitLab 的地址和个人访问令牌；不用的系统可以不填。
 
+## 数据与隐私
+
+- 应用只连接你在设置中填写的服务器，不收集、不上传任何使用数据。
+- 待办、笔记、知识库保存在 `~/Library/Application Support/NextWorkZone/`；本机问题库、Wiki 库等可以重建的缓存在 `~/Library/Caches/NextWorkZone/`。
+- 令牌和密码保存在钥匙串中。
+- 多设备同步只读写你选择的同步文件夹（iCloud Drive、坚果云、NAS 等），每台设备只追加写自己的变更日志。
+
 ## 开发
+
+跨平台的 Tauri 版已停止维护，见 [NextWorkZone-Tauri](https://github.com/tanner-sh/NextWorkZone-Tauri)。
 
 ```sh
 macos/build.sh             # 开发版：macos/build.noindex/NextWorkZone.app
