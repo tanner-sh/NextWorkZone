@@ -335,18 +335,32 @@ private struct AttachmentBody: View {
 }
 
 /// 系统的快速查看（图片、PDF、音视频、Office 文档、网页等）。
-struct QuickLookView: NSViewRepresentable {
+/// 换文件时整个重建预览视图，而不是给已有的 QLPreviewView 改 previewItem：
+/// 视图被关闭（进入停用状态）后再设置 previewItem 会触发 QuickLook 的断言，直接让应用退出。
+struct QuickLookView: View {
+    var url: URL
+
+    var body: some View {
+        QuickLookRepresentable(url: url).id(url)
+    }
+}
+
+private struct QuickLookRepresentable: NSViewRepresentable {
     var url: URL
 
     func makeNSView(context: Context) -> QLPreviewView {
         let view = QLPreviewView(frame: .zero, style: .normal)!
         view.autostarts = true
+        // 由 SwiftUI 拆除视图时再关闭；默认跟随窗口关闭，视图被移出窗口后再复用就成了停用状态
+        view.shouldCloseWithWindow = false
         view.previewItem = url as NSURL
         return view
     }
 
-    func updateNSView(_ view: QLPreviewView, context: Context) {
-        if (view.previewItem as? NSURL) as URL? != url { view.previewItem = url as NSURL }
+    func updateNSView(_ view: QLPreviewView, context: Context) {}
+
+    static func dismantleNSView(_ view: QLPreviewView, coordinator: ()) {
+        view.close()
     }
 }
 

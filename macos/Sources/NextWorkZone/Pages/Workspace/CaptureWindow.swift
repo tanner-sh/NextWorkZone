@@ -23,7 +23,7 @@ final class CaptureWindow {
         panel.isReleasedWhenClosed = false
         panel.isMovableByWindowBackground = true
         panel.title = "快速记录"
-        let host = NSHostingView(rootView: CaptureView(model: model))
+        let host = NSHostingView(rootView: CaptureView(model: model).environment(AppModel.shared))
         host.sizingOptions = []
         panel.contentView = host
         self.panel = panel
