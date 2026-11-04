@@ -820,6 +820,11 @@ final class EditorTextView: NSTextView {
                 }
                 return
             }
+            // 双击图片放大查看（单击照常选中，可以删除、复制）
+            if event.clickCount == 2, let image = storage.attribute(.attachment, at: index, effectiveRange: nil) as? RemoteImageAttachment {
+                ImageViewer.show(src: RichRenderer(service: image.service).absolute(image.info.full ?? image.info.src), service: image.service, alt: image.info.alt ?? "")
+                return
+            }
             if event.modifierFlags.contains(.command) {
                 if let href = storage.attribute(.nwzHref, at: index, effectiveRange: nil) as? String {
                     coordinator?.parent.onOpenLink?(href)
@@ -997,4 +1002,5 @@ final class EditorTextView: NSTextView {
         return super.performDragOperation(sender)
     }
 }
+
 

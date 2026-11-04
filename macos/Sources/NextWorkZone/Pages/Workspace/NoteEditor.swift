@@ -66,7 +66,7 @@ struct NoteEditor<Footer: View>: View {
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
-                Text("⌘+点击打开链接和问题 · 输入 [[ 链接文档 · 可粘贴截图").font(.caption).foregroundStyle(.secondary)
+                Text("⌘+点击打开链接和问题 · 输入 [[ 链接文档 · 可粘贴截图，双击图片放大").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 footer()
             }
