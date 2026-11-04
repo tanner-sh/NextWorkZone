@@ -625,6 +625,7 @@ final class EditorTextView: NSTextView {
         case "addRow": c.tableOp(.addRow)
         case "addCol": c.tableOp(.addCol)
         case "selectAll": selectAll(nil)
+        case "paste": paste(nil)
         case "undo": c.undo()
         default: break
         }

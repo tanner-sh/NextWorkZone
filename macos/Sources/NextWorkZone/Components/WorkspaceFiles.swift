@@ -112,6 +112,80 @@ enum WorkspaceFiles {
     }
 }
 
+/// 剪贴板中可以作为附件的内容：复制的文件（访达中复制），或者没有文字的图片（截图、照片）。
+@MainActor
+enum PastedFiles {
+    static func available(_ pb: NSPasteboard = .general) -> Bool {
+        hasFiles(pb) || (pb.string(forType: .string) == nil && NSImage.canInit(with: pb))
+    }
+
+    private static func hasFiles(_ pb: NSPasteboard) -> Bool {
+        pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+    }
+
+    /// 存为附件：文件按原样保存，图片存为 PNG（剪贴板中有 PNG 时直接使用）。
+    static func read(_ pb: NSPasteboard = .general) async throws -> [FileAttachment] {
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            return try await WorkspaceFiles.add(urls)
+        }
+        let png = pb.data(forType: .png) ?? NSImage(pasteboard: pb).flatMap { $0.tiffRepresentation }.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }
+        guard let png else { return [] }
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return [try await WorkspaceFiles.add(data: png, name: "图片 \(f.string(from: Date())).png", mime: "image/png")]
+    }
+}
+
+/// 在所在的视图可见时接管 ⌘V：键盘焦点不在富文本编辑器（例如在标题输入框、列表上），而剪贴板中是文件或图片时，交给 `onPaste`。
+/// 文本框本来粘贴不了图片，⌘V 会没有反应。
+struct PasteFilesMonitor: NSViewRepresentable {
+    var onPaste: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.onPaste = onPaste }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.remove() }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPaste: onPaste) }
+
+    @MainActor
+    final class Coordinator {
+        var onPaste: () -> Void
+        weak var view: NSView?
+        private var monitor: Any?
+
+        init(onPaste: @escaping () -> Void) { self.onPaste = onPaste }
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                // 本地事件监视器在主线程上调用
+                nonisolated(unsafe) let event = event
+                let handled = MainActor.assumeIsolated { self?.handle(event) == true }
+                return handled ? nil : event
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        private func handle(_ event: NSEvent) -> Bool {
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, event.charactersIgnoringModifiers == "v",
+                  let view, let window = view.window, event.window === window, !view.isHiddenOrHasHiddenAncestor,
+                  !(window.firstResponder is EditorTextView), PastedFiles.available() else { return false }
+            onPaste()
+            return true
+        }
+    }
+}
+
 /// 附件区：缩略图或文件图标，点击预览，右键可复制、用系统应用打开或删除；可以点按钮添加、把文件拖进来或粘贴。
 struct FileAttachmentsSection: View {
     var attachments: [FileAttachment]

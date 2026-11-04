@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 待办：今天 / 未安排 / 计划 / 全部 / 已完成，右侧编辑详情。
@@ -452,6 +453,7 @@ private struct TodoDetail: View {
     @State private var newCheck = ""
     @State private var debouncer = Debouncer()
     @State private var typing = false
+    @FocusState private var titleFocused: Bool
     /// 保存依次进行：排在前面的保存完成后才开始下一次
     @State private var chain: Task<Void, Never>?
     /// 还没完成的保存数
@@ -467,11 +469,36 @@ private struct TodoDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
+                // 标题很长、折成多行时勾选框对齐第一行
+                HStack(alignment: .top, spacing: 12) {
                     CheckCircle(done: draft.done, priority: draft.priority, size: 22) { toggleDone() }
-                    TextField("待办标题", text: Binding(get: { draft.title }, set: { v in update(debounce: true) { $0.title = v } }), axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.title2.weight(.semibold))
+                        .padding(.top, 3)
+                    // 多行的输入框不在编辑时，长标题的最后一行可能画不出来：不编辑时用文字显示，点一下再编辑
+                    ZStack(alignment: .topLeading) {
+                        TextField("待办标题", text: Binding(get: { draft.title }, set: { v in update(debounce: true) { $0.title = v } }), axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .focused($titleFocused)
+                            .opacity(titleFocused || draft.title.isEmpty ? 1 : 0)
+                        if !titleFocused && !draft.title.isEmpty {
+                            Text(draft.title)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    titleFocused = true
+                                    // 获得焦点时系统会全选，接着打字就把标题替换了：改为把光标放在末尾
+                                    DispatchQueue.main.async {
+                                        if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isFieldEditor {
+                                            editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+                                        }
+                                    }
+                                }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("点按编辑标题")
+                        }
+                    }
+                    .font(.title2.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if draft.autoDone && draft.done {
                     Text("关联的 Jira 问题已解决或不再分配给你，已自动完成。").font(.callout).foregroundStyle(.secondary)
@@ -582,6 +609,15 @@ private struct TodoDetail: View {
             }
             .padding(24)
         }
+        // 焦点不在备注里（例如在标题上）时粘贴图片或文件：加为附件
+        .background(PasteFilesMonitor {
+            guarded {
+                let added = try await PastedFiles.read()
+                guard !added.isEmpty else { return }
+                update { $0.attachments += added }
+                toast("已添加到附件。要把图片放进备注，先点一下备注再粘贴")
+            }
+        })
         .pageToolbar {
             // 待办的操作放在窗口工具栏右侧
             if draft.refKey == nil && model.isReady(.jira) {
