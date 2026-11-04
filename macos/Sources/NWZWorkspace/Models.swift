@@ -1,4 +1,5 @@
 import Foundation
+import NWZRich
 
 public struct Todo: Codable, Hashable, Sendable, Identifiable {
     public var id: String
@@ -26,7 +27,11 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
     /// 自动同步的待办上次从来源取到的标题、截止日期（"" 表示没有）：待办的值与之相同说明没有手动改过，来源变化时跟着更新
     public var sourceTitle: String?
     public var sourceDue: String?
-    public init(id: String = "", title: String = "", notes: String = "", done: Bool = false, completedAt: Int64? = nil, due: String? = nil, priority: Int = 0, sort: Double = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, source: String? = nil, autoDone: Bool = false, createdAt: Int64 = 0, updatedAt: Int64 = 0, updatedBy: String = "", deleted: Bool = false, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = [], nextId: String? = nil, sourceTitle: String? = nil, sourceDue: String? = nil) {
+    /// 附件（任意文件，包括图片）；文件内容在资源表中，随同步一起传
+    public var attachments: [FileAttachment]
+    /// 备注是 Markdown（在详情的编辑器中写过）；否则是纯文本（早期的备注、拖入或快速记录的文字），显示时按行转换
+    public var markdownNotes: Bool
+    public init(id: String = "", title: String = "", notes: String = "", done: Bool = false, completedAt: Int64? = nil, due: String? = nil, priority: Int = 0, sort: Double = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, source: String? = nil, autoDone: Bool = false, createdAt: Int64 = 0, updatedAt: Int64 = 0, updatedBy: String = "", deleted: Bool = false, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = [], nextId: String? = nil, sourceTitle: String? = nil, sourceDue: String? = nil, attachments: [FileAttachment] = [], markdownNotes: Bool = false) {
         self.id = id
         self.title = title
         self.notes = notes
@@ -50,8 +55,10 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
         self.nextId = nextId
         self.sourceTitle = sourceTitle
         self.sourceDue = sourceDue
+        self.attachments = attachments
+        self.markdownNotes = markdownNotes
     }
-    private enum CodingKeys: String, CodingKey { case id, title, notes, done, completedAt, due, priority, sort, refSystem, refKey, refTitle, source, autoDone, createdAt, updatedAt, updatedBy, deleted, remindAt, `repeat`, checklist, nextId, sourceTitle, sourceDue }
+    private enum CodingKeys: String, CodingKey { case id, title, notes, done, completedAt, due, priority, sort, refSystem, refKey, refTitle, source, autoDone, createdAt, updatedAt, updatedBy, deleted, remindAt, `repeat`, checklist, nextId, sourceTitle, sourceDue, attachments, markdownNotes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
@@ -77,6 +84,57 @@ public struct Todo: Codable, Hashable, Sendable, Identifiable {
         nextId = try c.decodeIfPresent(String.self, forKey: .nextId)
         sourceTitle = try c.decodeIfPresent(String.self, forKey: .sourceTitle)
         sourceDue = try c.decodeIfPresent(String.self, forKey: .sourceDue)
+        attachments = try c.decodeIfPresent([FileAttachment].self, forKey: .attachments) ?? []
+        markdownNotes = try c.decodeIfPresent(Bool.self, forKey: .markdownNotes) ?? false
+    }
+}
+
+/// 附在待办等记录上的文件：内容存为资源（`id` 即资源 id），这里记下文件名、类型和大小。
+public struct FileAttachment: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var mime: String
+    public var size: Int
+    public var createdAt: Int64
+    public init(id: String = "", name: String = "", mime: String = "", size: Int = 0, createdAt: Int64 = 0) {
+        self.id = id
+        self.name = name
+        self.mime = mime
+        self.size = size
+        self.createdAt = createdAt
+    }
+    private enum CodingKeys: String, CodingKey { case id, name, mime, size, createdAt }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        mime = try c.decodeIfPresent(String.self, forKey: .mime) ?? ""
+        size = try c.decodeIfPresent(Int.self, forKey: .size) ?? 0
+        createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
+    }
+    public var isImage: Bool { mime.hasPrefix("image/") }
+}
+
+extension Todo {
+    /// 备注的第一行文字，用于列表中的摘要；只有图片时为空。
+    public var notesSummary: String {
+        guard !notes.isEmpty else { return "" }
+        let text = markdownNotes ? References.plainText(notes) : notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.components(separatedBy: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
+    }
+
+    /// 备注的 Markdown：纯文本的备注按原样转换（每行保留，空行分段，特殊字符转义）。
+    public var notesMarkdown: String { markdownNotes ? notes : Self.markdown(plain: notes) }
+
+    public static func markdown(plain text: String) -> String {
+        let paragraphs = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .newlines) }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let blocks: [RichBlock] = paragraphs.map { p in
+            .para(p.components(separatedBy: "\n").enumerated().flatMap { i, line -> [RichInline] in
+                (i > 0 ? [.br] : []) + (line.isEmpty ? [] : [.text(line, [], link: nil, color: nil)])
+            })
+        }
+        return Markdown.write(RichDoc(blocks: blocks))
     }
 }
 
@@ -111,7 +169,11 @@ public struct TodoInput: Codable, Hashable, Sendable, Identifiable {
     public var remindAt: Int64?
     public var `repeat`: String?
     public var checklist: [ChecklistItem]
-    public init(id: String? = nil, title: String = "", notes: String = "", done: Bool = false, due: String? = nil, priority: Int = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = []) {
+    /// 为空表示不修改已有的附件
+    public var attachments: [FileAttachment]?
+    /// 备注是否为 Markdown；为空表示不修改
+    public var markdownNotes: Bool?
+    public init(id: String? = nil, title: String = "", notes: String = "", done: Bool = false, due: String? = nil, priority: Int = 0, refSystem: String? = nil, refKey: String? = nil, refTitle: String? = nil, remindAt: Int64? = nil, `repeat`: String? = nil, checklist: [ChecklistItem] = [], attachments: [FileAttachment]? = nil, markdownNotes: Bool? = nil) {
         self.id = id
         self.title = title
         self.notes = notes
@@ -124,8 +186,10 @@ public struct TodoInput: Codable, Hashable, Sendable, Identifiable {
         self.remindAt = remindAt
         self.`repeat` = `repeat`
         self.checklist = checklist
+        self.attachments = attachments
+        self.markdownNotes = markdownNotes
     }
-    private enum CodingKeys: String, CodingKey { case id, title, notes, done, due, priority, refSystem, refKey, refTitle, remindAt, `repeat`, checklist }
+    private enum CodingKeys: String, CodingKey { case id, title, notes, done, due, priority, refSystem, refKey, refTitle, remindAt, `repeat`, checklist, attachments, markdownNotes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id)
@@ -140,6 +204,8 @@ public struct TodoInput: Codable, Hashable, Sendable, Identifiable {
         remindAt = try c.decodeIfPresent(Int64.self, forKey: .remindAt)
         `repeat` = try c.decodeIfPresent(String.self, forKey: .`repeat`)
         checklist = try c.decodeIfPresent([ChecklistItem].self, forKey: .checklist) ?? []
+        attachments = try c.decodeIfPresent([FileAttachment].self, forKey: .attachments)
+        markdownNotes = try c.decodeIfPresent(Bool.self, forKey: .markdownNotes)
     }
 }
 
@@ -514,7 +580,7 @@ public struct AssignedWikiTask: Codable, Hashable, Sendable {
 
 extension TodoInput {
     public init(_ todo: Todo) {
-        self.init(id: todo.id, title: todo.title, notes: todo.notes, done: todo.done, due: todo.due, priority: todo.priority, refSystem: todo.refSystem, refKey: todo.refKey, refTitle: todo.refTitle, remindAt: todo.remindAt, repeat: todo.repeat, checklist: todo.checklist)
+        self.init(id: todo.id, title: todo.title, notes: todo.notes, done: todo.done, due: todo.due, priority: todo.priority, refSystem: todo.refSystem, refKey: todo.refKey, refTitle: todo.refTitle, remindAt: todo.remindAt, repeat: todo.repeat, checklist: todo.checklist, attachments: todo.attachments, markdownNotes: todo.markdownNotes)
     }
 }
 

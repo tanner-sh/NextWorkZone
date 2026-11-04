@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import NWZCore
+import NWZRich
 @testable import NWZWorkspace
 
 struct WorkspaceTests {
@@ -20,6 +21,31 @@ struct WorkspaceTests {
         let restored = try await ws.restoreTodo(b.id)
         #expect(!restored.deleted && restored.title == "评审 MR")
         #expect(try await ws.todos().count == 2)
+    }
+    @Test func todoAttachments() async throws {
+        let ws = try await Workspace()
+        let asset = try await ws.saveAsset(mime: "application/pdf", data: Data("%PDF".utf8))
+        let file = FileAttachment(id: asset.id, name: "需求说明.pdf", mime: asset.mime, size: 4, createdAt: asset.createdAt)
+        let todo = try await ws.saveTodo(.init(title: "看需求", notes: "见附件 ![](ws://asset/x)", attachments: [file], markdownNotes: true))
+        #expect(try await ws.todo(todo.id)?.notesSummary == "见附件")
+        #expect(try await ws.todo(todo.id)?.attachments == [file])
+        // 不带附件的保存（例如只改标题）保留原有附件
+        _ = try await ws.saveTodo(.init(id: todo.id, title: "看需求文档"))
+        #expect(try await ws.todo(todo.id)?.attachments == [file])
+        #expect(try await ws.search("需求说明").first?.id == todo.id)
+        _ = try await ws.saveTodo(.init(id: todo.id, title: "看需求文档", attachments: []))
+        #expect(try await ws.todo(todo.id)?.attachments.isEmpty == true)
+        // 旧记录没有附件字段
+        let old = try JSONDecoder().decode(Todo.self, from: Data(#"{"id":"t","title":"旧"}"#.utf8))
+        #expect(old.attachments.isEmpty && !old.markdownNotes)
+    }
+    @Test func plainNotesConvertToMarkdownLineByLine() async throws {
+        let plain = Todo(notes: "第一行说明\nhttps://example.com/a_b_c\n1. 步骤\n\n# 不是标题")
+        let doc = Markdown.parse(plain.notesMarkdown)
+        #expect(doc.plainText.components(separatedBy: "\n").filter { !$0.isEmpty } == ["第一行说明", "https://example.com/a_b_c", "1. 步骤", "# 不是标题"])
+        #expect(plain.notesSummary == "第一行说明")
+        let markdown = Todo(notes: "**重点** 见下", markdownNotes: true)
+        #expect(markdown.notesMarkdown == markdown.notes && markdown.notesSummary == "重点 见下")
     }
     @Test func jiraTodosFollowAssignedIssues() async throws {
         let ws = try await Workspace()

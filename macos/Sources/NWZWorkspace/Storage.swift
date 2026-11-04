@@ -73,7 +73,7 @@ internal enum Store {
     static func write(_ todo: Todo, dirty: Bool = true, db: isolated Database) throws {
         var references = References.extract(todo.title + "\n" + todo.notes)
         if let system = todo.refSystem, let key = todo.refKey { references.append(.init(system: system, key: key)) }
-        try writeRecord(todo, type: "todo", id: todo.id, title: todo.title, body: References.plainText(todo.notes), kind: "todo", sort: todo.sort, done: todo.done, created: todo.createdAt, updated: todo.updatedAt, device: todo.updatedBy, deleted: todo.deleted, dirty: dirty, references: references, db: db)
+        try writeRecord(todo, type: "todo", id: todo.id, title: todo.title, body: ([todo.markdownNotes ? References.plainText(todo.notes) : todo.notes] + todo.attachments.map(\.name)).filter { !$0.isEmpty }.joined(separator: "\n"), kind: "todo", sort: todo.sort, done: todo.done, created: todo.createdAt, updated: todo.updatedAt, device: todo.updatedBy, deleted: todo.deleted, dirty: dirty, references: references, db: db)
     }
     static func write(_ doc: Doc, dirty: Bool = true, db: isolated Database) throws {
         var references = References.extract(doc.title + "\n" + doc.content)

@@ -21,6 +21,8 @@ extension Workspace {
         todo.refSystem = input.refSystem; todo.refKey = input.refKey; todo.refTitle = input.refTitle
         todo.autoDone = (old?.autoDone ?? false) && old?.done == input.done
         todo.remindAt = input.remindAt; todo.repeat = input.repeat.flatMap { $0.isEmpty ? nil : $0 }; todo.checklist = input.checklist
+        if let attachments = input.attachments { todo.attachments = attachments }
+        if let markdown = input.markdownNotes { todo.markdownNotes = markdown }
         todo.updatedAt = time; todo.updatedBy = device
         return try finish(todo, wasDone: old?.done ?? false, device: device, db: db)
     }

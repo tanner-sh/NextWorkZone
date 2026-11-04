@@ -129,7 +129,7 @@ struct TodoPage: View {
         .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
         .onAppear { takeTarget() }
         .sheet(item: $promoting) { todo in
-            CreateIssueSheet(initialSummary: todo.title, initialDescription: todo.notes) { key in
+            CreateIssueSheet(initialSummary: todo.title, initialDescription: TodoActions.issueDescription(todo), initialFiles: { await TodoActions.issueFiles(todo) }) { key in
                 guarded { replace(try await TodoActions.save(todo) { $0.refSystem = "jira"; $0.refKey = key; $0.refTitle = todo.title }) }
             }
         }
@@ -392,7 +392,8 @@ private struct TodoRow: View {
                     .foregroundStyle(todo.title.isEmpty || todo.done ? .secondary : .primary)
                     .strikethrough(todo.done)
                     .lineLimit(2)
-                let hasMeta = todo.due != nil || todo.refKey != nil || !todo.notes.isEmpty || todo.priority > 0 || todo.remindAt != nil || todo.repeat != nil || !todo.checklist.isEmpty
+                let summary = todo.notesSummary
+                let hasMeta = todo.due != nil || todo.refKey != nil || !summary.isEmpty || todo.priority > 0 || todo.remindAt != nil || todo.repeat != nil || !todo.checklist.isEmpty || !todo.attachments.isEmpty
                 if hasMeta {
                     HStack(spacing: 6) {
                         if let due = todo.due { Chip(text: Fmt.dayLabel(due), tint: overdue ? .red : due == day ? .accentColor : .secondary) }
@@ -403,8 +404,9 @@ private struct TodoRow: View {
                         if let key = todo.refKey {
                             if todo.refSystem == "wiki" { Chip(text: todo.refTitle ?? "Wiki 页面", icon: "text.book.closed") } else { Chip(text: key, icon: "smallcircle.filled.circle") }
                         }
-                        if !todo.notes.isEmpty {
-                            Text(todo.notes.components(separatedBy: "\n")[0]).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if !todo.attachments.isEmpty { Chip(text: "\(todo.attachments.count)", icon: "paperclip") }
+                        if !summary.isEmpty {
+                            Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                 }
@@ -566,13 +568,13 @@ private struct TodoDetail: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("备注").foregroundStyle(.secondary)
-                    TextEditor(text: Binding(get: { draft.notes }, set: { v in update(debounce: true) { $0.notes = v } }))
-                        .font(.body)
-                        .frame(minHeight: 140)
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
+                    // 与笔记相同的编辑器：Markdown 存储，可以粘贴截图、写问题键自动关联、输入 [[ 链接文档
+                    NoteEditor(docId: nil, value: draft.notesMarkdown, placeholder: "添加备注…  可以粘贴截图，写问题键自动关联，输入 [[ 链接文档", onChange: { md in update(debounce: true) { $0.notes = md; $0.markdownNotes = true } }, showsToolbar: false)
+                        .padding(8)
                         .fieldBackground()
                 }
+
+                FileAttachmentsSection(attachments: draft.attachments, onAdd: { added in update { $0.attachments += added } }, onRemove: { a in update { $0.attachments.removeAll { $0.id == a.id } } })
 
                 if let error { ErrorBox(message: error) }
 
@@ -602,15 +604,15 @@ private struct TodoDetail: View {
             // 还有没保存完的修改时以本地为准（否则先到的旧结果会让界面跳回旧值），保存完会再更新
             guard pending == 0 else { return }
             // 外部更新（例如同步、勾选完成）时刷新未在编辑的字段
-            let (title, notes) = (draft.title, draft.notes)
+            let (title, notes, markdown) = (draft.title, draft.notes, draft.markdownNotes)
             draft = new
-            if typing { draft.title = title; draft.notes = notes }
+            if typing { draft.title = title; draft.notes = notes; draft.markdownNotes = markdown }
         }
         .onDisappear {
             if typing { save(draft) }
         }
         .sheet(isPresented: $promoting) {
-            CreateIssueSheet(initialSummary: draft.title, initialDescription: draft.notes) { key in
+            CreateIssueSheet(initialSummary: draft.title, initialDescription: TodoActions.issueDescription(draft), initialFiles: { await TodoActions.issueFiles(draft) }) { key in
                 let title = draft.title
                 update { $0.refSystem = "jira"; $0.refKey = key; $0.refTitle = title }
             }

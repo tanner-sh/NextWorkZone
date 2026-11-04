@@ -28,11 +28,25 @@ enum TodoActions {
         return saved
     }
 
+    /// 由待办创建 Jira 问题时的描述：备注去掉截图（截图作为附件上传）。
+    static func issueDescription(_ todo: Todo) -> String {
+        todo.markdownNotes ? WorkspaceFiles.removingImages(todo.notes) : todo.notes
+    }
+
+    /// 由待办创建 Jira 问题时一并上传的文件：附件和备注中的截图，写到临时文件夹。
+    static func issueFiles(_ todo: Todo) async -> [String] {
+        var paths: [String] = []
+        for a in todo.attachments + (todo.markdownNotes ? WorkspaceFiles.images(inMarkdown: todo.notes) : []) {
+            if let url = try? await WorkspaceFiles.temporaryFile(a) { paths.append(url.path) }
+        }
+        return paths
+    }
+
     /// `current` 中 `changed` 相对 `old` 改过的字段改回 `old` 的值。
     static func revert(_ current: Todo, changed: Todo, to old: Todo) -> Todo {
         var t = current
         if changed.title != old.title { t.title = old.title }
-        if changed.notes != old.notes { t.notes = old.notes }
+        if changed.notes != old.notes { t.notes = old.notes; t.markdownNotes = old.markdownNotes }
         if changed.done != old.done { t.done = old.done }
         if changed.due != old.due { t.due = old.due }
         if changed.priority != old.priority { t.priority = old.priority }
@@ -40,6 +54,7 @@ enum TodoActions {
         if changed.remindAt != old.remindAt { t.remindAt = old.remindAt }
         if changed.repeat != old.repeat { t.repeat = old.repeat }
         if changed.checklist != old.checklist { t.checklist = old.checklist }
+        if changed.attachments != old.attachments { t.attachments = old.attachments }
         return t
     }
 

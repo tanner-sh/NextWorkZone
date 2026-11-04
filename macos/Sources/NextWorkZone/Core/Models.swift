@@ -198,6 +198,8 @@ typealias ChecklistItem = NWZWorkspace.ChecklistItem
 
 typealias Todo = NWZWorkspace.Todo
 
+typealias FileAttachment = NWZWorkspace.FileAttachment
+
 struct TodoInput: Codable, Hashable {
     var id: String?
     var title: String
@@ -211,6 +213,10 @@ struct TodoInput: Codable, Hashable {
     var remindAt: Int64??
     var `repeat`: String??
     var checklist: [ChecklistItem]?
+    /// 为空表示不修改已有的附件
+    var attachments: [FileAttachment]?
+    /// 备注是否为 Markdown；为空表示不修改
+    var markdownNotes: Bool?
 
     /// 只编码设置了的字段；双重可选中的 `.some(nil)` 编码为 `null`（清除）。
     func encode(to encoder: Encoder) throws {
@@ -227,9 +233,11 @@ struct TodoInput: Codable, Hashable {
         if let remindAt { try c.encode(remindAt, forKey: .remindAt) }
         if let `repeat` { try c.encode(`repeat`, forKey: .repeat) }
         try c.encodeIfPresent(checklist, forKey: .checklist)
+        try c.encodeIfPresent(attachments, forKey: .attachments)
+        try c.encodeIfPresent(markdownNotes, forKey: .markdownNotes)
     }
 
-    init(id: String? = nil, title: String, notes: String? = nil, done: Bool? = nil, due: String?? = nil, priority: Int? = nil, refSystem: String?? = nil, refKey: String?? = nil, refTitle: String?? = nil, remindAt: Int64?? = nil, repeat: String?? = nil, checklist: [ChecklistItem]? = nil) {
+    init(id: String? = nil, title: String, notes: String? = nil, done: Bool? = nil, due: String?? = nil, priority: Int? = nil, refSystem: String?? = nil, refKey: String?? = nil, refTitle: String?? = nil, remindAt: Int64?? = nil, repeat: String?? = nil, checklist: [ChecklistItem]? = nil, attachments: [FileAttachment]? = nil, markdownNotes: Bool? = nil) {
         self.id = id
         self.title = title
         self.notes = notes
@@ -242,11 +250,13 @@ struct TodoInput: Codable, Hashable {
         self.remindAt = remindAt
         self.repeat = `repeat`
         self.checklist = checklist
+        self.attachments = attachments
+        self.markdownNotes = markdownNotes
     }
 
     /// 由已有的待办构造（保存时带上全部字段）。
     init(_ todo: Todo) {
-        self.init(id: todo.id, title: todo.title, notes: todo.notes, done: todo.done, due: .some(todo.due), priority: todo.priority, refSystem: .some(todo.refSystem), refKey: .some(todo.refKey), refTitle: .some(todo.refTitle), remindAt: .some(todo.remindAt), repeat: .some(todo.repeat), checklist: todo.checklist)
+        self.init(id: todo.id, title: todo.title, notes: todo.notes, done: todo.done, due: .some(todo.due), priority: todo.priority, refSystem: .some(todo.refSystem), refKey: .some(todo.refKey), refTitle: .some(todo.refTitle), remindAt: .some(todo.remindAt), repeat: .some(todo.repeat), checklist: todo.checklist, attachments: todo.attachments, markdownNotes: todo.markdownNotes)
     }
 }
 
@@ -379,7 +389,7 @@ struct Nothing: Decodable {
 
 extension TodoInput {
     var serviceInput: NWZWorkspace.TodoInput {
-        .init(id: id, title: title, notes: notes ?? "", done: done ?? false, due: due ?? nil, priority: priority ?? 0, refSystem: refSystem ?? nil, refKey: refKey ?? nil, refTitle: refTitle ?? nil, remindAt: remindAt ?? nil, repeat: self.repeat ?? nil, checklist: checklist ?? [])
+        .init(id: id, title: title, notes: notes ?? "", done: done ?? false, due: due ?? nil, priority: priority ?? 0, refSystem: refSystem ?? nil, refKey: refKey ?? nil, refTitle: refTitle ?? nil, remindAt: remindAt ?? nil, repeat: self.repeat ?? nil, checklist: checklist ?? [], attachments: attachments, markdownNotes: markdownNotes)
     }
 }
 extension DocInput {

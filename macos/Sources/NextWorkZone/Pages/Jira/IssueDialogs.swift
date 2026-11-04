@@ -80,6 +80,8 @@ struct CreateIssueSheet: View {
     var initialDescription = ""
     /// 从已有问题出发：克隆（复制字段并加“克隆”链接），或创建与它链接的问题
     var source: Source? = nil
+    /// 预先加上的附件（本地文件路径），例如从待办创建时带上待办的附件
+    var initialFiles: (() async -> [String])? = nil
     var onCreated: (String) -> Void
 
     enum Source {
@@ -108,11 +110,12 @@ struct CreateIssueSheet: View {
     @State private var linkTypes: [LinkType]?
     @State private var relation: LinkRelation?
 
-    init(parent: IssueRef? = nil, initialSummary: String = "", initialDescription: String = "", source: Source? = nil, onCreated: @escaping (String) -> Void) {
+    init(parent: IssueRef? = nil, initialSummary: String = "", initialDescription: String = "", source: Source? = nil, initialFiles: (() async -> [String])? = nil, onCreated: @escaping (String) -> Void) {
         self.parent = parent
         self.initialSummary = initialSummary
         self.initialDescription = initialDescription
         self.source = source
+        self.initialFiles = initialFiles
         self.onCreated = onCreated
     }
 
@@ -206,6 +209,7 @@ struct CreateIssueSheet: View {
             Button(submitting ? "创建中…" : "创建", action: submit).keyboardShortcut(.defaultAction).disabled(fields == nil || submitting || !missing.isEmpty || blocked || (isLinked && relation == nil))
         }
         .task {
+            if let initialFiles { for p in await initialFiles() where !files.contains(p) { files.append(p) } }
             if projectKey == nil {
                 projectKey = parent.map { JQL.projectKey(of: $0.key) } ?? source.map { JQL.projectKey(of: $0.issue.key) } ?? AppPreferences.shared.dictionary(forKey: Self.lastKey)?["project"] as? String
             }

@@ -251,6 +251,15 @@ final class API: @unchecked Sendable {
     func wsBacklinks(system: String, key: String) async throws -> [Backlink] { try await workspace.value.store.backlinks(system: system, key: key) }
     func wsSearch(_ query: String) async throws -> [WorkspaceHit] { try await workspace.value.store.search(query) }
     func wsSaveAsset(base64: String, mime: String) async throws -> SavedAsset { try await workspace.value.saveAsset(base64: base64, mime: mime) }
+    /// 保存附件文件的内容，返回资源 id 等。
+    func wsSaveAsset(data: Data, mime: String) async throws -> SavedAsset { try await workspace.value.store.saveAsset(mime: mime, data: data) }
+    /// 工作空间里的资源（附件、图片）的内容。
+    func wsAssetData(_ id: String) async throws -> Data {
+        guard let asset = try await workspace.value.store.asset(id) else { throw APIError(message: "文件尚未同步或不存在") }
+        return asset.data
+    }
+    /// 保存到“下载”文件夹（重名时加序号）并用系统应用打开，返回保存的路径。
+    func saveDownload(data: Data, filename: String) async throws -> String { try await jira.attachments.save(data: data, filename: filename) }
     func wsSettings() async throws -> WorkspaceSettings { try await workspace.value.getSettings() }
     func wsSaveSettings(syncDir: String, jiraTodos: Bool) async throws -> WorkspaceSettings { try await workspace.value.saveSettings(syncDir: syncDir, jiraTodos: jiraTodos) }
     func wsSync() async throws -> SyncReport? { try await workspace.value.sync() }
