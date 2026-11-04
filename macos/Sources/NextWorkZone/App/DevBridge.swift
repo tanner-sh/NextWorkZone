@@ -349,6 +349,11 @@ enum DevBridge {
         case "/day":
             // 模拟日期变化（过了零点）：set=yyyy-MM-dd 把应用的“今天”换成这一天，不带参数恢复
             model.today = query["set"] ?? Fmt.today()
+        case "/paste-files-test":
+            // 用测试专用的剪贴板（nwz-test）试“粘贴为附件”，结果写进提示（/toast 读取）
+            Task { @MainActor in
+                do { toast("pasteFiles: " + (try await PastedFiles.read(NSPasteboard(name: .init("nwz-test")))).map(\.name).joined(separator: ",")) } catch { toast("pasteFiles error: \(errorMessage(error))", error: true) }
+            }
         case "/toast":
             // 当前的提示（窗口不在前台时不显示，在这里读）；tap=1 点最后一条提示中的按钮
             if query["tap"] != nil, let item = Toasts.shared.items.last(where: { $0.action != nil }) {

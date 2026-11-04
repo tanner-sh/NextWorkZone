@@ -626,6 +626,8 @@ final class EditorTextView: NSTextView {
         case "addCol": c.tableOp(.addCol)
         case "selectAll": selectAll(nil)
         case "paste": paste(nil)
+        // 用测试专用的剪贴板（不影响系统剪贴板）
+        case "pasteTest": if !pasteImages(from: NSPasteboard(name: .init("nwz-test"))) { toast("pasteTest: 没有可粘贴的图片") }
         case "undo": c.undo()
         default: break
         }
@@ -909,10 +911,15 @@ final class EditorTextView: NSTextView {
         guard let onImage = coordinator?.parent.onImage else { return false }
         var images: [(Data, String)] = []
         var handledFiles = false
+        /// 读不到的图片文件（例如微信聊天中复制的图片指向微信自己的文件夹，其他应用没有权限读）
+        var unreadable: [String] = []
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             for url in urls {
                 let ext = url.pathExtension.lowercased()
-                guard ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic"].contains(ext), let data = try? Data(contentsOf: url) else {
+                let isImage = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "tif", "tiff"].contains(ext)
+                let data = isImage ? try? Data(contentsOf: url) : nil
+                if isImage && data == nil { unreadable.append(url.lastPathComponent); continue }
+                guard isImage, let data else {
                     if let inline = coordinator?.parent.onFile?(url) {
                         insertInline(inline, replacing: 0)
                         insertText(" ", replacementRange: selectedRange())
@@ -920,9 +927,16 @@ final class EditorTextView: NSTextView {
                     }
                     continue
                 }
-                images.append((data, ext == "jpg" || ext == "jpeg" ? "image/jpeg" : "image/\(ext)"))
+                images.append((data, ext == "jpg" || ext == "jpeg" ? "image/jpeg" : ext == "tif" ? "image/tiff" : "image/\(ext)"))
             }
-        } else if pb.string(forType: .string) == nil, let image = NSImage(pasteboard: pb), let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            // 文件读不到时用剪贴板中同时提供的图片内容
+            if images.isEmpty, !unreadable.isEmpty {
+                if let png = Self.pastedImageData(pb) { images.append((png, "image/png")) } else {
+                    toast("没有权限读取 \(unreadable.joined(separator: "、"))（文件在其他应用的文件夹中）。可以先存到本地再拖进来，或者截图后粘贴", error: true)
+                    return true
+                }
+            }
+        } else if pb.string(forType: .string) == nil, let png = Self.pastedImageData(pb) {
             images.append((png, "image/png"))
         }
         guard !images.isEmpty else { return handledFiles }
@@ -938,6 +952,13 @@ final class EditorTextView: NSTextView {
             }
         }
         return true
+    }
+
+    /// 剪贴板中的图片内容（PNG；只有 TIFF 等其他格式时转换）。
+    static func pastedImageData(_ pb: NSPasteboard) -> Data? {
+        if let png = pb.data(forType: .png) { return png }
+        guard let image = NSImage(pasteboard: pb), let tiff = image.tiffRepresentation else { return nil }
+        return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
     }
 
     /// 应用中拖来的问题、Wiki 页面、合并请求：SwiftUI 的拖动只提供“移动”，文本视图不接受来自外部的移动，所以自己接受，

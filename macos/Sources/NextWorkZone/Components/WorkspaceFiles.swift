@@ -119,6 +119,12 @@ enum PastedFiles {
         hasFiles(pb) || (pb.string(forType: .string) == nil && NSImage.canInit(with: pb))
     }
 
+    private static func imageName() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return "图片 \(f.string(from: Date())).png"
+    }
+
     private static func hasFiles(_ pb: NSPasteboard) -> Bool {
         pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
     }
@@ -126,13 +132,30 @@ enum PastedFiles {
     /// 存为附件：文件按原样保存，图片存为 PNG（剪贴板中有 PNG 时直接使用）。
     static func read(_ pb: NSPasteboard = .general) async throws -> [FileAttachment] {
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            return try await WorkspaceFiles.add(urls)
+            // 其他应用文件夹中的文件（例如微信聊天中复制的图片）没有权限读：有图片内容时用图片内容
+            // 权限检查（isReadableFile）看不出其他应用文件夹的访问限制，实际打开一下
+            let canOpen: (URL) -> Bool = { url in
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue { return true }
+                guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+                try? handle.close()
+                return true
+            }
+            let readable = urls.filter(canOpen)
+            let unreadable = urls.filter { !canOpen($0) }
+            var added = try await WorkspaceFiles.add(readable)
+            if !unreadable.isEmpty {
+                if added.isEmpty, let png = EditorTextView.pastedImageData(pb) {
+                    let name = unreadable.count == 1 && unreadable[0].pathExtension.lowercased() == "png" ? unreadable[0].lastPathComponent : imageName()
+                    added.append(try await WorkspaceFiles.add(data: png, name: name, mime: "image/png"))
+                } else {
+                    toast("没有权限读取 \(unreadable.map(\.lastPathComponent).joined(separator: "、"))（文件在其他应用的文件夹中）。可以先存到本地再拖进来", error: true)
+                }
+            }
+            return added
         }
-        let png = pb.data(forType: .png) ?? NSImage(pasteboard: pb).flatMap { $0.tiffRepresentation }.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }
-        guard let png else { return [] }
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd-HHmmss"
-        return [try await WorkspaceFiles.add(data: png, name: "图片 \(f.string(from: Date())).png", mime: "image/png")]
+        guard let png = EditorTextView.pastedImageData(pb) else { return [] }
+        return [try await WorkspaceFiles.add(data: png, name: imageName(), mime: "image/png")]
     }
 }
 
