@@ -216,8 +216,10 @@ struct GitlabPage: View {
                         Toggle(st.1, isOn: Binding(get: { mrState == st.0 }, set: { if $0 { mrState = st.0 } }))
                     }
                 } label: {
-                    Text(mrStates.first { $0.0 == mrState }?.1 ?? "状态")
+                    // 只有文字的标签在工具栏中会被隐藏，只剩一个箭头；和分支菜单一样带图标、显示文字
+                    Label(mrStates.first { $0.0 == mrState }?.1 ?? "状态", systemImage: "line.3.horizontal.decrease")
                 }
+                .labelStyle(.titleAndIcon)
                 .help("合并请求的状态")
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
                     .refreshing(mrList.loading).disabled(mrList.loading).help("刷新")

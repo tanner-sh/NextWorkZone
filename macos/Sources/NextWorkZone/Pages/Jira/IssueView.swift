@@ -144,11 +144,15 @@ struct IssueView: View {
                     }
                     .help("流转到「\(first.to.name)」；箭头中有其余流转和流转模板")
                 } else {
-                    Menu("流转") {
+                    // 只有文字的菜单在工具栏中只剩一个箭头，带上图标
+                    Menu {
                         ForEach(templates, id: \.0.id) { tpl, t in
                             Button("\(tpl.name)（\(t.name)）", systemImage: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) }
                         }
+                    } label: {
+                        Label("流转", systemImage: "bolt")
                     }
+                    .labelStyle(.titleAndIcon)
                 }
             }
             ToolbarSpacer(.fixed)
