@@ -18,110 +18,100 @@ struct EditorItem: Identifiable, Hashable {
     }
 }
 
-/// 大纲式列表编辑器：回车新增一项（在光标处拆分），Tab / Shift+Tab 调整层级，行首退格降级或与上一项合并，
-/// 粘贴多行文本时按行拆分（行首空格或“-”表示层级）。
-struct OutlineEditor: View {
+/// 大纲式列表编辑器：整栏是一个文本视图，每段是一项，可以跨项拖选、复制。
+/// 回车新增一项（在光标处拆分），Tab / Shift+Tab 调整所选各项的层级，行首退格降级或与上一项合并，
+/// 粘贴多行文本时按行拆分（行首空格或“-”表示层级），复制多项时按层级缩进。
+struct OutlineEditor: NSViewRepresentable {
     @Binding var items: [EditorItem]
     var placeholder: String
-    @State private var focus: (id: Int, caret: Int?)?
 
     static let maxLevel = 4
+    /// 每一级的缩进
+    static let indent: CGFloat = 22
+    /// 圆点加上与文字的间距
+    static let bulletWidth: CGFloat = 14
 
-    var body: some View {
-        if items.isEmpty {
-            Button(placeholder) { insertAfter(-1, level: 0) }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(item.level == 0 ? Color.primary : Color.secondary)
-                            .frame(width: item.level == 0 ? 6 : 5, height: item.level == 0 ? 6 : 5)
-                            // 圆点与第一行文字的中线对齐（长条目会换成多行）
-                            .padding(.top, item.level == 0 ? 7 : 7.5)
-                        OutlineField(
-                            text: Binding(get: { items.indices.contains(index) ? items[index].text : "" }, set: { if items.indices.contains(index) { items[index].text = $0 } }),
-                            placeholder: index == 0 ? placeholder : "",
-                            bold: item.level == 0,
-                            focusCaret: focus?.id == item.id ? (focus?.caret ?? -1) : nil,
-                            onFocused: { focus = nil },
-                            onCommand: { command, caret in handle(command, index: index, caret: caret) },
-                            onPaste: { text in paste(text, index: index) }
-                        )
-                    }
-                    .padding(.leading, CGFloat(item.level) * 22)
-                }
-            }
-        }
+    func makeCoordinator() -> Coordinator {
+        let c = Coordinator()
+        c.parent = self
+        return c
     }
 
-    private func insertAfter(_ index: Int, level: Int, text: String = "") {
-        let item = EditorItem(id: EditorItem.newId(), level: level, text: text)
-        items.insert(item, at: index + 1)
-        focus = (item.id, 0)
+    func makeNSView(context: Context) -> OutlineTextView {
+        let view = OutlineTextView(usingTextLayoutManager: false)
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainerInset = NSSize(width: 0, height: 2)
+        view.isVerticallyResizable = false
+        view.isHorizontallyResizable = false
+        view.drawsBackground = false
+        view.isRichText = true
+        view.importsGraphics = false
+        view.allowsUndo = true
+        view.usesFontPanel = false
+        view.usesRuler = false
+        // “--100%”不能被换成破折号，引号也保持原样
+        view.isAutomaticDashSubstitutionEnabled = false
+        view.isAutomaticQuoteSubstitutionEnabled = false
+        view.isAutomaticTextReplacementEnabled = false
+        view.isAutomaticSpellingCorrectionEnabled = false
+        view.isAutomaticLinkDetectionEnabled = false
+        view.isContinuousSpellCheckingEnabled = false
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.typingAttributes = Self.attributes(level: 0)
+        view.delegate = context.coordinator
+        context.coordinator.view = view
+        view.placeholder = placeholder
+        context.coordinator.load(items)
+        return view
     }
 
-    enum Command { case enter, tab, backtab, backspaceAtStart, up, down }
-
-    private func handle(_ command: Command, index: Int, caret: Int) -> Bool {
-        guard items.indices.contains(index) else { return false }
-        let item = items[index]
-        switch command {
-        case .enter:
-            // 在光标处拆分当前项
-            let ns = item.text as NSString
-            let cut = min(caret, ns.length)
-            items[index].text = ns.substring(to: cut)
-            let next = EditorItem(id: EditorItem.newId(), level: item.level, text: ns.substring(from: cut))
-            items.insert(next, at: index + 1)
-            focus = (next.id, 0)
-        case .tab:
-            let max = index == 0 ? 0 : min(items[index - 1].level + 1, Self.maxLevel)
-            if item.level < max { items[index].level += 1 }
-            focus = (item.id, caret)
-        case .backtab:
-            if item.level > 0 { items[index].level -= 1 }
-            focus = (item.id, caret)
-        case .backspaceAtStart:
-            if item.level > 0 {
-                items[index].level -= 1
-                focus = (item.id, 0)
-            } else if index > 0 {
-                // 与上一项合并
-                let prev = items[index - 1]
-                items[index - 1].text = prev.text + item.text
-                items.remove(at: index)
-                focus = (prev.id, (prev.text as NSString).length)
-            } else {
-                return false
-            }
-        case .up:
-            guard index > 0 else { return false }
-            focus = (items[index - 1].id, nil)
-        case .down:
-            guard index < items.count - 1 else { return false }
-            focus = (items[index + 1].id, nil)
+    func updateNSView(_ view: OutlineTextView, context: Context) {
+        let c = context.coordinator
+        c.parent = self
+        if view.placeholder != placeholder {
+            view.placeholder = placeholder
+            view.needsDisplay = true
         }
-        return true
+        // 外部改了内容（加载、插入草稿）才重建文字；自己编辑产生的变化已经一致
+        if !view.hasMarkedText(), Coordinator.lines(items) != view.lines() { c.load(items) }
     }
 
-    /// 粘贴多行文本：按行拆分。返回 false 时按普通文字粘贴。
-    private func paste(_ text: String, index: Int) -> Bool {
-        guard text.contains("\n"), items.indices.contains(index) else { return false }
-        let base = items[index].level
-        let pasted = Self.parseLines(text).map { EditorItem(id: EditorItem.newId(), level: min(base + $0.level, Self.maxLevel), text: $0.text) }
-        guard let last = pasted.last else { return false }
-        if items[index].text.trimmingCharacters(in: .whitespaces).isEmpty {
-            items.replaceSubrange(index...index, with: pasted)
-        } else {
-            items.insert(contentsOf: pasted, at: index + 1)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView view: OutlineTextView, context: Context) -> CGSize? {
+        guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
+        let frameWidth = view.frame.width
+        let width = (proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? (frameWidth >= 50 ? frameWidth : 600)).rounded()
+        guard width >= 50 else { return CGSize(width: width, height: view.frame.height) }
+        container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        var height = layout.usedRect(for: container).height
+        if view.string.isEmpty { height = max(height, Self.font(level: 0).boundingRectForFont.height) }
+        if frameWidth >= 50 { container.containerSize = NSSize(width: frameWidth, height: CGFloat.greatestFiniteMagnitude) }
+        return CGSize(width: width, height: ceil(height + view.textContainerInset.height * 2))
+    }
+
+    // MARK: 样式
+
+    static let levelKey = NSAttributedString.Key("nwzOutlineLevel")
+
+    static func font(level: Int) -> NSFont { .systemFont(ofSize: 14, weight: level == 0 ? .semibold : .regular) }
+
+    static func attributes(level: Int) -> [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.firstLineHeadIndent = CGFloat(level) * indent + bulletWidth
+        style.headIndent = style.firstLineHeadIndent
+        style.paragraphSpacing = 3
+        style.lineSpacing = 1
+        return [.font: font(level: level), .foregroundColor: NSColor.textColor, .paragraphStyle: style, levelKey: level]
+    }
+
+    static func attributed(_ lines: [(level: Int, text: String)]) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        for (i, line) in lines.enumerated() {
+            out.append(NSAttributedString(string: line.text + (i < lines.count - 1 ? "\n" : ""), attributes: attributes(level: line.level)))
         }
-        focus = (last.id, nil)
-        return true
+        return out
     }
 
     /// 把多行文本解析为大纲：每 2 个空格或 1 个 Tab 为一级缩进，行首的“-”“*”“•”会被去掉。
@@ -133,137 +123,311 @@ struct OutlineEditor: View {
             return content.isEmpty ? nil : OutlineItem(level: width / 2, text: content)
         }
     }
-}
 
-/// 大纲中的一项：拦截回车、Tab、行首退格、上下键，可以知道光标位置。
-private struct OutlineField: NSViewRepresentable {
-    @Binding var text: String
-    var placeholder: String
-    var bold: Bool
-    /// 需要获得焦点时的光标位置（-1 为末尾）
-    var focusCaret: Int?
-    var onFocused: () -> Void
-    var onCommand: (OutlineEditor.Command, Int) -> Bool
-    var onPaste: (String) -> Bool
-
-    func makeCoordinator() -> Coordinator {
-        let c = Coordinator()
-        // 创建视图时设置初始文字就会触发代理回调，此时 updateNSView 还没来得及设置 parent
-        c.parent = self
-        return c
-    }
-
-    func makeNSView(context: Context) -> PasteField {
-        let field = PasteField()
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        // 长条目换行显示（之前单行滚动，超出宽度的部分看不到）；回车由代理拦截为新增一项
-        field.usesSingleLineMode = false
-        field.cell?.wraps = true
-        field.cell?.isScrollable = false
-        field.lineBreakMode = .byWordWrapping
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        field.delegate = context.coordinator
-        return field
-    }
-
-    func updateNSView(_ field: PasteField, context: Context) {
-        context.coordinator.parent = self
-        field.onPaste = onPaste
-        if field.stringValue != text { field.stringValue = text }
-        field.placeholderString = placeholder
-        field.font = .systemFont(ofSize: 14, weight: bold ? .semibold : .regular)
-        if let caret = focusCaret {
-            DispatchQueue.main.async {
-                guard let window = field.window else { return }
-                window.makeFirstResponder(field)
-                if let editor = field.currentEditor() {
-                    let length = (field.stringValue as NSString).length
-                    let pos = caret < 0 ? length : min(caret, length)
-                    editor.selectedRange = NSRange(location: pos, length: 0)
-                }
-                onFocused()
-            }
-        }
-    }
-
-    /// 按给定宽度换行后的高度。
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView field: PasteField, context: Context) -> CGSize? {
-        let width = proposal.width ?? field.bounds.width
-        guard width > 0, width.isFinite else { return nil }
-        // HStack 最终给的宽度可能比提议的略宽几点：排好版后按实际宽度换行（宽度变化时会重新计算）
-        let measure = field.bounds.width > 0 ? field.bounds.width : width
-        return CGSize(width: width, height: field.wrappedHeight(width: measure))
-    }
-
-    final class PasteField: NSTextField {
-        var onPaste: ((String) -> Bool)?
-
-        override func setFrameSize(_ newSize: NSSize) {
-            let changed = newSize.width != frame.width
-            super.setFrameSize(newSize)
-            if changed { invalidateIntrinsicContentSize() }
-        }
-
-        func wrappedHeight(width: CGFloat) -> CGFloat {
-            guard let cell = cell?.copy() as? NSTextFieldCell else { return 18 }
-            // 编辑中以字段编辑器里的文字为准；空的时候按一行（或占位文字）计算
-            let string = currentEditor()?.string ?? stringValue
-            cell.stringValue = string.isEmpty ? (placeholderString ?? " ") : string
-            return ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height)
-        }
+    struct Line: Equatable {
+        var level: Int
+        var text: String
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: OutlineField!
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: OutlineEditor!
+        weak var view: OutlineTextView?
 
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? PasteField else { return }
-            parent.text = field.stringValue
-            // 换行数变化时重新计算高度
-            field.invalidateIntrinsicContentSize()
+        static func lines(_ items: [EditorItem]) -> [Line] {
+            // 空的编辑器也是一个空段落
+            items.isEmpty ? [Line(level: 0, text: "")] : items.map { Line(level: $0.level, text: $0.text) }
         }
 
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            if textView.hasMarkedText() { return false }
-            let sel = textView.selectedRange()
+        /// 用给定的条目重建文字（不记入撤销）。
+        func load(_ items: [EditorItem]) {
+            guard let view, let storage = view.textStorage else { return }
+            let selection = view.selectedRange()
+            let lines = Self.lines(items)
+            storage.setAttributedString(OutlineEditor.attributed(lines.map { ($0.level, $0.text) }))
+            view.trailingLevel = lines.last.flatMap { $0.text.isEmpty ? $0.level : nil }
+            view.undoManager?.removeAllActions(withTarget: storage)
+            let length = storage.length
+            view.setSelectedRange(NSRange(location: min(selection.location, length), length: 0))
+            view.updateTypingAttributes()
+            view.needsDisplay = true
+        }
+
+        /// 文字变化后统一每段的样式，并写回条目。
+        func publish() {
+            guard let view else { return }
+            if !view.hasMarkedText() { view.normalize() }
+            let lines = view.lines()
+            let old = parent.items
+            // 只有一个空段落时就是没有内容
+            let next: [EditorItem] = lines == [Line(level: 0, text: "")] ? [] : lines.enumerated().map { i, line in
+                EditorItem(id: i < old.count ? old[i].id : EditorItem.newId(), level: line.level, text: line.text)
+            }
+            if next.map({ Line(level: $0.level, text: $0.text) }) != old.map({ Line(level: $0.level, text: $0.text) }) { parent.items = next }
+            view.needsDisplay = true
+        }
+
+        func textDidChange(_ notification: Notification) { publish() }
+
+        func textViewDidChangeSelection(_ notification: Notification) { view?.updateTypingAttributes() }
+
+        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            guard let view = textView as? OutlineTextView, replacementString != nil, !view.hasMarkedText() else { return true }
+            // 新输入的文字用所在项的层级；之后最后一个空段落的层级重新按上一段推断
+            view.typingAttributes = OutlineEditor.attributes(level: view.paragraphLevel(view.paragraphIndex(at: range.location)))
+            view.trailingLevel = nil
+            return true
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard let view = textView as? OutlineTextView, !view.hasMarkedText() else { return false }
+            let sel = view.selectedRange()
             switch selector {
-            case #selector(NSResponder.insertNewline(_:)):
-                parent.text = textView.string
-                return parent.onCommand(.enter, sel.location)
             case #selector(NSResponder.insertTab(_:)):
-                return parent.onCommand(.tab, sel.location)
+                view.shiftLevels(by: 1)
+                return true
             case #selector(NSResponder.insertBacktab(_:)):
-                return parent.onCommand(.backtab, sel.location)
+                view.shiftLevels(by: -1)
+                return true
             case #selector(NSResponder.deleteBackward(_:)):
-                guard sel.location == 0 && sel.length == 0 else { return false }
-                return parent.onCommand(.backspaceAtStart, 0)
-            case #selector(NSResponder.moveUp(_:)):
-                return parent.onCommand(.up, sel.location)
-            case #selector(NSResponder.moveDown(_:)):
-                return parent.onCommand(.down, sel.location)
-            case #selector(NSText.paste(_:)):
-                return false
+                // 行首退格：有缩进时先降级，否则照常与上一项合并
+                guard sel.length == 0 else { return false }
+                let index = view.paragraphIndex(at: sel.location)
+                guard view.paragraphRanges()[index].location == sel.location, view.paragraphLevel(index) > 0 else { return false }
+                view.shiftLevels(by: -1)
+                return true
             default:
                 return false
             }
         }
-
-        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool { true }
     }
 }
 
-extension OutlineField.PasteField {
-    /// 粘贴多行文本时交给大纲按行拆分。
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, event.charactersIgnoringModifiers == "v",
-           currentEditor() != nil, let text = NSPasteboard.general.string(forType: .string), onPaste?(text) == true {
-            return true
+/// 周报大纲的文本视图：画圆点和占位文字，Tab 调整层级，粘贴和复制按大纲处理。
+final class OutlineTextView: NSTextView {
+    var placeholder = ""
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard newSize.width >= 50, let container = textContainer else { return }
+        let width = newSize.width - textContainerInset.width * 2
+        if abs(container.containerSize.width - width) > 0.5 {
+            container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
         }
-        return super.performKeyEquivalent(with: event)
     }
+
+    // MARK: 段落
+
+    /// 每段的范围（不含换行符），最后一个空段落长度为 0。
+    func paragraphRanges() -> [NSRange] {
+        let s = string as NSString
+        var out: [NSRange] = []
+        var start = 0
+        while true {
+            let r = s.range(of: "\n", range: NSRange(location: start, length: s.length - start))
+            if r.location == NSNotFound {
+                out.append(NSRange(location: start, length: s.length - start))
+                return out
+            }
+            out.append(NSRange(location: start, length: r.location - start))
+            start = r.location + 1
+        }
+    }
+
+    func paragraphIndex(at location: Int) -> Int {
+        let ranges = paragraphRanges()
+        return ranges.lastIndex { $0.location <= location } ?? 0
+    }
+
+    /// 最后一个空段落没有文字记录层级：调整过层级时记在这里，否则与上一段相同。
+    var trailingLevel: Int?
+
+    /// 段落的层级：记在段落文字上；最后一个空段落见 `trailingLevel`。
+    func paragraphLevel(_ index: Int, ranges: [NSRange]? = nil) -> Int {
+        let ranges = ranges ?? paragraphRanges()
+        guard ranges.indices.contains(index), let storage = textStorage else { return 0 }
+        let r = ranges[index]
+        let level: Int?
+        if r.length > 0 || r.location < storage.length {
+            level = storage.attribute(OutlineEditor.levelKey, at: r.location, effectiveRange: nil) as? Int
+        } else {
+            level = trailingLevel ?? (index > 0 ? paragraphLevel(index - 1, ranges: ranges) : 0)
+        }
+        return min(max(level ?? 0, 0), OutlineEditor.maxLevel)
+    }
+
+    func lines() -> [OutlineEditor.Line] {
+        let s = string as NSString
+        let ranges = paragraphRanges()
+        return ranges.indices.map { OutlineEditor.Line(level: paragraphLevel($0, ranges: ranges), text: s.substring(with: ranges[$0])) }
+    }
+
+    /// 段落范围连同后面的换行符。
+    private func fullRange(_ r: NSRange) -> NSRange {
+        NSRange(location: r.location, length: min(r.length + 1, (string as NSString).length - r.location))
+    }
+
+    /// 每段的样式按段首的层级统一（合并、粘贴后同一段里可能混着不同样式）。
+    func normalize() {
+        guard let storage = textStorage else { return }
+        let ranges = paragraphRanges()
+        var changed = false
+        for (i, r) in ranges.enumerated() {
+            let full = fullRange(r)
+            guard full.length > 0 else { continue }
+            let level = paragraphLevel(i, ranges: ranges)
+            var effective = NSRange()
+            let current = storage.attribute(OutlineEditor.levelKey, at: full.location, longestEffectiveRange: &effective, in: full) as? Int
+            var fontRange = NSRange()
+            let font = storage.attribute(.font, at: full.location, longestEffectiveRange: &fontRange, in: full) as? NSFont
+            if current == level, effective == full, fontRange == full, font == OutlineEditor.font(level: level) { continue }
+            if !changed { storage.beginEditing() }
+            changed = true
+            storage.setAttributes(OutlineEditor.attributes(level: level), range: full)
+        }
+        if changed { storage.endEditing() }
+        updateTypingAttributes()
+    }
+
+    /// 输入样式按光标所在项的层级（NSTextView 默认取前一个字符的样式，在项首时会取到上一项的）。
+    func updateTypingAttributes() {
+        guard !hasMarkedText() else { return }
+        typingAttributes = OutlineEditor.attributes(level: paragraphLevel(paragraphIndex(at: selectedRange().location)))
+    }
+
+    /// 所选各项升级或降级（记入撤销）。第一项不能缩进，每项最多比上一项深一级。
+    func shiftLevels(by delta: Int) {
+        guard let storage = textStorage else { return }
+        let ranges = paragraphRanges()
+        let sel = selectedRange()
+        let first = paragraphIndex(at: sel.location)
+        let last = sel.length > 0 ? paragraphIndex(at: sel.location + sel.length - 1) : first
+        var levels = ranges.indices.map { paragraphLevel($0, ranges: ranges) }
+        for i in first...last {
+            let maxLevel = i == 0 ? 0 : min(levels[i - 1] + 1, OutlineEditor.maxLevel)
+            levels[i] = min(max(levels[i] + delta, 0), maxLevel)
+        }
+        let span = NSUnionRange(fullRange(ranges[first]), fullRange(ranges[last]))
+        if span.length > 0 {
+            guard shouldChangeText(in: span, replacementString: nil) else { return }
+            storage.beginEditing()
+            for i in first...last where fullRange(ranges[i]).length > 0 {
+                storage.setAttributes(OutlineEditor.attributes(level: levels[i]), range: fullRange(ranges[i]))
+            }
+            storage.endEditing()
+        }
+        if ranges[last].length == 0 && ranges[last].location == storage.length { trailingLevel = levels[last] }
+        setSelectedRange(sel)
+        updateTypingAttributes()
+        if span.length > 0 { didChangeText() } else { (delegate as? OutlineEditor.Coordinator)?.publish() }
+        needsDisplay = true
+    }
+
+    // MARK: 粘贴、复制
+
+    override func paste(_ sender: Any?) {
+        pasteOutline()
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        pasteOutline()
+    }
+
+    override func pasteAsRichText(_ sender: Any?) {
+        pasteOutline()
+    }
+
+    /// 粘贴纯文字；多行时按行拆分为多项，放在当前项之后（当前项是空的就替换它）。
+    private func pasteOutline() {
+        guard var text = NSPasteboard.general.string(forType: .string), let storage = textStorage else { return }
+        text = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let parsed = OutlineEditor.parseLines(text)
+        guard text.contains("\n"), !parsed.isEmpty else {
+            let single = text.replacingOccurrences(of: "\n", with: "")
+            guard !single.isEmpty else { return }
+            insertText(single, replacementRange: selectedRange())
+            return
+        }
+        let ranges = paragraphRanges()
+        let index = paragraphIndex(at: selectedRange().location)
+        let base = paragraphLevel(index, ranges: ranges)
+        let current = ranges[index]
+        let blank = (string as NSString).substring(with: current).trimmingCharacters(in: .whitespaces).isEmpty
+        let lines = parsed.map { (level: min(base + $0.level, OutlineEditor.maxLevel), text: $0.text) }
+        let inserted = NSMutableAttributedString()
+        if !blank { inserted.append(NSAttributedString(string: "\n", attributes: OutlineEditor.attributes(level: base))) }
+        inserted.append(OutlineEditor.attributed(lines))
+        let target = blank ? current : NSRange(location: NSMaxRange(current), length: 0)
+        guard shouldChangeText(in: target, replacementString: inserted.string) else { return }
+        storage.replaceCharacters(in: target, with: inserted)
+        trailingLevel = nil
+        setSelectedRange(NSRange(location: target.location + inserted.length, length: 0))
+        didChangeText()
+    }
+
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
+
+    /// 复制：只在一项之内时是原文；跨项时每项一行，按层级用两个空格缩进（粘贴回来能还原层级）。
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard type == .string else { return super.writeSelection(to: pboard, type: type) }
+        let sel = selectedRange()
+        guard sel.length > 0 else { return false }
+        let s = string as NSString
+        let ranges = paragraphRanges()
+        let first = paragraphIndex(at: sel.location), last = paragraphIndex(at: sel.location + sel.length - 1)
+        if first == last { return pboard.setString(s.substring(with: sel), forType: .string) }
+        var out: [String] = []
+        for i in first...last {
+            let part = NSIntersectionRange(ranges[i], sel)
+            let text = ranges[i].length == 0 || part.length == 0 ? "" : s.substring(with: part)
+            if i == last && text.isEmpty { continue }
+            out.append(String(repeating: "  ", count: paragraphLevel(i, ranges: ranges)) + text)
+        }
+        return pboard.setString(out.joined(separator: "\n"), forType: .string)
+    }
+
+    // MARK: 绘制
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let layout = layoutManager else { return }
+        let origin = textContainerOrigin
+        if string.isEmpty {
+            if !placeholder.isEmpty {
+                let attrs: [NSAttributedString.Key: Any] = [.font: OutlineEditor.font(level: 0).withWeight(.regular), .foregroundColor: NSColor.placeholderTextColor]
+                (placeholder as NSString).draw(at: NSPoint(x: origin.x + OutlineEditor.bulletWidth, y: origin.y), withAttributes: attrs)
+            }
+            return
+        }
+        let ranges = paragraphRanges()
+        for (i, r) in ranges.enumerated() {
+            let level = paragraphLevel(i, ranges: ranges)
+            let font = OutlineEditor.font(level: level)
+            var line: NSRect
+            var baseline: CGFloat
+            if r.location < (string as NSString).length {
+                let glyph = layout.glyphIndexForCharacter(at: r.location)
+                line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                baseline = layout.location(forGlyphAt: glyph).y
+            } else {
+                // 最后一个空段落画在额外的行上
+                line = layout.extraLineFragmentRect
+                guard line.height > 0 else { continue }
+                baseline = ceil(font.ascender)
+            }
+            let size: CGFloat = level == 0 ? 6 : 5
+            let cx = origin.x + CGFloat(level) * OutlineEditor.indent + 3
+            let cy = origin.y + line.minY + baseline - font.capHeight / 2
+            let dot = NSRect(x: cx - size / 2, y: cy - size / 2, width: size, height: size)
+            guard dot.intersects(dirtyRect) else { continue }
+            (level == 0 ? NSColor.labelColor : NSColor.secondaryLabelColor).setFill()
+            NSBezierPath(ovalIn: dot).fill()
+        }
+    }
+}
+
+private extension NSFont {
+    func withWeight(_ weight: NSFont.Weight) -> NSFont { .systemFont(ofSize: pointSize, weight: weight) }
 }
 
 // MARK: - 草稿合并、对比
