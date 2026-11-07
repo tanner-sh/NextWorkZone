@@ -1,4 +1,6 @@
 import AppKit
+import NWZCore
+import NWZServices
 import SwiftUI
 
 /// 只读显示富文本（Jira 描述与评论、Wiki 页面、合并请求描述等）。
@@ -17,11 +19,13 @@ struct RichView: View {
     var onTask: ((RichTask) -> Void)? = nil
     var onLink: ((String) -> Bool)? = nil
     var scrollToHeading: Int? = nil
+    /// 外层已统一查询的问题；为 nil 时由文本视图自行查询。
+    var resolvedIssues: [String: IssueSummary]? = nil
     /// 图片加载后高度变化，需要重新计算大小
     @State private var version = 0
 
     var body: some View {
-        RichTextView(doc: doc, service: service, scrolls: scrolls, baseSize: baseSize, onTask: onTask, onLink: onLink, scrollToHeading: scrollToHeading, version: version) {
+        RichTextView(doc: doc, service: service, scrolls: scrolls, baseSize: baseSize, onTask: onTask, onLink: onLink, scrollToHeading: scrollToHeading, version: version, resolvedIssues: resolvedIssues) {
             version += 1
         }
     }
@@ -38,6 +42,7 @@ struct RichTextView: NSViewRepresentable {
     /// 滚动到第几个标题（目录）
     var scrollToHeading: Int? = nil
     var version = 0
+    var resolvedIssues: [String: IssueSummary]? = nil
     var onRelayout: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
 
@@ -85,12 +90,27 @@ struct RichTextView: NSViewRepresentable {
         c.parent = self
         (c.textView as? RichNSTextView)?.service = service
         // 内容没变时比较几乎不花时间（数组共用存储时直接判定相等）；不要对整篇文档求哈希
-        if c.renderedDoc != doc || c.renderedSession != model.sessionVersion || c.renderedBaseSize != baseSize {
+        let changed = c.renderedDoc != doc || c.renderedSession != model.sessionVersion || c.renderedConnection != model.connectionVersion || c.renderedBaseSize != baseSize
+        if let supplied = resolvedIssues {
+            let relevant = Dictionary(uniqueKeysWithValues: c.issueKeys(doc, jiraBase: model.baseUrl(.jira)).compactMap { key in supplied[key].map { (key, $0) } })
+            if changed || !c.externallyResolved || c.issues != relevant {
+                c.cancelLookup()
+                c.externallyResolved = true
+                c.renderedDoc = doc
+                c.renderedSession = model.sessionVersion
+                c.renderedConnection = model.connectionVersion
+                c.renderedBaseSize = baseSize
+                c.issues = relevant
+                c.render()
+            }
+        } else if changed || c.externallyResolved {
+            c.externallyResolved = false
             c.renderedDoc = doc
             c.renderedSession = model.sessionVersion
+            c.renderedConnection = model.connectionVersion
             c.renderedBaseSize = baseSize
             // 已查过的问题直接带上，免得查到后整篇再排一次
-            if model.isReady(.jira) { c.issues.merge(IssueLookup.cached(doc.issueKeys(jiraBase: model.baseUrl(.jira)))) { _, b in b } }
+            c.issues = model.isReady(.jira) ? IssueLookup.cached(c.issueKeys(doc, jiraBase: model.baseUrl(.jira))) : [:]
             c.render()
             c.lookupIssues(doc)
         }
@@ -138,14 +158,29 @@ struct RichTextView: NSViewRepresentable {
         weak var textView: NSTextView?
         var renderedDoc: RichDoc?
         var renderedSession = -1
+        var renderedConnection = -1
         var renderedBaseSize: CGFloat = 0
         var scrolledHeading: Int?
         var issues: [String: IssueSummary] = [:]
+        var externallyResolved = false
         /// 各宽度下的高度（内容变化后清空）
         var heights: [CGFloat: CGFloat] = [:]
         /// 缩放窗口期间用了估计的高度，松开后要重新计算
         var measureAfterResize = false
         private var relayout: Task<Void, Never>?
+        private var lookup: Task<Void, Never>?
+
+        private var keyCache: (doc: RichDoc, base: String, keys: [String])?
+
+        func cancelLookup() { lookup?.cancel(); lookup = nil }
+
+        /// 文档中的问题键：外层每次更新（例如调整窗口宽度）都会询问，按文档缓存，不每次遍历整篇
+        func issueKeys(_ doc: RichDoc, jiraBase: String) -> [String] {
+            if let keyCache, keyCache.base == jiraBase, keyCache.doc == doc { return keyCache.keys }
+            let keys = doc.issueKeys(jiraBase: jiraBase)
+            keyCache = (doc, jiraBase, keys)
+            return keys
+        }
 
         func render() {
             guard let textView else { return }
@@ -181,14 +216,17 @@ struct RichTextView: NSViewRepresentable {
 
         /// 查询文档中 Jira 问题的概要和状态。
         func lookupIssues(_ doc: RichDoc) {
+            cancelLookup()
             guard AppModel.shared.isReady(.jira) else { return }
-            let keys = doc.issueKeys(jiraBase: AppModel.shared.baseUrl(.jira)).filter { issues[$0] == nil }
+            let keys = issueKeys(doc, jiraBase: AppModel.shared.baseUrl(.jira)).filter { issues[$0] == nil }
             guard !keys.isEmpty else { return }
-            Task {
+            let connection = AppModel.shared.connectionVersion
+            lookup = Task { [weak self] in
                 let found = await IssueLookup.fetch(keys)
-                guard !found.isEmpty else { return }
-                issues.merge(found) { _, b in b }
-                render()
+                guard let self, !Task.isCancelled, connection == AppModel.shared.connectionVersion,
+                      self.renderedDoc == doc, !self.externallyResolved, !found.isEmpty else { return }
+                self.issues.merge(found) { _, b in b }
+                self.render()
             }
         }
 
@@ -299,40 +337,36 @@ enum RichLinks {
 }
 
 /// 批量查询问题的概要和状态（Jira 未配置或查询失败时为空）。
+@MainActor
 enum IssueLookup {
-    nonisolated(unsafe) private static var cache: [String: IssueSummary] = [:]
+    private static var cache = MemoryCache<String, IssueSummary>(maxCount: 1_000)
+    private static var generation = 0
+
+    static func clear() {
+        generation += 1
+        cache.removeAll()
+    }
 
     /// 已经查过的问题（不发请求）。
-    @MainActor
     static func cached(_ keys: [String]) -> [String: IssueSummary] {
         var map: [String: IssueSummary] = [:]
-        for k in keys { if let hit = cache[k] { map[k] = hit } }
+        for k in keys { if let hit = cache.get(k), hit.fresh { map[k] = hit.value } }
         return map
     }
 
-    @MainActor
     static func fetch(_ keys: [String]) async -> [String: IssueSummary] {
-        var map: [String: IssueSummary] = [:]
-        let missing = keys.filter { k in
-            if let hit = cache[k] { map[k] = hit; return false }
-            return true
+        let current = generation
+        var map = cached(keys)
+        var seen: Set<String> = []
+        let missing = keys.filter { key in
+            map[key] == nil && seen.insert(key).inserted
         }
-        var i = 0
-        while i < missing.count {
-            let chunk = Array(missing[i..<min(i + 100, missing.count)])
-            i += 100
-            if let r = try? await API.shared.jiraSearch("key in (\(chunk.joined(separator: ",")))", startAt: 0, maxResults: chunk.count) {
-                for issue in r.issues { map[issue.key] = issue; cache[issue.key] = issue }
-            } else {
-                // 某个问题不存在或没有权限时整批会失败，逐个再试
-                for key in chunk {
-                    if let r = try? await API.shared.jiraSearch("key = \(key)", startAt: 0, maxResults: 1), let issue = r.issues.first {
-                        map[key] = issue
-                        cache[key] = issue
-                    }
-                }
-            }
+        let found = await IssueBatchLookup.fetch(missing) { batch in
+            let jql = batch.count == 1 ? "key = \(batch[0])" : "key in (\(batch.joined(separator: ",")))"
+            return try await API.shared.jiraSearch(jql, startAt: 0, maxResults: batch.count).issues
         }
+        guard !Task.isCancelled, current == generation else { return [:] }
+        for (key, issue) in found { map[key] = issue; cache.put(issue, for: key, ttl: 60) }
         return map
     }
 }

@@ -15,6 +15,8 @@ final class AppModel {
     var webAccess: [Service: WebAccess] = [:]
     /// 每次网页访问状态变化时递增，用于让图片重新加载。
     var sessionVersion = 0
+    /// 服务地址或凭据保存后递增，隔离此前账号的页面与问题缓存。
+    var connectionVersion = 0
     /// 本次运行中点过“稍后”的网页登录提示（侧栏底部仍有入口）
     var loginHintDismissed: Set<Service> = []
     /// 不在侧边栏显示的工具。
@@ -155,6 +157,14 @@ final class AppModel {
         NotificationCenter.default.addObserver(forName: Events.name(AppEvent.inbox), object: nil, queue: .main) { _ in
             Task { @MainActor in await AppModel.shared.refreshInbox() }
         }
+        NotificationCenter.default.addObserver(forName: Events.name(AppEvent.wikiPageChanged), object: nil, queue: .main) { event in
+            guard let payload = event.userInfo?["payload"] as? String,
+                  let page = try? JSONDecoder().decode(String.self, from: Data(payload.utf8)) else { return }
+            Task { @MainActor in
+                WikiPageCache.shared.remove(page)
+                IssueRelatedCache.shared.clearWiki()
+            }
+        }
         for name in [AppEvent.workspaceSynced, Events.local.workspaceChanged] {
             NotificationCenter.default.addObserver(forName: Events.name(name), object: nil, queue: .main) { _ in
                 Task { @MainActor in
@@ -172,8 +182,15 @@ final class AppModel {
         if settings.map(Self.fingerprint) != old { await refreshSessions() }
     }
 
-    func setSettings(_ s: Settings) {
+    func setSettings(_ s: Settings, credentialsMayHaveChanged: Bool = true) {
         let changed = settings.map(Self.fingerprint) != Self.fingerprint(s)
+        if changed || credentialsMayHaveChanged {
+            connectionVersion += 1
+            IssueCache.shared.clear()
+            IssueRelatedCache.shared.clear()
+            WikiPageCache.shared.clear()
+            IssueLookup.clear()
+        }
         settings = s
         if changed { Task { await refreshSessions() } }
     }

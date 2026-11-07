@@ -29,6 +29,15 @@ func isCancellation(_ error: Error) -> Bool {
     return Task.isCancelled
 }
 
+/// 认证和权限错误不能继续展示上一个账号的缓存内容。
+func isAccessError(_ error: Error) -> Bool {
+    guard let error = error as? NWZError else { return false }
+    switch error {
+    case .unauthorized, .forbidden, .missingToken, .notConfigured: return true
+    default: return false
+    }
+}
+
 /// 界面的类型化入口：各方法直接调用 Swift 服务。
 final class API: @unchecked Sendable {
     nonisolated(unsafe) static var shared: API!
@@ -125,6 +134,7 @@ final class API: @unchecked Sendable {
     func jiraFields(refresh: Bool = false) async throws -> [FieldInfo] { try await jira.fields(refresh: refresh) }
     func jiraMyWorklogs(from: String, to: String) async throws -> [WorklogSum] { try await jira.myWorklogs(from: from, to: to) }
     func jiraIssue(_ key: String) async throws -> IssueDetail { try await jira.issue(key) }
+    func jiraIssueWithoutIdentity(_ key: String) async throws -> IssueDetail { try await jira.issueWithoutIdentity(key) }
     func jiraTransitions(_ key: String) async throws -> [Transition] { try await jira.client().transitions(key) }
     func jiraTransition(_ key: String, transitionId: String, fields: [String: JSONValue], comment: String?, visibility: CommentVisibility? = nil) async throws -> IssueDetail { try await jira.transition(key, transitionID: transitionId, fields: fields, comment: comment, visibility: visibility) }
     func jiraAddComment(_ key: String, body: String, visibility: CommentVisibility? = nil) async throws -> Comment { try await jira.saveComment(key, body: body, visibility: visibility) }
@@ -314,6 +324,7 @@ final class API: @unchecked Sendable {
     func wikiSpaceRoots(_ space: String) async throws -> [WikiNode] { try await wiki.client().spaceRoots(space) }
     func wikiChildren(_ page: String) async throws -> [WikiNode] { try await wiki.client().children(page) }
     func wikiPage(_ page: String) async throws -> WikiPageDetail { try await wiki.page(page) }
+    func wikiMarkViewed(_ page: WikiPageDetail) async { await wiki.markViewed(page) }
     func wikiPageMeta(_ page: String) async throws -> WikiPageMeta { try await wiki.client().pageMeta(page) }
     func wikiSetWatching(_ page: String, watching: Bool) async throws { try await wiki.client().setWatching(page, watching: watching) }
     func wikiSetLiked(_ page: String, liked: Bool) async throws { try await wiki.client().setLiked(page, liked: liked) }
@@ -390,6 +401,7 @@ enum AppEvent {
     static let clipChanged = "clipboard-changed"
     static let clipSettings = "clipboard-settings"
     static let wikiIndex = "wiki-index-changed"
+    static let wikiPageChanged = WikiService.pageChangedEvent
     static let jiraIndex = "jira-index-changed"
     /// 网页会话状态变化，载荷为服务名。
     static let webSession = "web-session"

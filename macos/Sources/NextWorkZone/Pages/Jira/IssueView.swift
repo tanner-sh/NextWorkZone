@@ -5,8 +5,13 @@ import UniformTypeIdentifiers
 /// 问题详情：标题、流转、字段、描述、子任务、关联、相似问题、代码、Wiki、工作空间、附件、评论和历史。
 struct IssueView: View {
     var issueKey: String
+    /// 尚未取到详情时，先显示当前列表中已经有的概要。
+    var summary: IssueSummary?
     /// 在别处（例如列表的右键菜单）改过这个问题后递增：原地重新加载，不重建视图（滚动位置、展开状态、评论草稿保留）
     var version = 0
+    /// 窗口工具栏中问题操作的状态：主窗口中按钮在不随问题重建的 JiraPage 中（见 IssueToolbar）；
+    /// 为 nil 时（单独的问题窗口，问题不会切换）由这里自己放按钮
+    var externalToolbar: IssueToolbar?
     var onChanged: (IssueSummary) -> Void
 
     static let collapsedFieldCount = 10
@@ -35,34 +40,48 @@ struct IssueView: View {
     @State private var dropping = false
     @State private var uploading: String?
     @State private var pickingFiles = false
-    /// 下面的区块（子任务、关联、相似问题、评论等）晚一帧再创建：先尽快显示标题、字段和描述
+    /// 下面的区块（子任务、关联、相似问题、评论等）晚一帧再创建：先尽快显示标题、字段和描述（切换问题时约省 60 毫秒）
     @State private var showRest = false
+    @State private var requestGeneration = 0
+    @State private var lastConnection = AppModel.shared.connectionVersion
+    @State private var viewedTask: Task<Void, Never>?
+    @State private var watchBusy = false
+    @State private var toolbarOwner = UUID()
+    @State private var ownToolbar = IssueToolbar()
+    private var toolbar: IssueToolbar { externalToolbar ?? ownToolbar }
 
-    init(issueKey: String, version: Int = 0, onChanged: @escaping (IssueSummary) -> Void) {
+    init(issueKey: String, summary: IssueSummary? = nil, version: Int = 0, toolbar: IssueToolbar? = nil, onChanged: @escaping (IssueSummary) -> Void) {
         self.issueKey = issueKey
+        self.summary = summary
         self.version = version
+        self.externalToolbar = toolbar
         self.onChanged = onChanged
         // 看过的问题先显示上次的内容，后台再刷新：在列表里来回点时不必每次都等网络
         let cached = IssueCache.shared.get(issueKey)
         _issue = State(initialValue: cached?.detail)
-        _transitions = State(initialValue: cached?.transitions ?? [])
+        _transitions = State(initialValue: cached?.fresh == true ? cached?.transitions ?? [] : [])
+        let social = IssueCache.shared.social(issueKey)
+        _votes = State(initialValue: social?.votes)
+        _watchers = State(initialValue: social?.watchers)
     }
 
     var body: some View {
         Group {
-            if let error {
+            if let error, issue == nil {
                 VStack { ErrorBox(message: error) { Task { await load() } } }.padding(24).frame(maxHeight: .infinity, alignment: .top)
             } else if let issue {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        content(issue, proxy: proxy)
-                            .padding(24)
-                            .frame(maxWidth: 980, alignment: .leading)
-                            .frame(maxWidth: .infinity)
+                VStack(spacing: 0) {
+                    if let error { ErrorBox(message: error) { Task { await load() } }.padding(.horizontal, 24).padding(.top, 8) }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            content(issue, proxy: proxy)
+                                .padding(24)
+                                .frame(maxWidth: 980, alignment: .leading)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                 }
                 .contextMenu(specs: { issueActions(issue) })
-                .pageToolbar { toolbar(issue) }
                 // 把文件拖进详情即可上传到当前问题
                 .dropDestination(for: URL.self) { urls, _ in
                     let paths = urls.filter(\.isFileURL).map(\.path)
@@ -70,14 +89,49 @@ struct IssueView: View {
                     return !paths.isEmpty
                 } isTargeted: { dropping = $0 }
                 .overlay { if dropping { DropHighlight(text: "上传到 \(issue.key) 的附件") } }
+            } else if let summary, summary.key == issueKey {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(summary.key).foregroundStyle(.secondary)
+                    Text(summary.summary).font(.title2.weight(.semibold))
+                    StatusPill(status: summary.status)
+                    ProgressView().controlSize(.small)
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 LoadingView()
             }
         }
-        .task(id: issueKey) {
+        .task(id: "\(issueKey)|\(model.connectionVersion)") {
+            resetConnectionIfNeeded()
             store.load()
-            if me == nil { me = try? await API.shared.jiraMe() }
-            await load()
+            if let cached = IssueCache.shared.get(issueKey), cached.fresh {
+                await recordViewed(cached.detail, generation: requestGeneration, connection: model.connectionVersion)
+            } else {
+                await load()
+            }
+        }
+        .task(id: "\(issueKey)|\(model.connectionVersion)") {
+            resetConnectionIfNeeded()
+            let connection = model.connectionVersion
+            guard let name = try? await API.shared.jiraMe(), !Task.isCancelled, connection == model.connectionVersion else { return }
+            me = name
+            if var current = issue {
+                current.markCommentsMine(name)
+                issue = current
+                IssueCache.shared.update(current)
+            }
+        }
+        .onChange(of: model.connectionVersion) { resetConnectionIfNeeded() }
+        .modifier(OwnIssueToolbar(enabled: externalToolbar == nil, bar: ownToolbar))
+        .onChange(of: issue?.summaryValue, initial: true) { updateToolbar() }
+        .onChange(of: transitions) { updateToolbar() }
+        .onChange(of: store.list) { updateToolbar() }
+        .onChange(of: watchers) { updateToolbar() }
+        .onChange(of: watchBusy) { updateToolbar() }
+        .onDisappear {
+            viewedTask?.cancel()
+            if toolbar.owner == toolbarOwner { toolbar.clear() }
         }
         .onChange(of: version) { Task { await load() } }
         // 这个问题有了新动态（评论、流转等）：重新加载
@@ -95,11 +149,18 @@ struct IssueView: View {
         .sheet(item: $creatingFrom) { from in
             CreateIssueSheet(source: from.source) { model.navigate(NavTarget(.jira, issueKey: $0)) }
         }
-        .sheet(isPresented: $managingWatchers) { WatchersSheet(issueKey: issueKey, watchers: $watchers) }
-        .task(id: issueKey) {
+        .sheet(isPresented: $managingWatchers) { WatchersSheet(issueKey: issueKey, watchers: watcherBinding) }
+        .task(id: "\(issueKey)|\(model.connectionVersion)") {
+            resetConnectionIfNeeded()
+            if IssueCache.shared.social(issueKey)?.fresh == true { return }
+            let connection = model.connectionVersion
             async let v = try? API.shared.jiraVotes(issueKey)
             async let w = try? API.shared.jiraWatchers(issueKey)
-            (votes, watchers) = await (v, w)
+            let (newVotes, newWatchers) = await (v, w)
+            guard !Task.isCancelled, connection == model.connectionVersion else { return }
+            if let newVotes { votes = newVotes }
+            if let newWatchers { watchers = newWatchers }
+            if let newVotes, let newWatchers { IssueCache.shared.putSocial(issueKey, votes: newVotes, watchers: newWatchers) }
         }
         .sheet(isPresented: $creatingSubtask) {
             if let issue {
@@ -110,6 +171,10 @@ struct IssueView: View {
 
     // MARK: 工具栏
 
+    private var watcherBinding: Binding<Watchers?> {
+        Binding(get: { watchers }, set: { watchers = $0; IssueCache.shared.removeSocial(issueKey) })
+    }
+
     /// 可以一步流转的模板（模板指定的流转当前可用）
     private var quickTemplates: [(JiraTemplate, Transition)] {
         store.list.compactMap { tpl -> (JiraTemplate, Transition)? in
@@ -118,95 +183,113 @@ struct IssueView: View {
         }
     }
 
-    /// 问题的操作放在窗口工具栏右侧（列表的操作在左侧）：流转、编辑、关注。
-    @ToolbarContentBuilder
-    private func toolbar(_ issue: IssueDetail) -> some ToolbarContent {
-        if !transitions.isEmpty || !quickTemplates.isEmpty {
-            ToolbarItem {
-                // 流转合成一个分体按钮：点按钮执行第一个流转（与 Jira 网页最左边的按钮一致），箭头列出其余流转和模板。
-                // 之前前两个流转各占一个按钮、再加一个箭头，和编辑、关注、更多挤在一起
-                let templates = quickTemplates
-                if let first = transitions.first {
-                    Menu {
-                        ForEach(transitions) { t in
-                            Button(t.name) { activeTransition = .init(issue: issue.summaryValue, transition: t) }
-                        }
-                        if !templates.isEmpty {
-                            Divider()
-                            ForEach(templates, id: \.0.id) { tpl, t in
-                                Button("\(tpl.name)（\(t.name)）", systemImage: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) }
-                            }
-                        }
-                    } label: {
-                        Text(first.name)
-                    } primaryAction: {
-                        activeTransition = .init(issue: issue.summaryValue, transition: first)
-                    }
-                    .help("流转到「\(first.to.name)」；箭头中有其余流转和流转模板")
-                } else {
-                    // 只有文字的菜单在工具栏中只剩一个箭头，带上图标
-                    Menu {
-                        ForEach(templates, id: \.0.id) { tpl, t in
-                            Button("\(tpl.name)（\(t.name)）", systemImage: "bolt") { activeTransition = .init(issue: issue.summaryValue, transition: t, template: tpl) }
-                        }
-                    } label: {
-                        Label("流转", systemImage: "bolt")
-                    }
-                    .labelStyle(.titleAndIcon)
-                }
-            }
-            ToolbarSpacer(.fixed)
+    /// 把问题的状态和操作交给窗口工具栏（见 IssueToolbar）；只在值变化时赋值，免得工具栏无谓地更新。
+    private func updateToolbar() {
+        let bar = toolbar
+        bar.owner = toolbarOwner
+        let summary = issue?.summaryValue
+        if bar.issue != summary { bar.issue = summary }
+        if bar.transitions != transitions { bar.transitions = transitions }
+        let templates = quickTemplates.map { IssueToolbar.Template(template: $0.0, transition: $0.1) }
+        if bar.templates != templates { bar.templates = templates }
+        if bar.watchers != watchers { bar.watchers = watchers }
+        if bar.watchBusy != watchBusy { bar.watchBusy = watchBusy }
+        bar.startTransition = { transition, template in
+            guard let issue else { return }
+            activeTransition = .init(issue: issue.summaryValue, transition: transition, template: template)
         }
-        ToolbarItemGroup {
-            Button("编辑", systemImage: "pencil") { editing = true }.help("编辑问题")
-            WatchButton(issueKey: issue.key, watchers: $watchers)
-            Button("更多操作", systemImage: "ellipsis") { MenuBuilder.popUp(issueActions(issue)) }.help("更多操作（与网页的“更多”一致）")
+        bar.edit = { editing = true }
+        bar.toggleWatch = { toggleWatch() }
+        bar.actions = { issue.map { issueActions($0) } ?? [] }
+    }
+
+    private func toggleWatch() {
+        guard let w = watchers, !watchBusy else { return }
+        watchBusy = true
+        Task {
+            do { watcherBinding.wrappedValue = try await API.shared.jiraSetWatching(issueKey, watching: !w.watching) } catch { toast("操作失败：\(errorMessage(error))", error: true) }
+            watchBusy = false
         }
     }
 
     // MARK: 加载与更新
 
+    private func resetConnectionIfNeeded() {
+        guard lastConnection != model.connectionVersion else { return }
+        lastConnection = model.connectionVersion
+        requestGeneration += 1
+        viewedTask?.cancel()
+        issue = nil; transitions = []; votes = nil; watchers = nil; me = nil; error = nil; changes = nil
+    }
+
     private func load() async {
+        resetConnectionIfNeeded()
+        requestGeneration += 1
+        viewedTask?.cancel()
+        let generation = requestGeneration, connection = model.connectionVersion
         error = nil
+        // 旧流转状态不能用于新的服务器结果；详情不必等待它返回。
+        transitions = []
+        async let transitionsTask = try? API.shared.jiraTransitions(issueKey)
         do {
-            async let detailTask = API.shared.jiraIssue(issueKey)
-            async let transitionsTask = try? API.shared.jiraTransitions(issueKey)
-            let (detail, available) = try await (detailTask, transitionsTask)
+            var detail = try await API.shared.jiraIssueWithoutIdentity(issueKey)
+            guard isCurrent(generation, connection) else { return }
+            detail.markCommentsMine(me ?? "")
             issue = detail
-            transitions = available ?? []
-            IssueCache.shared.put(detail, transitions: transitions)
+            IssueCache.shared.put(detail, transitions: [], ready: false)
             // 在别处（如网页）改过的问题，到期提醒可能已过时
             if let r = model.reminders?.items.first(where: { $0.key == detail.key }), r.updated != detail.updated { model.issueChanged() }
-            // 记录查看；上次查看之后有更新时找出具体变化
-            let previous = await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
-            if let since = ViewedStore.lastSeen(local: previous, issue: detail.summaryValue), Fmt.ms(detail.updated) > since {
-                changes = (since, nil)
-                let list = (try? await API.shared.jiraHistory(issueKey)) ?? []
-                changes = (since, list.filter { Fmt.ms($0.created) > since })
-            }
+            let loaded = detail
+            viewedTask = Task { @MainActor in await recordViewed(loaded, generation: generation, connection: connection) }
+            let available = await transitionsTask
+            guard isCurrent(generation, connection) else { return }
+            transitions = available ?? []
+            IssueCache.shared.put(issue ?? detail, transitions: transitions, ready: available != nil)
         } catch {
-            guard !isCancellation(error) else { return }
+            guard isCurrent(generation, connection), !isCancellation(error) else { return }
+            if isAccessError(error) { issue = nil; IssueCache.shared.remove(issueKey) }
             self.error = errorMessage(error)
         }
     }
 
+    private func isCurrent(_ generation: Int, _ connection: Int) -> Bool {
+        !Task.isCancelled && generation == requestGeneration && connection == model.connectionVersion
+    }
+
+    private func recordViewed(_ detail: IssueDetail, generation: Int, connection: Int) async {
+        let previous = await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
+        guard isCurrent(generation, connection) else { return }
+        if let since = ViewedStore.lastSeen(local: previous, issue: detail.summaryValue), Fmt.ms(detail.updated) > since {
+            changes = (since, nil)
+            let list = (try? await API.shared.jiraHistory(issueKey)) ?? []
+            guard isCurrent(generation, connection) else { return }
+            changes = (since, list.filter { Fmt.ms($0.created) > since })
+        }
+    }
+
     private func apply(_ detail: IssueDetail) {
+        requestGeneration += 1
+        viewedTask?.cancel()
+        let generation = requestGeneration, connection = model.connectionVersion
         issue = detail
         onChanged(detail.summaryValue)
-        IssueCache.shared.put(detail, transitions: transitions)
+        IssueCache.shared.put(detail, transitions: [], ready: false)
+        transitions = []
         model.issueChanged()
         // 自己的修改不算新变化
         Task {
             await ViewedStore.shared.markViewed(key: detail.key, updated: detail.updated)
-            transitions = (try? await API.shared.jiraTransitions(issueKey)) ?? []
-            IssueCache.shared.put(detail, transitions: transitions)
+            let available = try? await API.shared.jiraTransitions(issueKey)
+            guard isCurrent(generation, connection) else { return }
+            transitions = available ?? []
+            IssueCache.shared.put(issue ?? detail, transitions: transitions, ready: available != nil)
         }
     }
 
     private func toggleVote() {
         guard let votes else { return }
         Task {
-            do { self.votes = try await API.shared.jiraSetVote(issueKey, voted: !votes.voted) } catch {
+            do { self.votes = try await API.shared.jiraSetVote(issueKey, voted: !votes.voted); IssueCache.shared.removeSocial(issueKey) } catch {
                 // Jira 不允许给自己报告的问题投票，错误原文已能说明原因
                 if !isCancellation(error) { toast("投票失败：\(errorMessage(error))", error: true) }
             }
@@ -356,7 +439,11 @@ struct IssueView: View {
             if showRest { rest(issue, proxy: proxy) }
         }
         .controlSize(.regular)
-        .task { showRest = true }
+        .task {
+            // 等首帧提交后再创建（见 NextFrame）；直接在 task 中赋值仍会算进点击后的第一帧
+            await NextFrame.wait()
+            showRest = true
+        }
     }
 
     @ViewBuilder
@@ -580,24 +667,110 @@ private struct IssueKeyValue: View {
 }
 
 /// 关注 / 取消关注，显示关注人数（与详情中的“关注”一行共用数据）。
-private struct WatchButton: View {
-    var issueKey: String
-    @Binding var watchers: Watchers?
-    @State private var busy = false
+/// 问题的操作在窗口工具栏中所需的状态，由正在显示的 IssueView 填写。
+///
+/// 按钮放在不随问题重建的 JiraPage 中：IssueView 按问题重建，按钮放在 IssueView 里时，
+/// 每切换一个问题窗口工具栏都要删掉旧项目、创建新项目并重新排列，点击列表后的那一帧多花三十毫秒左右；
+/// 放在外层时只更新按钮的状态。
+@MainActor @Observable
+final class IssueToolbar {
+    struct Template: Hashable {
+        var template: JiraTemplate
+        var transition: Transition
+    }
 
-    var body: some View {
-        Button {
-            guard let w = watchers else { return }
-            busy = true
-            Task {
-                do { watchers = try await API.shared.jiraSetWatching(issueKey, watching: !w.watching) } catch { toast("操作失败：\(errorMessage(error))", error: true) }
-                busy = false
+    /// 正在显示的问题；载入中或出错时为 nil，按钮隐藏
+    var issue: IssueSummary?
+    var transitions: [Transition] = []
+    /// 可以一步流转的模板（模板指定的流转当前可用）
+    var templates: [Template] = []
+    var watchers: Watchers?
+    var watchBusy = false
+    /// 填写者（IssueView 实例）：问题切换时旧视图消失得可能比新视图出现晚，只清除自己填写的内容
+    @ObservationIgnored var owner: UUID?
+    @ObservationIgnored var startTransition: (Transition, JiraTemplate?) -> Void = { _, _ in }
+    @ObservationIgnored var edit: () -> Void = {}
+    @ObservationIgnored var toggleWatch: () -> Void = {}
+    @ObservationIgnored var actions: () -> [MenuSpec] = { [] }
+
+    func clear() {
+        owner = nil
+        issue = nil
+        transitions = []
+        templates = []
+        watchers = nil
+        watchBusy = false
+    }
+}
+
+/// 问题的操作放在窗口工具栏右侧（列表的操作在左侧）：流转、编辑、关注、更多。
+/// 没有问题（载入中、出错）或没有可用的流转时隐藏而不是去掉，免得切换问题时重新创建项目；
+/// 流转按钮后的间隔在隐藏时落在左边的弹性空白里，看不出来。
+struct IssueToolbarItems: ToolbarContent {
+    var bar: IssueToolbar
+    /// 所在页面是否显示（见 pageToolbar(hiding:)）
+    var pageShown: Bool
+
+    var body: some ToolbarContent {
+        let issue = pageShown ? bar.issue : nil
+        let transitions = bar.transitions, templates = bar.templates
+        let watching = bar.watchers?.watching == true
+        ToolbarItem {
+            // 流转合成一个分体按钮：点按钮执行第一个流转（与 Jira 网页最左边的按钮一致），箭头列出其余流转和模板。
+            // 之前前两个流转各占一个按钮、再加一个箭头，和编辑、关注、更多挤在一起
+            if let first = transitions.first {
+                Menu {
+                    ForEach(transitions) { t in
+                        Button(t.name) { bar.startTransition(t, nil) }
+                    }
+                    if !templates.isEmpty {
+                        Divider()
+                        ForEach(templates, id: \.template.id) { item in
+                            Button("\(item.template.name)（\(item.transition.name)）", systemImage: "bolt") { bar.startTransition(item.transition, item.template) }
+                        }
+                    }
+                } label: {
+                    Text(first.name)
+                } primaryAction: {
+                    bar.startTransition(first, nil)
+                }
+                .help("流转到「\(first.to.name)」；箭头中有其余流转和流转模板")
+            } else {
+                // 只有文字的菜单在工具栏中只剩一个箭头，带上图标
+                Menu {
+                    ForEach(templates, id: \.template.id) { item in
+                        Button("\(item.template.name)（\(item.transition.name)）", systemImage: "bolt") { bar.startTransition(item.transition, item.template) }
+                    }
+                } label: {
+                    Label("流转", systemImage: "bolt")
+                }
+                .labelStyle(.titleAndIcon)
             }
-        } label: {
-            Label(watchers?.watching == true ? "取消关注" : "关注", systemImage: watchers?.watching == true ? "eye.fill" : "eye")
         }
-        .disabled(busy || watchers == nil)
-        .help(watchers.map { "\($0.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\($0.count > 0 ? "\n\($0.count) 人关注" : "")" } ?? "")
+        .hidden(issue == nil || (transitions.isEmpty && templates.isEmpty))
+        ToolbarSpacer(.fixed)
+        ToolbarItemGroup {
+            Button("编辑", systemImage: "pencil") { bar.edit() }.help("编辑问题")
+            Button {
+                bar.toggleWatch()
+            } label: {
+                Label(watching ? "取消关注" : "关注", systemImage: watching ? "eye.fill" : "eye")
+            }
+            .disabled(bar.watchBusy || bar.watchers == nil)
+            .help(bar.watchers.map { "\($0.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\($0.count > 0 ? "\n\($0.count) 人关注" : "")" } ?? "")
+            Button("更多操作", systemImage: "ellipsis") { MenuBuilder.popUp(bar.actions()) }.help("更多操作（与网页的“更多”一致）")
+        }
+        .hidden(issue == nil)
+    }
+}
+
+/// 单独的问题窗口中由 IssueView 自己放工具栏按钮。
+private struct OwnIssueToolbar: ViewModifier {
+    var enabled: Bool
+    var bar: IssueToolbar
+
+    func body(content: Content) -> some View {
+        if enabled { content.pageToolbar(hiding: { IssueToolbarItems(bar: bar, pageShown: $0) }) } else { content }
     }
 }
 
@@ -740,18 +913,32 @@ private struct ChangesSince: View {
 @MainActor
 final class IssueCache {
     static let shared = IssueCache()
-    private var entries: [String: (detail: IssueDetail, transitions: [Transition])] = [:]
-    private var order: [String] = []
-    private let limit = 40
+    private var entries = MemoryCache<String, (detail: IssueDetail, transitions: [Transition])>(maxCount: 40)
+    private var socialEntries = MemoryCache<String, (votes: Votes, watchers: Watchers)>(maxCount: 40)
 
-    func get(_ key: String) -> (detail: IssueDetail, transitions: [Transition])? { entries[key] }
-
-    func put(_ detail: IssueDetail, transitions: [Transition]) {
-        entries[detail.key] = (detail, transitions)
-        order.removeAll { $0 == detail.key }
-        order.append(detail.key)
-        if order.count > limit { entries[order.removeFirst()] = nil }
+    func get(_ key: String) -> (detail: IssueDetail, transitions: [Transition], fresh: Bool)? {
+        guard let entry = entries.get(key) else { return nil }
+        return (entry.value.detail, entry.value.transitions, entry.fresh)
     }
+
+    func put(_ detail: IssueDetail, transitions: [Transition], ready: Bool = true) {
+        entries.put((detail, transitions), for: detail.key, ttl: ready ? 15 : 0)
+    }
+
+    func update(_ detail: IssueDetail) { entries.update(detail.key) { $0.detail = detail } }
+
+    func social(_ key: String) -> (votes: Votes, watchers: Watchers, fresh: Bool)? {
+        guard let entry = socialEntries.get(key) else { return nil }
+        return (entry.value.votes, entry.value.watchers, entry.fresh)
+    }
+
+    func putSocial(_ key: String, votes: Votes, watchers: Watchers) {
+        socialEntries.put((votes, watchers), for: key, ttl: 15)
+    }
+
+    func removeSocial(_ key: String) { socialEntries.remove(key) }
+    func remove(_ key: String) { entries.remove(key); socialEntries.remove(key) }
+    func clear() { entries.removeAll(); socialEntries.removeAll() }
 }
 
 /// 打印问题（网页“导出 → 打印”）：概要、字段、描述和评论。图片需要网页登录，打印时不显示。

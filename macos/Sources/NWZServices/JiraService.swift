@@ -16,6 +16,7 @@ public actor JiraService {
     let wikiActivity: (any WikiActivitySource)?
     let cache: FileCache
     var username: (String, String)?
+    var emptyCommentLevels = MemoryCache<String, Bool>(maxCount: 64)
     var indexLoop: Task<Void, Never>?
     var indexTask: Task<Void, Never>?
     var polling: Task<ActivityPoll, Error>?
@@ -49,12 +50,16 @@ public actor JiraService {
         if !refresh, let fields = await cache.get(key, as: [FieldInfo].self) { return fields }
         let fields = try await client().listFields(); await cache.put(key, value: fields); return fields
     }
+    /// 先返回问题本身；评论的本人标记可在用户名加载完成后补齐。
+    public func issueWithoutIdentity(_ key: String) async throws -> IssueDetail {
+        try await client().issue(key)
+    }
     public func issue(_ key: String) async throws -> IssueDetail {
         async let loaded = client().issue(key)
         async let name = try? me()
         var issue = try await loaded
         let me = await name ?? ""
-        for index in issue.comments.indices { issue.comments[index].markMine(me) }
+        issue.markCommentsMine(me)
         return issue
     }
     public func transition(_ key: String, transitionID: String, fields: [String: JSONValue], comment: String?, visibility: CommentVisibility?) async throws -> IssueDetail {
@@ -69,12 +74,15 @@ public actor JiraService {
     }
     public func commentLevels(_ key: String) async throws -> [CommentLevel] {
         let cacheKey = try await cacheKey("comment-levels:" + JiraIndexText.project(key))
+        if emptyCommentLevels.get(cacheKey)?.fresh == true { return [] }
         if let levels = await cache.get(cacheKey, as: [CommentLevel].self) { return levels }
         let id = try await client().get(JiraClient.issuePath(key), query: [("fields", "summary")])["id"].text
         do {
             let (data, _) = try await attachments.fetch(service: .jira, url: "/secure/AddComment!default.jspa?id=" + RESTClient.component(id))
             let levels = JiraForms.commentLevels(String(decoding: data, as: UTF8.self))
-            if !levels.isEmpty { await cache.put(cacheKey, value: levels) }; return levels
+            if levels.isEmpty { emptyCommentLevels.put(true, for: cacheKey, ttl: 15) }
+            else { await cache.put(cacheKey, value: levels) }
+            return levels
         } catch NWZError.sessionRequired { return [] }
     }
     public func suggestedAssignees(_ key: String) async throws -> [UserRef] {

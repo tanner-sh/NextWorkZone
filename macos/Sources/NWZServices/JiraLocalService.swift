@@ -14,7 +14,7 @@ extension JiraService {
     }
     public func stop() { indexLoop?.cancel(); indexLoop = nil; indexTask?.cancel(); polling?.cancel() }
     public func configurationChanged() async {
-        indexTask?.cancel(); polling?.cancel(); username = nil
+        indexTask?.cancel(); polling?.cancel(); username = nil; emptyCommentLevels.removeAll()
         if let base = try? settings.configuration.snapshot().baseURL(for: .jira) { try? await index.ensureBase(base) }
     }
     public func indexStatus() async throws -> IndexStatus {

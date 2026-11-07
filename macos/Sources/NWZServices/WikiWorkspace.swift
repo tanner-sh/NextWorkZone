@@ -37,6 +37,7 @@ extension WikiService {
             guard let published = doc.publishedUrl, let id = parsePageID(published), let rawVersion = URLComponents(string: published)?.queryItems?.first(where: { $0.name == "pageVersion" })?.value, let oldVersion = Int(rawVersion) else { throw NWZError.other("这篇知识库页面还没有发布过") }
             let base = mode == "overwrite" ? try await client.page(id).version : oldVersion
             version = try await client.savePage(id, title: title, storage: storage, baseVersion: base, minorEdit: false, message: "从 NextWorkZone 知识库更新")
+            pageChanged(id)
             pageID = id; updated = true
         }
         let existing = updated ? (try? await client.attachments(pageID).map(\.filename)) ?? [] : []

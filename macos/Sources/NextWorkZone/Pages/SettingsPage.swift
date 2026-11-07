@@ -329,7 +329,7 @@ private struct WeeklySettingsSection: View {
             do {
                 // 只改周报两项，代理、地址、凭据保持原样
                 let next = try await API.shared.saveSettings(SettingsInput(proxy: s.proxy, weeklyPage: p, weeklyPersonName: n))
-                model.setSettings(next)
+                model.setSettings(next, credentialsMayHaveChanged: false)
                 page = next.weeklyPageId
                 name = next.weeklyPersonName
                 status = (true, "已保存")

@@ -310,6 +310,8 @@ enum DevBridge {
             if query["move"] != nil {
                 post(.mouseMoved, 0)
             } else {
+                // measure=1：从点击到之后第一次绘制的时间记为 /state 的 commitMs（例如点列表切换详情）
+                if query["measure"] == "1" { lastCommitMs = -1; lastLayoutMs = 0; navStart = CACurrentMediaTime() }
                 for i in 1...(Int(query["count"] ?? "1") ?? 1) {
                     post(right ? .rightMouseDown : .leftMouseDown, i)
                     post(right ? .rightMouseUp : .leftMouseUp, i)

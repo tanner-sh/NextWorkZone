@@ -18,6 +18,68 @@ enum WikiEditing: Hashable {
     case new(NewPageRequest)
 }
 
+/// 阅读页面时窗口工具栏右侧的按钮所需的状态，由正在显示的 PageView 填写。
+///
+/// 按钮放在不随页面重建的 WikiPage 中：PageView 按页面 id 重建，按钮放在 PageView 里时，
+/// 每切换一个页面窗口工具栏都要删掉旧项目、创建新项目并重新排列，切换那一帧多花五六十毫秒；
+/// 放在外层时只更新按钮的状态。
+@MainActor @Observable
+final class WikiPageToolbar {
+    /// 正在显示的页面；载入中或出错时为 nil，按钮隐藏
+    var page: WikiPageDetail?
+    /// 是否在观看；还没取到时为 nil，按钮不可用
+    var watching: Bool?
+    /// 填写者（PageView 实例）：页面切换时旧视图消失得可能比新视图出现晚，只清除自己填写的内容
+    @ObservationIgnored var owner: UUID?
+    @ObservationIgnored var toggleWatch: () -> Void = {}
+    @ObservationIgnored var actions: () -> [MenuSpec] = { [] }
+}
+
+/// 阅读页面时的操作，放在窗口工具栏右侧，按用途分成三块玻璃：收藏、观看；编辑；共享、更多。
+/// 新建子页面、历史版本等不常用的在“更多”中（工具栏太长时系统会把右边的按钮挤进溢出菜单）。
+/// 没有页面（载入中、出错、编辑中）时隐藏而不是去掉，免得下一个页面显示时重新创建；
+/// 只有“编辑”按页面权限增减，同一空间中一般不变。
+struct WikiPageToolbarItems: ToolbarContent {
+    var bar: WikiPageToolbar
+    /// 所在页面不显示（见 pageToolbar(hiding:)）或正在编辑
+    var hidden = false
+    var onEdit: (String) -> Void
+    @State private var favorites = WikiFavorites.shared
+
+    var body: some ToolbarContent {
+        let page = hidden ? nil : bar.page
+        let favorite = page.map { favorites.contains($0.id) } ?? false
+        let watching = bar.watching == true
+        ToolbarItem {
+            Button(favorite ? "取消收藏" : "收藏", systemImage: favorite ? "star.fill" : "star") {
+                if let page { favorites.toggle(FavoritePage(id: page.id, title: page.title, space: page.spaceName)) }
+            }
+            .tint(favorite ? .yellow : nil)
+            .help(favorite ? "取消收藏" : "收藏")
+        }
+        .hidden(page == nil)
+        ToolbarItem {
+            Button(watching ? "停止观看" : "观看", systemImage: watching ? "eye.fill" : "eye") { bar.toggleWatch() }
+                .disabled(bar.watching == nil)
+                .help(watching ? "停止观看（不再收到这个页面的更新通知）" : "观看（页面更新时通知我）")
+        }
+        .hidden(page == nil)
+        ToolbarSpacer(.fixed)
+        if bar.page?.canEdit == true {
+            ToolbarItem {
+                Button("编辑", systemImage: "pencil") { if let page { onEdit(page.id) } }.labelStyle(.titleAndIcon).help("编辑页面")
+            }
+            .hidden(page == nil)
+            ToolbarSpacer(.fixed)
+        }
+        ToolbarItemGroup {
+            ShareLink(item: URL(string: WikiMenus.pageUrl(page?.id ?? "")) ?? URL(fileURLWithPath: "/"), subject: Text(page?.title ?? "")).help("共享")
+            Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(bar.actions()) }.help("更多")
+        }
+        .hidden(page == nil)
+    }
+}
+
 /// Wiki：最近、收藏、空间页面树、搜索，右侧阅读和编辑页面。
 struct WikiPage: View {
     enum Tab: String { case recent, favorites, spaces, search }
@@ -35,6 +97,7 @@ struct WikiPage: View {
     @State private var reloadKey = 0
     @State private var tree = SpaceTree()
     @State private var searchText = ""
+    @State private var pageBar = WikiPageToolbar()
 
     var body: some View {
         Group {
@@ -49,6 +112,7 @@ struct WikiPage: View {
                     detailPane
                 }
                 .pageToolbar { toolbar }
+                .pageToolbar(hiding: { shown in WikiPageToolbarItems(bar: pageBar, hidden: !shown || editing != nil) { editing = .edit($0) } })
             }
         }
         .onAppear { takeTarget() }
@@ -134,6 +198,7 @@ struct WikiPage: View {
     private var detailPane: some View {
         if let target = editing {
             WikiPageEditor(target: target) { editing = nil } onSaved: { id in
+                WikiPageCache.shared.remove(id)
                 if case .new(let req) = target { tree.refreshChildren(req.parent ?? "space:\(req.space)") }
                 editing = nil
                 selected = id
@@ -141,9 +206,9 @@ struct WikiPage: View {
             }
             .id(target)
         } else if let pageId = selected {
-            PageView(pageId: pageId, anchor: anchor, onOpen: open, onLoaded: { page in
+            PageView(pageId: pageId, anchor: anchor, toolbar: pageBar, onOpen: open, onLoaded: { page in
                 detail = page
-                AppPreferences.shared.set(page.id, forKey: Self.lastPageKey)
+                if AppPreferences.shared.string(forKey: Self.lastPageKey) != page.id { AppPreferences.shared.set(page.id, forKey: Self.lastPageKey) }
                 // 解析过的地址换成页面 id，刷新时不用再解析
                 if selected != page.id { selected = page.id }
                 tree.reveal(page)

@@ -25,10 +25,12 @@ public struct WeeklyService: Sendable {
     public func save(_ input: WeeklySaveInput) async throws -> SaveResult {
         let (client, page, name) = try await target()
         let result = try await client.weeklySave(page: page, name: name, section: input.section, expected: (input.contentRaw, input.riskRaw), content: input.content, risk: input.risk)
+        if result.changed { await wiki.pageChanged(page) }
         await wiki.requestIndexSync(); return result
     }
     public func createWeek() async throws -> WeeklyView {
         let (client, page, name) = try await target(), title = try await client.weeklyCreateWeek(page: page)
+        await wiki.pageChanged(page)
         await wiki.requestIndexSync()
         return try await client.weeklyLoad(page: page, name: name, section: title)
     }

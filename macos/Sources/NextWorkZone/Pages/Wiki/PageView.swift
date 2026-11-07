@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 struct PageView: View {
     var pageId: String
     var anchor: String?
+    /// 窗口工具栏中页面操作的状态：主窗口中按钮在不随页面重建的 WikiPage 中（见 WikiPageToolbar）；
+    /// 为 nil 时（单独的页面窗口，页面不会切换）由这里自己放按钮
+    var externalToolbar: WikiPageToolbar?
     var onOpen: (String) -> Void
     var onLoaded: (WikiPageDetail) -> Void
     var onEdit: () -> Void
@@ -18,7 +21,7 @@ struct PageView: View {
     @State private var page: WikiPageDetail?
     @State private var pickingFiles = false
     @State private var exported: ExportedFile?
-    @State private var doc: RichDoc? { didSet { sections = doc?.sections() ?? [] } }
+    @State private var doc: RichDoc?
     /// 正文按顶层标题分段显示（见 RichDoc.sections）：只有滚到附近的段才创建和排版
     @State private var sections: [(doc: RichDoc, headingStart: Int)] = []
     /// 目录跳转到段内的标题（段中第几个标题，0 为段首，滚到段的顶部即可）
@@ -31,6 +34,9 @@ struct PageView: View {
     @State private var scrollTo: Int?
     @State private var favorites = WikiFavorites.shared
     @State private var issues: [String: IssueSummary] = [:]
+    @State private var loadingIssues = false
+    @State private var requestGeneration = 0
+    @State private var lastConnection = AppModel.shared.connectionVersion
     @State private var issueMenu = IssueMenu()
     @State private var width: CGFloat = 0
     /// 观看、点赞、访问限制
@@ -39,41 +45,76 @@ struct PageView: View {
     @State private var source: String?
     @State private var copying = false
     @State private var attachmentsVersion = 0
+    /// 在 WikiPageToolbar 中标识自己
+    @State private var toolbarOwner = UUID()
+    @State private var ownToolbar = WikiPageToolbar()
+    private var toolbar: WikiPageToolbar { externalToolbar ?? ownToolbar }
+
+    init(pageId: String, anchor: String?, toolbar: WikiPageToolbar? = nil, onOpen: @escaping (String) -> Void, onLoaded: @escaping (WikiPageDetail) -> Void, onEdit: @escaping () -> Void, onNewChild: @escaping () -> Void) {
+        self.pageId = pageId
+        self.anchor = anchor
+        self.externalToolbar = toolbar
+        self.onOpen = onOpen
+        self.onLoaded = onLoaded
+        self.onEdit = onEdit
+        self.onNewChild = onNewChild
+        if let cached = WikiPageCache.shared.get(pageId)?.value {
+            _page = State(initialValue: cached.page)
+            _doc = State(initialValue: cached.doc)
+            _sections = State(initialValue: cached.sections)
+            _headings = State(initialValue: cached.headings)
+            _issueKeys = State(initialValue: cached.issueKeys)
+            _issues = State(initialValue: IssueLookup.cached(cached.issueKeys))
+        }
+        _meta = State(initialValue: WikiPageCache.shared.meta(pageId)?.value)
+    }
 
     var body: some View {
         Group {
-            if let error {
+            if let error, page == nil {
                 VStack { ErrorBox(message: error) { Task { await load() } } }.padding(24).frame(maxHeight: .infinity, alignment: .top)
             } else if let page {
-                HStack(spacing: 0) {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            content(page)
-                                .padding(.horizontal, 32)
-                                .padding(.vertical, 24)
-                                .frame(maxWidth: 1000, alignment: .leading)
-                                .frame(maxWidth: .infinity)
+                VStack(spacing: 0) {
+                    if let error { ErrorBox(message: error) { Task { await load() } }.padding(.horizontal, 24).padding(.top, 8) }
+                    HStack(spacing: 0) {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                content(page)
+                                    .padding(.horizontal, 32)
+                                    .padding(.vertical, 24)
+                                    .frame(maxWidth: 1000, alignment: .leading)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .onChange(of: scrollTo) { _, index in
+                                if let index { jump(to: index, proxy: proxy) }
+                            }
                         }
-                        .onChange(of: scrollTo) { _, index in
-                            if let index { jump(to: index, proxy: proxy) }
+                        .contextMenu(specs: { pageActions(page) })
+                        .pageCommands { PageCommands(title: "页面", refresh: { Task { await load() } }, specs: pageActions(page, refresh: false)) }
+                        // 正文太窄时不显示目录，留给正文
+                        if headings.count >= Self.tocMin && width >= 700 {
+                            Divider()
+                            TableOfContents(items: headings) { scrollTo = $0 }
+                                .frame(width: 220)
                         }
                     }
-                    .contextMenu(specs: { pageActions(page) })
-                    .pageToolbar { toolbar(page) }
-                    .pageCommands { PageCommands(title: "页面", refresh: { Task { await load() } }, specs: pageActions(page, refresh: false)) }
-                    // 正文太窄时不显示目录，留给正文
-                    if headings.count >= Self.tocMin && width >= 700 {
-                        Divider()
-                        TableOfContents(items: headings) { scrollTo = $0 }
-                            .frame(width: 220)
-                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             } else {
                 LoadingView()
             }
         }
-        .task(id: pageId) { await load() }
+        .task(id: "\(pageId)|\(model.connectionVersion)") { await loadIfNeeded() }
+        .onChange(of: model.connectionVersion) { resetConnectionIfNeeded() }
+        .modifier(OwnToolbar(enabled: externalToolbar == nil, bar: ownToolbar, onEdit: onEdit))
+        .onChange(of: page, initial: true) { updateToolbar() }
+        .onChange(of: meta?.watching) { updateToolbar() }
+        .onDisappear {
+            guard toolbar.owner == toolbarOwner else { return }
+            toolbar.owner = nil
+            toolbar.page = nil
+            toolbar.watching = nil
+        }
         .sheet(isPresented: $history) { if let page { HistorySheet(page: page) } }
         .sheet(isPresented: $info) { if let page { PageInfoSheet(page: page, meta: meta) } }
         .sheet(isPresented: $copying) { if let page { CopyPageSheet(page: page) { onOpen($0) } } }
@@ -86,7 +127,15 @@ struct PageView: View {
                 Button("关闭") { source = nil }.keyboardShortcut(.defaultAction)
             }
         }
-        .task(id: pageId) { meta = try? await API.shared.wikiPageMeta(pageId) }
+        .task(id: "\(pageId)|\(model.connectionVersion)") {
+            resetConnectionIfNeeded()
+            if WikiPageCache.shared.meta(pageId)?.fresh == true { return }
+            let connection = model.connectionVersion
+            if let value = try? await API.shared.wikiPageMeta(pageId), !Task.isCancelled, connection == model.connectionVersion {
+                meta = value
+                WikiPageCache.shared.putMeta(value, id: pageId)
+            }
+        }
         .issueMenuDialogs(issueMenu)
         .filePicker(isPresented: $pickingFiles) { upload($0) }
         .fileSaver($exported)
@@ -107,57 +156,92 @@ struct PageView: View {
         }
     }
 
+    private func resetConnectionIfNeeded() {
+        guard lastConnection != model.connectionVersion else { return }
+        lastConnection = model.connectionVersion
+        requestGeneration += 1
+        page = nil; doc = nil; sections = []; headings = []; issueKeys = []; issues = [:]; meta = nil; error = nil; loadingIssues = false
+    }
+
+    private func loadIfNeeded() async {
+        resetConnectionIfNeeded()
+        if let cached = WikiPageCache.shared.get(pageId) {
+            onLoaded(cached.value.page)
+            favorites.refresh(FavoritePage(id: cached.value.page.id, title: cached.value.page.title, space: cached.value.page.spaceName))
+            applyAnchor()
+            if cached.fresh {
+                let generation = requestGeneration, connection = model.connectionVersion
+                async let viewed: Void = API.shared.wikiMarkViewed(cached.value.page)
+                await resolveIssues(cached.value.issueKeys, generation: generation, connection: connection)
+                await viewed
+                return
+            }
+        }
+        await load()
+    }
+
     private func load() async {
+        resetConnectionIfNeeded()
+        requestGeneration += 1
+        let generation = requestGeneration, connection = model.connectionVersion
         error = nil
         do {
             let detail = try await API.shared.wikiPage(pageId)
+            guard isCurrent(generation, connection) else { return }
+            let unchanged = page?.id == detail.id && page?.html == detail.html && doc != nil
+            if !unchanged { doc = nil; sections = []; headings = []; issueKeys = []; issues = [:] }
             page = detail
             onLoaded(detail)
             favorites.refresh(FavoritePage(id: detail.id, title: detail.title, space: detail.spaceName))
-            let d = try await Rich.fromHTML(detail.html)
-            // 先查好页面中的 Jira 问题再显示：长页面只排版一次
-            let keys = d.issueKeys(jiraBase: model.baseUrl(.jira))
-            if !keys.isEmpty && model.isReady(.jira) { issues = await IssueLookup.fetch(keys) }
-            doc = d
-            headings = d.headings
-            issueKeys = keys
-            if let anchor, let i = headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = headings[i].index }
+            let d = if unchanged, let current = doc { current } else { try await Rich.fromHTML(detail.html) }
+            guard isCurrent(generation, connection) else { return }
+            if !unchanged {
+                doc = d
+                sections = d.sections()
+                headings = d.headings
+                issueKeys = d.issueKeys(jiraBase: model.baseUrl(.jira))
+            }
+            WikiPageCache.shared.put(.init(page: detail, doc: d, sections: sections, headings: headings, issueKeys: issueKeys))
+            applyAnchor()
+            // 正文先显示；页面中的 Jira 状态合并后一次性补充。
+            await resolveIssues(issueKeys, generation: generation, connection: connection)
         } catch {
-            guard !isCancellation(error) else { return }
+            guard isCurrent(generation, connection), !isCancellation(error) else { return }
+            if isAccessError(error) {
+                WikiPageCache.shared.remove(pageId)
+                page = nil; doc = nil; sections = []; headings = []; issueKeys = []; issues = [:]
+            }
+            loadingIssues = false
             self.error = errorMessage(error)
         }
     }
 
-    /// 页面的操作放在窗口工具栏右侧，按用途分成三块玻璃：收藏、观看；编辑；共享、更多。
-    /// 新建子页面、历史版本等不常用的在“更多”中（工具栏太长时系统会把右边的按钮挤进溢出菜单）。
-    @ToolbarContentBuilder
-    private func toolbar(_ page: WikiPageDetail) -> some ToolbarContent {
-        let favorite = favorites.contains(page.id)
-        ToolbarItem {
-            Button(favorite ? "取消收藏" : "收藏", systemImage: favorite ? "star.fill" : "star") {
-                favorites.toggle(FavoritePage(id: page.id, title: page.title, space: page.spaceName))
-            }
-            .tint(favorite ? .yellow : nil)
-            .help(favorite ? "取消收藏" : "收藏")
-        }
-        ToolbarItem {
-            Button(meta?.watching == true ? "停止观看" : "观看", systemImage: meta?.watching == true ? "eye.fill" : "eye") { toggleWatch() }
-                .disabled(meta == nil)
-                .help(meta?.watching == true ? "停止观看（不再收到这个页面的更新通知）" : "观看（页面更新时通知我）")
-        }
-        ToolbarSpacer(.fixed)
-        if page.canEdit {
-            ToolbarItem {
-                Button("编辑", systemImage: "pencil", action: onEdit).labelStyle(.titleAndIcon).help("编辑页面")
-            }
-            ToolbarSpacer(.fixed)
-        }
-        ToolbarItemGroup {
-            if let link = URL(string: WikiMenus.pageUrl(page.id)) {
-                ShareLink(item: link, subject: Text(page.title)).help("共享")
-            }
-            Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(pageActions(page)) }.help("更多")
-        }
+    private func isCurrent(_ generation: Int, _ connection: Int) -> Bool {
+        !Task.isCancelled && generation == requestGeneration && connection == model.connectionVersion
+    }
+
+    private func resolveIssues(_ keys: [String], generation: Int, connection: Int) async {
+        let existing = IssueLookup.cached(keys)
+        issues = existing
+        guard model.isReady(.jira), keys.contains(where: { existing[$0] == nil }) else { loadingIssues = false; return }
+        loadingIssues = true
+        let found = await IssueLookup.fetch(keys)
+        guard isCurrent(generation, connection) else { return }
+        issues = found
+        loadingIssues = false
+    }
+
+    private func applyAnchor() {
+        if let anchor, let i = headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = headings[i].index }
+    }
+
+    /// 把页面的状态和操作交给窗口工具栏（见 WikiPageToolbar）；只在值变化时赋值，免得工具栏无谓地更新。
+    private func updateToolbar() {
+        toolbar.owner = toolbarOwner
+        if toolbar.page != page { toolbar.page = page }
+        if toolbar.watching != meta?.watching { toolbar.watching = meta?.watching }
+        toolbar.toggleWatch = { toggleWatch() }
+        toolbar.actions = { page.map { pageActions($0) } ?? [] }
     }
 
     /// 更多按钮、页面空白处右键共用。
@@ -190,6 +274,7 @@ struct PageView: View {
         guarded {
             try await API.shared.wikiSetWatching(pageId, watching: !meta.watching)
             self.meta?.watching = !meta.watching
+            if let value = self.meta { WikiPageCache.shared.putMeta(value, id: pageId) }
             toast(meta.watching ? "已停止观看" : "已开始观看，页面更新时会通知你")
         }
     }
@@ -199,6 +284,7 @@ struct PageView: View {
         guarded {
             try await API.shared.wikiSetLiked(pageId, liked: !(meta?.liked ?? false))
             meta = try await API.shared.wikiPageMeta(pageId)
+            if let value = meta { WikiPageCache.shared.putMeta(value, id: pageId) }
         }
     }
 
@@ -225,14 +311,17 @@ struct PageView: View {
     private func toggleTask(_ task: RichTask) {
         guard let id = task.id, let page, let doc else { return }
         let done = !task.done
-        self.doc = doc.settingTask(id, done: done)
+        WikiPageCache.shared.remove(page.id)
+        let changed = doc.settingTask(id, done: done)
+        self.doc = changed
+        sections = changed.sections()
         Task {
             do {
                 try await API.shared.wikiSetTask(page.id, task: id, done: done)
                 toast(done ? "已完成任务" : "已取消完成")
             } catch {
                 guard !isCancellation(error) else { return }
-                self.doc = self.doc?.settingTask(id, done: !done)
+                if let reverted = self.doc?.settingTask(id, done: !done) { self.doc = reverted; sections = reverted.sections() }
                 toast("修改任务失败：\(errorMessage(error))", error: true)
             }
         }
@@ -270,7 +359,7 @@ struct PageView: View {
             if doc != nil {
                 ForEach(sections.indices, id: \.self) { i in
                     let local = sectionTarget.flatMap { $0.section == i && $0.local > 0 ? $0.local : nil }
-                    RichView(doc: sections[i].doc, service: .confluence, onTask: { toggleTask($0) }, scrollToHeading: local)
+                    RichView(doc: sections[i].doc, service: .confluence, onTask: { toggleTask($0) }, scrollToHeading: local, resolvedIssues: issues)
                         .padding(.bottom, i == sections.count - 1 ? 24 : 8)
                         .id("section-\(i)")
                 }
@@ -286,7 +375,7 @@ struct PageView: View {
                             let issue = issues[key]
                             HStack(spacing: 6) {
                                 Text(key).font(.callout.monospaced()).foregroundStyle(.secondary)
-                                Text(issue?.summary ?? (model.isReady(.jira) ? "无法获取（可能没有权限）" : "")).lineLimit(1)
+                                Text(issue?.summary ?? (model.isReady(.jira) ? (loadingIssues ? "加载中…" : "无法获取（可能没有权限）") : "")).lineLimit(1)
                                 Spacer()
                                 if let issue { StatusPill(status: issue.status) }
                             }
@@ -313,7 +402,8 @@ private struct TableOfContents: View {
     var body: some View {
         let minLevel = items.map(\.level).min() ?? 1
         ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
+            // 长页面有几十上百个标题：只创建看得见的（切换页面时省下创建全部按钮的时间）
+            LazyVStack(alignment: .leading, spacing: 6) {
                 Text("目录").font(.caption).foregroundStyle(.secondary).padding(.bottom, 2)
                 ForEach(items, id: \.index) { item in
                     Button(item.text) { onSelect(item.index) }
@@ -744,5 +834,16 @@ private struct CopyPageSheet: View {
             .disabled(busy || title.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .onAppear { title = "\(page.title) 的副本" }
+    }
+}
+
+/// 单独的页面窗口中由 PageView 自己放工具栏按钮。
+private struct OwnToolbar: ViewModifier {
+    var enabled: Bool
+    var bar: WikiPageToolbar
+    var onEdit: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled { content.pageToolbar(hiding: { shown in WikiPageToolbarItems(bar: bar, hidden: !shown) { _ in onEdit() } }) } else { content }
     }
 }

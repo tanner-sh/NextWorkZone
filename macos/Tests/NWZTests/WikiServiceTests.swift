@@ -9,6 +9,9 @@ import NWZWorkspace
 private struct WikiTestWeb: WebResourceSource {
     func fetch(service: Service, url: String) async throws -> (Data, String?) { (Data(), nil) }
 }
+private struct WeeklyTestCode: WeeklyCodeSource {
+    func weeklyWork(from: String, to: String) async throws -> [WeeklyCodeWork] { [] }
+}
 
 @Suite struct WikiServiceTests {
     func settings(_ dir: URL, _ transport: OfflineTransport) throws -> SettingsService {
@@ -47,11 +50,13 @@ private struct WikiTestWeb: WebResourceSource {
         defer { try? FileManager.default.removeItem(at: dir) }
         let t = OfflineTransport([.response(200, "{}")]), store = try await Workspace()
         _ = try await store.syncWikiTodos([NWZWorkspace.AssignedWikiTask(pageId: "1", pageTitle: "页面", taskId: "2", text: "任务")])
-        let wiki = try WikiService(settings: settings(dir, t), host: WorkspaceTestHost(), web: WikiTestWeb())
+        let host = WorkspaceTestHost()
+        let wiki = try WikiService(settings: settings(dir, t), host: host, web: WikiTestWeb())
         await wiki.bindWorkspace(store)
         try await wiki.setTask("1", task: "2", done: true)
         #expect(try await store.todo("wiki-1-2")?.done == true)
         #expect(await t.requests.map(\.httpMethod) == ["POST"])
+        #expect(host.events.withLock { $0.contains(ServiceEvent(WikiService.pageChangedEvent, payload: .string("1"))) })
     }
     @Test func publishUploadsLocalAssetsAndRemembersVersion() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -68,6 +73,42 @@ private struct WikiTestWeb: WebResourceSource {
         let body = try JSONDocument(data: #require(requests[1].httpBody))
         #expect(body["body"]["storage"]["value"].text.contains(asset.id + ".png"))
         #expect(!body["body"]["storage"]["value"].text.contains("ws-asset:"))
+        await wiki.stop()
+    }
+    @Test func publishingAnUpdateInvalidatesTheViewedPage() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let current = #"{"id":"1","title":"页面","space":{"key":"S"},"version":{"number":2},"body":{"storage":{"value":"<p>旧内容</p>"}}}"#
+        let t = OfflineTransport([.response(200, current), .response(200, "{}"), .response(200, #"{"results":[]}"#)])
+        let host = WorkspaceTestHost(), store = try await Workspace()
+        let wiki = try WikiService(settings: settings(dir, t), host: host, web: WikiTestWeb())
+        let doc = try await store.saveDoc(DocInput(title: "笔记", content: "内容"))
+        _ = try await store.setPublished(doc.id, url: "https://wiki.example.com/pages/viewpage.action?pageId=1&pageVersion=2")
+        let result = try await wiki.publish(docID: doc.id, mode: "update", parent: "", title: "页面", storage: "<p>新内容</p>", assets: [], workspace: store)
+        #expect(result.updated)
+        #expect(host.events.withLock { $0.contains(ServiceEvent(WikiService.pageChangedEvent, payload: .string("1"))) })
+        await wiki.stop()
+    }
+    @Test func weeklySaveInvalidatesOnlyWhenPageChanges() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let storage = WeeklyTests().page
+        let entry = try Weekly.entry(storage, section: "10.12-10.18", name: "张三")
+        let page: JSONValue = ["id":"1", "title":"周报", "space":["key":"S"], "version":["number":2], "body":["storage":["value":.string(storage)]]]
+        let response = String(decoding: try JSONEncoder().encode(page), as: UTF8.self)
+        let t = OfflineTransport([.response(200, response), .response(200, response), .response(200, "{}")])
+        let settings = try settings(dir, t)
+        try await settings.updateConfiguration { $0.weekly.pageId = "1"; $0.weekly.personName = "张三" }
+        let host = WorkspaceTestHost(), web = WikiTestWeb()
+        let wiki = try WikiService(settings: settings, host: host, web: web)
+        let jira = try JiraService(settings: settings, host: host, web: web)
+        let weekly = WeeklyService(settings: settings, jira: jira, wiki: wiki, code: WeeklyTestCode())
+        var input = WeeklySaveInput(section: "10.12-10.18", contentRaw: entry.contentRaw, riskRaw: entry.riskRaw, content: entry.content, risk: entry.risk)
+        #expect(try await !weekly.save(input).changed)
+        #expect(host.events.withLock { !$0.contains { $0.name == WikiService.pageChangedEvent } })
+        input.content = [.init(level: 0, text: "更新内容")]
+        #expect(try await weekly.save(input).changed)
+        #expect(host.events.withLock { $0.contains(ServiceEvent(WikiService.pageChangedEvent, payload: .string("1"))) })
         await wiki.stop()
     }
     @Test func missingAssetFailsBeforeCreatingPage() async throws {

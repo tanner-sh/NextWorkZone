@@ -273,6 +273,7 @@ public struct IssueHit: Codable, Hashable, Sendable, Identifiable {
     public var summaryValue: IssueSummary {
         IssueSummary(key: key, summary: summary, status: status, issueType: issueType, priority: priority, project: project, assignee: assignee, assigneeName: assigneeName, reporter: reporter, reporterName: reporterName, lastViewed: lastViewed, resolution: resolution, created: created, updated: updated, dueDate: dueDate, extra: extra)
     }
+
     public init(key: String, summary: String, status: JiraStatus, issueType: Named, priority: Named? = nil, project: Named, assignee: String? = nil, assigneeName: String? = nil, reporter: String? = nil, reporterName: String? = nil, lastViewed: String? = nil, resolution: String? = nil, created: String, updated: String, dueDate: String? = nil, extra: [String: String]? = nil, resolved: String? = nil, commentCount: Int, snippet: HitSnippet? = nil, lastComments: [BriefComment], via: String? = nil) {
         self.key = key
         self.summary = summary
@@ -508,6 +509,11 @@ public struct IssueDetail: Codable, Hashable, Sendable, Identifiable {
     public var comments: [Comment]
     /// 这个问题是 Epic 时，查询其中问题的 JQL（按 Epic 链接字段）
     public var epicIssuesJql: String?
+
+    /// 身份加载完成后补齐评论权限；空用户名不会将任何评论标记为本人。
+    public mutating func markCommentsMine(_ username: String) {
+        for index in comments.indices { comments[index].markMine(username) }
+    }
 
     public var summaryValue: IssueSummary {
         IssueSummary(key: key, summary: summary, status: status, issueType: issueType, priority: priority, project: project, assignee: assignee, assigneeName: assigneeName, reporter: reporter, reporterName: reporterName, lastViewed: lastViewed, resolution: resolution, created: created, updated: updated, dueDate: dueDate, extra: extra)

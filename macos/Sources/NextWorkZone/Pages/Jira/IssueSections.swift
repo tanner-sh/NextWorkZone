@@ -1,4 +1,26 @@
+import NWZCore
 import SwiftUI
+
+/// 问题详情中的附加查询短暂复用，避免在相邻问题间切换时反复请求。
+@MainActor
+final class IssueRelatedCache {
+    static let shared = IssueRelatedCache()
+    private var similar = MemoryCache<String, SimilarIssues>(maxCount: 40)
+    private var wiki = MemoryCache<String, [WikiPageHit]>(maxCount: 40)
+
+    func similar(_ key: String) -> SimilarIssues? {
+        guard let cached = similar.get(key), cached.fresh else { return nil }
+        return cached.value
+    }
+    func putSimilar(_ value: SimilarIssues, key: String) { similar.put(value, for: key, ttl: 15) }
+    func wiki(_ key: String) -> [WikiPageHit]? {
+        guard let cached = wiki.get(key), cached.fresh else { return nil }
+        return cached.value
+    }
+    func putWiki(_ value: [WikiPageHit], key: String) { wiki.put(value, for: key, ttl: value.isEmpty ? 3 : 15) }
+    func clearWiki() { wiki.removeAll() }
+    func clear() { similar.removeAll(); wiki.removeAll() }
+}
 
 // 问题详情中的各个区块。
 
@@ -219,6 +241,7 @@ private struct LinkForm: View {
 struct SimilarSection: View {
     var issue: IssueDetail
     var menu: IssueMenu
+    @Environment(AppModel.self) private var model
     @State private var resolvedOnly = true
     @State private var result: SimilarIssues?
     @State private var error: String?
@@ -248,10 +271,18 @@ struct SimilarSection: View {
                 }
             }
         }
-        .task(id: "\(issue.key)|\(issue.summary)|\(resolvedOnly)") {
-            result = nil
+        .task(id: "\(issue.key)|\(issue.summary)|\(issue.updated)|\(resolvedOnly)|\(model.connectionVersion)") {
+            let connection = model.connectionVersion
+            let key = "\(issue.key)|\(issue.summary)|\(issue.updated)|\(resolvedOnly)"
             error = nil
-            do { result = try await API.shared.jiraSimilarIssues(issue.key, summary: issue.summary, resolvedOnly: resolvedOnly) } catch { if !isCancellation(error) { self.error = errorMessage(error) } }
+            if let cached = IssueRelatedCache.shared.similar(key) { result = cached; return }
+            result = nil
+            do {
+                let value = try await API.shared.jiraSimilarIssues(issue.key, summary: issue.summary, resolvedOnly: resolvedOnly)
+                guard !Task.isCancelled, connection == model.connectionVersion else { return }
+                result = value
+                IssueRelatedCache.shared.putSimilar(value, key: key)
+            } catch { if !Task.isCancelled, connection == model.connectionVersion, !isCancellation(error) { self.error = errorMessage(error) } }
         }
     }
 }
@@ -299,6 +330,7 @@ private struct SimilarItem: View {
 struct WikiPagesSection: View {
     var issueKey: String
     var onCount: (Int) -> Void
+    @Environment(AppModel.self) private var model
     @State private var pages: [WikiPageHit]?
 
     var body: some View {
@@ -322,11 +354,19 @@ struct WikiPagesSection: View {
                 }
             }
         }
-        .task(id: issueKey) {
-            guard AppModel.shared.isReady(.confluence) else { return }
+        .task(id: "\(issueKey)|\(model.connectionVersion)") {
+            guard model.isReady(.confluence) else { pages = nil; onCount(0); return }
+            let connection = model.connectionVersion
+            if let cached = IssueRelatedCache.shared.wiki(issueKey) {
+                pages = cached
+                onCount(cached.count)
+                return
+            }
             pages = nil
-            pages = (try? await API.shared.wikiIssuePages(issueKey)) ?? []
-            onCount(pages?.count ?? 0)
+            guard let result = try? await API.shared.wikiIssuePages(issueKey), !Task.isCancelled, connection == model.connectionVersion else { return }
+            pages = result
+            IssueRelatedCache.shared.putWiki(result, key: issueKey)
+            onCount(result.count)
         }
     }
 }

@@ -5,6 +5,7 @@ import NWZJira
 import NWZWorkspace
 
 public actor WikiService {
+    public static let pageChangedEvent = "wiki-page-changed"
     public nonisolated let index: WikiIndex
     public nonisolated let attachments: AttachmentService
     let settings: SettingsService
@@ -49,6 +50,10 @@ public actor WikiService {
         try? await index.markViewed(id, title: page.title, space: page.spaceName)
         return page
     }
+    public func markViewed(_ page: WikiPageDetail) async {
+        try? await index.markViewed(page.id, title: page.title, space: page.spaceName)
+    }
+    func pageChanged(_ page: String) { host.emit(ServiceEvent(Self.pageChangedEvent, payload: .string(page))) }
     public func recent(limit: Int) async throws -> [WikiRecent] {
         var list = try await index.recent(limit: limit)
         let web = (try? await client().recentlyViewed(limit: limit)) ?? []
@@ -76,6 +81,7 @@ public actor WikiService {
     }
     public func setTask(_ page: String, task: String, done: Bool) async throws {
         try await client().setTaskStatus(page, task: task, done: done)
+        pageChanged(page)
         try await index.setTaskDone(page: page, task: task, done: done)
         if let workspace, let todo = try await workspace.todo("wiki-\(page)-\(task)"), todo.done != done, !todo.deleted {
             _ = try await workspace.setTodoDone(todo.id, done: done)
@@ -137,6 +143,7 @@ public actor WikiService {
         guard !title.isEmpty else { throw NWZError.other("页面标题不能为空") }
         let storage = try await Task.detached { try WikiEdit.fromEditable(xhtml, fragments: fragments) }.value
         let version = try await client().savePage(page, title: title, storage: storage, baseVersion: baseVersion, minorEdit: minorEdit, message: message.trimmingCharacters(in: .whitespacesAndNewlines))
+        pageChanged(page)
         requestIndexSync(); return version
     }
     public func create(space: String, parent: String?, title: String, xhtml: String, fragments: [String]) async throws -> String {

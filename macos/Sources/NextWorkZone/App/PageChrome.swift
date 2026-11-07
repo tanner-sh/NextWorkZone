@@ -15,16 +15,28 @@ private struct PageToolbar<Items: ToolbarContent>: ViewModifier {
     @Environment(\.page) private var pageState
     private var active: Bool { pageState.active }
     @State private var shown: Bool?
-    let items: () -> Items
+    /// 参数为页面是否显示。用 pageToolbar(hiding:) 时由项目自己隐藏，这里不再加 hidden
+    let items: (Bool) -> Items
+    var selfHiding = false
 
     func body(content: Content) -> some View {
         content
             .toolbar {
-                if let shown { items().hidden(!shown) }
+                if let shown {
+                    if selfHiding { items(shown) } else { items(shown).hidden(!shown) }
+                }
             }
-            .task { shown = active }
+            // 等首帧提交后再改（见 NextFrame）：在 task 中直接赋值仍会和页面内容算在同一帧里
+            .task {
+                await NextFrame.wait()
+                shown = active
+            }
             .onChange(of: active) { _, now in
-                Task { @MainActor in shown = now }
+                Task { @MainActor in
+                    await NextFrame.wait()
+                    // 等待期间又切换了：以最新的为准
+                    if active == now { shown = now }
+                }
             }
     }
 }
@@ -45,7 +57,13 @@ extension View {
 
     /// 页面的工具栏按钮：页面显示时才出现在窗口工具栏中。
     func pageToolbar<Items: ToolbarContent>(@ToolbarContentBuilder _ items: @escaping () -> Items) -> some View {
-        modifier(PageToolbar(items: items))
+        modifier(PageToolbar(items: { _ in items() }))
+    }
+
+    /// 自己按条件隐藏部分项目的工具栏按钮：参数为页面是否显示，项目要在页面不显示时也隐藏。
+    /// 项目上的 hidden 会覆盖外面整组的 hidden，所以这种项目不能用上面的 pageToolbar（否则别的页面也会显示它们）。
+    func pageToolbar<Items: ToolbarContent>(hiding items: @escaping (_ pageShown: Bool) -> Items) -> some View {
+        modifier(PageToolbar(items: items, selfHiding: true))
     }
 
     /// 页面的副标题：显示在窗口标题下方，空字符串表示不显示。

@@ -52,7 +52,13 @@ struct JiraPage: View {
     @State private var managing = false
     @State private var choosingFields = false
     @State private var requestId = 0
+    @State private var lastConnection = AppModel.shared.connectionVersion
+    @State private var lastRefresh: [String: Date] = [:]
+    @State private var refreshScheduled = false
+    @State private var pendingRefresh = false
     @State private var issueMenu = IssueMenu()
+    /// 问题详情的工具栏按钮（见 IssueToolbar）
+    @State private var issueBar = IssueToolbar()
     @State private var searchDebounce = Debouncer()
 
     static func loadView() -> ListView {
@@ -64,7 +70,7 @@ struct JiraPage: View {
     private var fieldIds: [String] { view.fields.map(\.id) }
     /// 本机问题库还没有数据时只能用 Jira 搜索
     private var localSearch: Bool { mode == .search && source == .local && (indexStore.status?.count ?? 0) > 0 }
-    private var loadKey: String { "\(jql)|\(fieldIds.joined(separator: ","))|\(localSearch)|\(model.isReady(.jira))" }
+    private var loadKey: String { "\(jql)|\(fieldIds.joined(separator: ","))|\(localSearch)|\(model.isReady(.jira))|\(model.connectionVersion)" }
 
     var body: some View {
         Group {
@@ -96,18 +102,25 @@ struct JiraPage: View {
             takeTarget()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppModel.navigated)) { _ in takeTarget() }
-        .task(id: model.isReady(.jira)) {
-            if model.isReady(.jira) { filters = (try? await API.shared.jiraFavouriteFilters()) ?? [] }
+        .task(id: "\(model.isReady(.jira))|\(model.connectionVersion)") {
+            resetConnectionIfNeeded()
+            let connection = model.connectionVersion
+            if model.isReady(.jira) {
+                let result = (try? await API.shared.jiraFavouriteFilters()) ?? []
+                if !Task.isCancelled, connection == model.connectionVersion { filters = result }
+            }
         }
         .task(id: loadKey) {
+            resetConnectionIfNeeded()
             guard model.isReady(.jira), !localSearch else { return }
             hits = nil
-            await load()
+            await load(force: false)
         }
         // 回到 Jira 页面或回到应用时刷新
         .onChange(of: visit) { refreshInPlace() }
         // 有了新的 Jira 动态：正在显示的列表也要更新
-        .onEvent(Events.local.jiraActivity) { _ in if active { refreshInPlace() } }
+        .onEvent(Events.local.jiraActivity) { _ in if active { refreshInPlace(force: true) } }
+        .onChange(of: model.connectionVersion) { resetConnectionIfNeeded() }
         .onChange(of: form) { searchLocal() }
         .onChange(of: localSearch) { searchLocal() }
         .onChange(of: indexStore.status?.lastSync) { searchLocal() }
@@ -147,21 +160,45 @@ struct JiraPage: View {
 
     // MARK: 加载
 
-    private func load() async {
+    private func resetConnectionIfNeeded() {
+        guard lastConnection != model.connectionVersion else { return }
+        lastConnection = model.connectionVersion
+        requestId += 1
+        issues = nil; hits = nil; selected = nil; total = 0; error = nil; filters = []
+        loading = false; pendingRefresh = false; lastRefresh = [:]
+    }
+
+    private func load(force: Bool = true) async {
+        resetConnectionIfNeeded()
         requestId += 1
         let id = requestId
+        let key = loadKey, jqlText = jql, fields = fieldIds
         error = nil
         loading = true
-        let cached = (try? await API.shared.jiraCachedSearch(jql, fields: fieldIds)) ?? nil
-        if id == requestId, let cached {
-            issues = cached.issues
+        defer {
+            if id == requestId {
+                loading = false
+                if pendingRefresh { pendingRefresh = false; refreshInPlace(force: true) }
+            }
+        }
+        let cached = (try? await API.shared.jiraCachedSearch(jqlText, fields: fields)) ?? nil
+        guard id == requestId, !Task.isCancelled else { return }
+        if let cached {
+            if issues != cached.issues { issues = cached.issues }
             total = cached.total
         }
+        if !force, cached != nil, let last = lastRefresh[key], Date().timeIntervalSince(last) < 15 {
+            viewedStore.load(issues?.map(\.key) ?? [])
+            selectFirst()
+            return
+        }
         do {
-            let result = try await API.shared.jiraSearch(jql, startAt: 0, maxResults: Self.pageSize, fields: fieldIds)
-            guard id == requestId else { return }
-            issues = result.issues
+            let result = try await API.shared.jiraSearch(jqlText, startAt: 0, maxResults: Self.pageSize, fields: fields)
+            guard id == requestId, !Task.isCancelled else { return }
+            if issues != result.issues { issues = result.issues }
             total = result.total
+            lastRefresh[key] = Date()
+            if lastRefresh.count > 32, let oldest = lastRefresh.min(by: { $0.value < $1.value })?.key { lastRefresh.removeValue(forKey: oldest) }
             // 侧栏的问题数跟着最新结果走，不必等下一轮轮询
             if query.jql == JQL.myUnresolved { model.issueCount = result.total }
         } catch {
@@ -171,14 +208,21 @@ struct JiraPage: View {
                 if cached == nil { issues = [] }
             }
         }
-        if id == requestId { loading = false }
         viewedStore.load(issues?.map(\.key) ?? [])
         selectFirst()
     }
 
     /// 在原地刷新列表（本机搜索的结果不需要）；加载过更多时不刷新，免得列表变短。
-    private func refreshInPlace() {
-        if model.isReady(.jira) && !localSearch && (issues?.count ?? 0) <= Self.pageSize { Task { await load() } }
+    private func refreshInPlace(force: Bool = false) {
+        guard model.isReady(.jira), !localSearch, (issues?.count ?? 0) <= Self.pageSize else { return }
+        if loading || refreshScheduled { if force { pendingRefresh = true }; return }
+        if !force, let last = lastRefresh[loadKey], Date().timeIntervalSince(last) < 15 { return }
+        refreshScheduled = true
+        Task {
+            refreshScheduled = false
+            if loading { if force { pendingRefresh = true }; return }
+            await load(force: force)
+        }
     }
 
     /// 本机搜索：输入时即时搜索。
@@ -260,6 +304,7 @@ struct JiraPage: View {
     }
 
     private func onIssueChanged(_ updated: IssueSummary) {
+        lastRefresh.removeValue(forKey: loadKey)
         guard var list = issues, let i = list.firstIndex(where: { $0.key == updated.key }) else { return }
         // 只列未解决问题时，刚解决的问题立即移出列表（右侧详情保持不变）
         if updated.resolution != nil, query.jql.contains(/(?i)resolution\s*=\s*unresolved/) {
@@ -347,7 +392,7 @@ struct JiraPage: View {
 
     // MARK: 工具栏
 
-    /// 列表的操作在左侧：切换查询方式、常用查询、排序分组、刷新；新建在最右侧（问题的操作由 IssueView 放在它前面）。
+    /// 列表的操作在左侧：切换查询方式、常用查询、排序分组、刷新；新建在最右侧（问题的操作见 detailPane，在它前面）。
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -465,10 +510,16 @@ struct JiraPage: View {
         }
     }
 
-    @ViewBuilder
+    /// 问题的按钮挂在这一层（不随问题重建），排在“新建问题”前面。
     private var detailPane: some View {
+        ZStack { detailContent }
+            .pageToolbar(hiding: { IssueToolbarItems(bar: issueBar, pageShown: $0) })
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
         if let selected {
-            IssueView(issueKey: selected, version: detailVersion, onChanged: onIssueChanged)
+            IssueView(issueKey: selected, summary: issues?.first { $0.key == selected }, version: detailVersion, toolbar: issueBar, onChanged: onIssueChanged)
                 .id(selected)
         } else {
             Text("选择左侧的问题查看详情").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)

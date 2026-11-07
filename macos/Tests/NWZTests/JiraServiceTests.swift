@@ -9,6 +9,14 @@ private actor JiraTestWeb: WebResourceSource {
     var urls: [String] = []
     func fetch(service: Service, url: String) throws -> (Data, String?) { urls.append(url); return (Data("文本".utf8), "text/plain") }
 }
+private actor JiraLoginOnceWeb: WebResourceSource {
+    private(set) var calls = 0
+    func fetch(service: Service, url: String) throws -> (Data, String?) {
+        calls += 1
+        if calls == 1 { throw NWZError.sessionRequired(.jira) }
+        return (Data("文本".utf8), "text/plain")
+    }
+}
 struct JiraServiceTests {
     func settings(_ directory: URL, transport: OfflineTransport) throws -> SettingsService {
         let paths = AppPaths(dataDirectory: directory); try paths.createDirectories()
@@ -16,6 +24,42 @@ struct JiraServiceTests {
         try configuration.update { $0.jira.baseUrl = "https://jira.example.com" }
         try paths.credentialsStore.save([Secret.token.key(for: .jira): "test-token"])
         return try SettingsService(paths: paths, configuration: configuration, client: HTTPClient(transport: transport))
+    }
+    @Test func issueCanAppearBeforeIdentityAndMarkCommentsLater() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let raw = #"{"id":"1","key":"PROJ-1","fields":{"summary":"概要","comment":{"comments":[{"id":"2","author":{"name":"me"},"body":"评论"}]}}}"#
+        let transport = OfflineTransport([.response(200, raw)])
+        let service = try JiraService(settings: settings(directory, transport: transport), host: WorkspaceTestHost(), web: JiraTestWeb())
+        var issue = try await service.issueWithoutIdentity("PROJ-1")
+        #expect(issue.key == "PROJ-1" && issue.comments.first?.mine == false)
+        #expect(await transport.requests.count == 1)
+        issue.markCommentsMine("me")
+        #expect(issue.comments.first?.mine == true)
+        issue.markCommentsMine("")
+        #expect(issue.comments.first?.mine == false)
+    }
+    @Test func emptyCommentLevelsAreReusedWithinProject() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = OfflineTransport([.response(200, #"{"id":"1"}"#)])
+        let web = JiraTestWeb()
+        let service = try JiraService(settings: settings(directory, transport: transport), host: WorkspaceTestHost(), web: web)
+        #expect(try await service.commentLevels("PROJ-1").isEmpty)
+        #expect(try await service.commentLevels("PROJ-2").isEmpty)
+        #expect(await transport.requests.count == 1)
+        #expect(await web.urls.count == 1)
+    }
+    @Test func unavailableWebSessionDoesNotCacheEmptyCommentLevels() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transport = OfflineTransport([.response(200, #"{"id":"1"}"#), .response(200, #"{"id":"2"}"#)])
+        let web = JiraLoginOnceWeb()
+        let service = try JiraService(settings: settings(directory, transport: transport), host: WorkspaceTestHost(), web: web)
+        #expect(try await service.commentLevels("PROJ-1").isEmpty)
+        #expect(try await service.commentLevels("PROJ-2").isEmpty)
+        #expect(await transport.requests.count == 2)
+        #expect(await web.calls == 2)
     }
     @Test func activityStoreDeduplicatesAndKeepsReadReceipts() async throws {
         let store = try ActivityStore()
