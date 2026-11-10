@@ -60,7 +60,8 @@ struct SysImage: View {
     var size: CGFloat? = nil
     /// 图标读不到（如未网页登录）时显示的 SF Symbol，免得留下一块空位、旁边的文字看起来没对齐
     var fallback: String? = nil
-    @Environment(AppModel.self) private var model
+    // 不从环境读：放在 Table 的单元格中时环境里可能没有 AppModel（统计页切换时间范围时闪退）
+    private var model: AppModel { AppModel.shared }
     @State private var image: NSImage?
     @State private var failed = false
 
