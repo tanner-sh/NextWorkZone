@@ -1,15 +1,24 @@
 import SwiftUI
 
 /// 主窗口：侧栏 + 内容区。侧栏中的页面切走后只隐藏、不销毁（见 KeptPages）：
-/// 回来时立即显示，滚动位置、选中项、搜索条件和展开状态都还在；需要最新数据的页面按 `PageState.visit` 在后台刷新。
+/// 回来时立即显示，滚动位置、选中项、搜索条件和展开状态都还在；需要最新数据的页面按 `PageState.visit` 在后台刷新（切换完成后才刷新，且有最小间隔）。
 /// 其余页面（搜索、工具）每次打开时重新创建。
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var kept: [PageID] = []
-    /// 各保留页面第几次显示
+    /// 各保留页面第几次刷新（见 scheduleVisit）
     @State private var visits: [PageID: Int] = [:]
+    /// 各保留页面上次刷新（或创建）的时间
+    @State private var refreshed: [PageID: Date] = [:]
+    @State private var pendingVisit: Task<Void, Never>?
+
+    /// 回到页面后等多久再在后台刷新：等页面内容和工具栏都切换完，刷新不和切换抢主线程；中途又切走的页面不刷新。
+    static let visitDelay: TimeInterval = 0.35
+    /// 同一个页面两次后台刷新的最小间隔：来回切换时不必每次都重新加载（今天页一次要重新加载七张卡片）。
+    /// 没到间隔时推迟到间隔满了再刷新（仍停在这个页面的话），所以停在页面上看到的数据最多旧这么久。
+    static let visitInterval: TimeInterval = 30
 
     /// 不在窗口中显示标题的页面：工具栏左侧有切换视图的分段控件（它本身就说明了在哪儿，侧栏也标明了当前页面），
     /// 标题只会排在分段控件后面、夹在几组按钮之间。没有分段控件的页面（今天、知识库、周报）标题在最左边。
@@ -61,11 +70,31 @@ struct RootView: View {
         }
         // 从通知等处回到应用：当前页面按再次显示处理，在后台刷新
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if kept.contains(model.current.page) { visits[model.current.page, default: 0] += 1 }
+            if kept.contains(model.current.page) { scheduleVisit(model.current.page) }
         }
         .onChange(of: model.current.page, initial: true) { _, page in
             guard Self.keepAlive.contains(page) else { return }
-            if kept.contains(page) { visits[page, default: 0] += 1 } else { kept.append(page) }
+            pendingVisit?.cancel()
+            if kept.contains(page) {
+                scheduleVisit(page)
+            } else {
+                // 第一次显示：页面创建时自己加载
+                kept.append(page)
+                refreshed[page] = Date()
+            }
+        }
+    }
+
+    /// 保留的页面再次显示（或从别的应用回来）：稍后让它在后台刷新（`PageState.visit` 加一）。
+    private func scheduleVisit(_ page: PageID) {
+        pendingVisit?.cancel()
+        let since = Date().timeIntervalSince(refreshed[page] ?? .distantPast)
+        let wait = max(Self.visitDelay, Self.visitInterval - since)
+        pendingVisit = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, model.current.page == page else { return }
+            refreshed[page] = Date()
+            visits[page, default: 0] += 1
         }
     }
 
@@ -101,7 +130,8 @@ struct RootView: View {
 final class PageState {
     /// 页面是否正在显示。切走后保留的页面隐藏时为 false：不应响应快捷键、接收拖入的文件。
     var active: Bool
-    /// 保留的页面再次显示时加一（首次显示为 0）。放进 `.task(id:)` 就能在回到页面时后台刷新，已显示的内容不清空。
+    /// 保留的页面再次显示后该在后台刷新时加一（首次显示为 0；切换完成后才加，且有最小间隔，见 RootView.scheduleVisit）。
+    /// 放进 `.task(id:)` 就能在回到页面时后台刷新，已显示的内容不清空。
     var visit: Int
 
     init(active: Bool = true, visit: Int = 0) { self.active = active; self.visit = visit }
