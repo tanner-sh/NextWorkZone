@@ -255,15 +255,15 @@ struct WikiPageEditor: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 18)
-        .pageToolbar {
-            ToolbarItem {
+        .pageBar {
+            BarItem {
                 Button("取消", systemImage: "xmark", action: close).help("退出编辑")
             }
-            ToolbarSpacer(.fixed)
-            ToolbarItem {
+            BarSpacer()
+            BarItem(prominent: session != nil && !checking) {
                 Button(checking ? "检查中…" : pageId != nil ? "保存…" : "创建…", systemImage: "square.and.arrow.down", action: review)
                     .labelStyle(.titleAndIcon)
-                    .prominentToolbarButton(session != nil && !checking)
+                    .disabled(!(session != nil && !checking))
                     .keyboardShortcut("s", modifiers: .command)
             }
         }

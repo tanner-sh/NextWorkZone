@@ -98,11 +98,9 @@ struct StatsPage: View {
                     .frame(maxWidth: .infinity)
                 }
                 .pageCommands { PageCommands(title: "统计", refresh: { Task { await load() } }) }
-                .pageToolbar {
-                    ToolbarItem(placement: .navigation) {
-                        Picker("时间范围", selection: $period) { ForEach(Period.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented).labelsHidden()
-                    }
-                    ToolbarItem {
+                .pageBar {
+                    BarItem(.leading) { BarSegmented(Period.allCases.map { ($0, $0.label) }, selection: $period) }
+                    BarItem {
                         Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.refreshing(loading).disabled(loading).help("刷新")
                     }
                 }

@@ -197,16 +197,16 @@ struct WeeklyPage: View {
             .frame(maxWidth: .infinity)
         }
         .pageCommands { PageCommands(title: "周报", refresh: { Task { await load(entry?.sectionTitle) } }) }
-        .pageToolbar {
-            ToolbarItem {
+        .pageBar {
+            BarItem {
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await load(entry?.sectionTitle) } }.refreshing(loading).disabled(loading).help("重新读取周报页面")
             }
-            ToolbarSpacer(.fixed)
-            ToolbarItem {
+            BarSpacer()
+            BarItem(prominent: dirty && !busy) {
                 // 没有修改时显示“已保存”，不再是一个看不出原因的灰色按钮
                 Button(dirty ? "预览并保存" : "已保存", systemImage: dirty ? "square.and.arrow.down" : "checkmark") { actionError = nil; confirmSave = true }
                     .labelStyle(.titleAndIcon)
-                    .prominentToolbarButton(dirty && !busy)
+                    .disabled(!(dirty && !busy))
                     .help(dirty ? "预览改动后保存到 Wiki 页面" : "没有未保存的修改")
             }
         }

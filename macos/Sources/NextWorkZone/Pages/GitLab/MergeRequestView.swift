@@ -46,7 +46,7 @@ struct MergeRequestView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .contextMenu(specs: { moreEntries(mr) })
-                .pageToolbar { toolbar(mr) }
+                .pageBar { toolbar(mr) }
                 .pageCommands { PageCommands(title: "合并请求", refresh: refresh, specs: moreEntries(mr)) }
             } else {
                 LoadingView()
@@ -165,10 +165,12 @@ struct MergeRequestView: View {
         return specs
     }
 
-    /// 合并请求的操作放在窗口工具栏右侧：批准、合并、重新打开；刷新、共享、更多（在浏览器中打开在“更多”中）。
-    @ToolbarContentBuilder
-    private func toolbar(_ mr: MergeRequest) -> some ToolbarContent {
-        ToolbarItemGroup {
+    /// 合并请求的操作放在按钮栏右侧：批准、合并、重新打开；刷新、共享、更多（在浏览器中打开在“更多”中）。
+    @BarBuilder
+    private func toolbar(_ mr: MergeRequest) -> [BarEntry] {
+        let canApprove = mr.state == "opened" && (approvals.map { $0.userCanApprove && !$0.userHasApproved } ?? false)
+        let approved = mr.state == "opened" && approvals?.userHasApproved == true
+        BarItem {
             if mr.state == "opened", let a = approvals, a.userCanApprove, !a.userHasApproved {
                 Button("批准", systemImage: "hand.thumbsup") { run { approvals = try await API.shared.glMrApprove(projectRef, iid: iid, approve: true); model.mergeRequestChanged(); toast("已批准") } }
                     .labelStyle(.titleAndIcon).disabled(busy)
@@ -179,16 +181,18 @@ struct MergeRequestView: View {
             }
             if mr.state == "closed" { Button("重新打开") { setState("reopen") }.disabled(busy) }
         }
+        // 没有可批准、可重新打开的操作时不留一块空玻璃
+        .hidden(!(canApprove || approved || mr.state == "closed"))
         if mr.state == "opened" && mr.canMerge {
-            ToolbarItem {
+            BarItem(prominent: !busy && mergeable(mr)) {
                 Button("合并", systemImage: "arrow.triangle.merge") { merging = true }
                     .labelStyle(.titleAndIcon)
-                    .prominentToolbarButton(!busy && mergeable(mr))
+                    .disabled(!(!busy && mergeable(mr)))
                     .help(mergeable(mr) ? "合并" : mr.draft ? "草稿状态不能合并，先标记为就绪" : "有冲突，需要先解决")
             }
         }
-        ToolbarSpacer(.fixed)
-        ToolbarItemGroup {
+        BarSpacer()
+        BarItem {
             Button("刷新", systemImage: "arrow.clockwise") { refresh() }.help("刷新")
             if let link = URL(string: mr.webUrl) { ShareLink(item: link, subject: Text(mr.title)).help("共享") }
             Button("更多", systemImage: "ellipsis") { MenuBuilder.popUp(moreEntries(mr)) }.help("更多")

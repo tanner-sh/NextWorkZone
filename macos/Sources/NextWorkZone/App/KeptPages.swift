@@ -33,6 +33,8 @@ struct KeptPages: NSViewRepresentable {
             } else {
                 let state = PageState(active: isActive, visit: visits[page] ?? 0)
                 let host = PageHost(rootView: content(page, state))
+                // 页面铺到窗口最上面，顶部是页面自己的按钮栏：不留窗口标题栏的安全区
+                host.safeAreaRegions = []
                 container.addSubview(host)
                 Self.track(host, in: container, active: isActive)
                 c.hosts[page] = host
@@ -51,7 +53,7 @@ struct KeptPages: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    /// 页面的宿主视图。窗口每次重新计算标题栏的可拖动区域（切换页面、工具栏变化时）都会问各个宿主视图能否获得焦点，
+    /// 页面的宿主视图。窗口每次重新计算标题栏的可拖动区域（切换页面时）都会问各个宿主视图能否获得焦点，
     /// SwiftUI 为了回答要把整个页面的可聚焦控件遍历一遍；隐藏的页面也被遍历的话，打开过的页面越多切换越慢。
     /// 隐藏的页面本来就不该获得焦点，直接回答不能。
     final class PageHost: NSHostingView<AnyView> {

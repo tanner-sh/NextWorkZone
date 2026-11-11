@@ -100,15 +100,15 @@ struct KnowledgePage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .pageToolbar {
-            ToolbarItemGroup {
+        .pageBar {
+            BarItem {
                 Button("新建页面", systemImage: "square.and.pencil") { create(parent: nil) }.help("新建页面")
                 Button("最近删除", systemImage: "clock.arrow.circlepath") { showDeleted = true }.help("最近删除的页面")
-                Menu {
-                    Button("从 Jira 沉淀…", systemImage: "smallcircle.filled.circle") { importKind = .jira }
-                    Button("剪藏 Wiki 页面…", systemImage: "square.and.arrow.down") { importKind = .wiki }
-                } label: {
-                    Label("导入", systemImage: "tray.and.arrow.down")
+                Button("导入", systemImage: "tray.and.arrow.down") {
+                    MenuBuilder.popUp([
+                        .action("从 Jira 沉淀…", icon: "smallcircle.filled.circle") { importKind = .jira },
+                        .action("剪藏 Wiki 页面…", icon: "square.and.arrow.down") { importKind = .wiki },
+                    ])
                 }
                 .help("把解决过的 Jira 问题、常看的 Wiki 页面沉淀到知识库")
             }

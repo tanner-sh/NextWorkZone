@@ -36,7 +36,7 @@ struct ProjectView: View {
                 if ref.isEmpty {
                     Text("这是一个空仓库。").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    content(project).pageToolbar { toolbar(project) }
+                    content(project).pageBar { toolbar(project) }
                 }
             } else {
                 LoadingView()
@@ -81,25 +81,20 @@ struct ProjectView: View {
         tab = .code
     }
 
-    /// 项目的操作放在窗口工具栏右侧：分支（代码、提交）、新建合并请求、在浏览器中打开；打开了合并请求时由它提供。
-    @ToolbarContentBuilder
-    private func toolbar(_ project: Project) -> some ToolbarContent {
+    /// 项目的操作放在按钮栏右侧：分支（代码、提交）、新建合并请求、在浏览器中打开；打开了合并请求时由它提供。
+    @BarBuilder
+    private func toolbar(_ project: Project) -> [BarEntry] {
         if !(tab == .mrs && openMr != nil) {
             if tab == .code || tab == .commits {
-                ToolbarItem {
-                    // 工具栏中的菜单样式 Picker 不显示当前值，改用显示分支名的菜单
-                    Menu {
-                        ForEach(branches) { b in
-                            Toggle(b.name, isOn: Binding(get: { b.name == ref }, set: { if $0 { openBranch(b.name) } }))
-                        }
-                    } label: {
-                        Label(ref, systemImage: "arrow.triangle.branch")
+                BarItem {
+                    // 显示分支名的菜单
+                    BarMenu(ref, icon: "arrow.triangle.branch") {
+                        branches.map { b in .action(b.name, checked: b.name == ref) { openBranch(b.name) } }
                     }
-                    .labelStyle(.titleAndIcon)
                     .help("切换分支")
                 }
             }
-            ToolbarItemGroup {
+            BarItem {
                 Button("新建合并请求", systemImage: "plus") { creating = NewMrRequest(source: ref != project.defaultBranch ? ref : nil) }.help("新建合并请求")
                 // 在浏览器中打开：点上方的项目路径
                 if let link = URL(string: project.webUrl) { ShareLink(item: link, subject: Text(project.pathWithNamespace)).help("共享") }

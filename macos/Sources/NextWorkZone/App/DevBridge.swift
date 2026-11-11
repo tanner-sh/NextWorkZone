@@ -25,6 +25,7 @@ import NWZServices
 /// - `/toast[?tap=1]`：当前的提示，或点提示中的按钮（例如“撤销”）。
 /// - `/undo[?do=undo|redo]`：主窗口撤销记录中的操作名，或执行一步。
 /// - `/responder`：键盘焦点所在的视图及其各级上层；`/focus-at?x=&y=`：让某点所在的列表等视图获得焦点。
+/// - `/detail?issue=<键>|wiki=<页面>|doc=<文档>`：在单独的窗口中打开；`/resize?w=&h=`、`/resize?fullscreen=1`：调整主窗口大小、切换全屏。
 @MainActor
 enum DevBridge {
     static func findEditor(_ view: NSView?) -> EditorTextView? {
@@ -32,13 +33,6 @@ enum DevBridge {
         if let tv = view as? EditorTextView { return tv }
         for sub in view.subviews { if let tv = findEditor(sub) { return tv } }
         return nil
-    }
-
-    /// 视图及其下层的悬停提示和读屏标签（SwiftUI 工具栏项目没有 label，按这些找）
-    static func helpTexts(_ view: NSView) -> [String] {
-        var list = [view.toolTip, view.accessibilityLabel()].compactMap { $0 }.filter { !$0.isEmpty }
-        for sub in view.subviews { list += helpTexts(sub) }
-        return list
     }
 
     private static var listener: NWListener?
@@ -176,6 +170,21 @@ enum DevBridge {
             navStart = CACurrentMediaTime()
             model.navigate(t)
         case "/palette": model.paletteOpen.toggle()
+        case "/detail":
+            // 在单独的窗口中打开问题、Wiki 页面或文档
+            if let key = query["issue"] { DetailWindows.open(.issue(key)) }
+            else if let id = query["wiki"] { DetailWindows.open(.wiki(id)) }
+            else if let id = query["doc"] { DetailWindows.open(.doc(id)) }
+        case "/resize":
+            // 调整主窗口大小（检查窄窗口下的布局）；fullscreen=1 切换全屏
+            guard let window = MainWindow.window else { return "{}" }
+            if query["fullscreen"] == "1" { window.toggleFullScreen(nil) }
+            else if let w = query["w"].flatMap(Double.init), let h = query["h"].flatMap(Double.init) {
+                var frame = window.frame
+                frame.origin.y += frame.height - h
+                frame.size = NSSize(width: w, height: h)
+                window.setFrame(frame, display: true)
+            }
         // /image?src=<地址>&service=jira：打开图片查看器
         case "/image": if let src = query["src"] { ImageViewer.show(src: src, service: Service(rawValue: query["service"] ?? "") ?? .jira, alt: "") }
         case "/quick-todo": model.quickTodoOpen.toggle()
@@ -242,22 +251,6 @@ enum DevBridge {
             var chain: [String] = []
             while let cur = v { chain.append("\(type(of: cur)) \(cur.frame)"); v = cur.superview }
             return String(data: (try? JSONSerialization.data(withJSONObject: chain)) ?? Data(), encoding: .utf8) ?? "[]"
-        case "/toolbar":
-            // 主窗口工具栏当前的项目（检查切换页面后工具栏是否跟着变化）；press=<标题> 点击显示着的那一项
-            if let label = query["press"], let window = MainWindow.window,
-               let item = window.toolbar?.items.first(where: { !$0.isHidden && ($0.label == label || $0.itemIdentifier.rawValue == label || $0.view.map { Self.helpTexts($0) }?.contains(label) == true) }), let view = item.view {
-                let center = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
-                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                    if let e = NSEvent.mouseEvent(with: type, location: center, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
-                        window.sendEvent(e)
-                    }
-                }
-            }
-            let items = MainWindow.window?.toolbar?.items.map { item in
-                ["id": item.itemIdentifier.rawValue, "label": item.label, "hidden": item.isHidden ? "1" : "0", "help": item.view.map { Self.helpTexts($0).joined(separator: "|") } ?? "", "frame": item.view.map { "\($0.convert($0.bounds, to: nil))" } ?? ""]
-            } ?? []
-            let title = MainWindow.window.map { ["title": $0.title, "subtitle": $0.subtitle] } ?? [:]
-            return String(data: (try? JSONSerialization.data(withJSONObject: ["items": items, "window": title])) ?? Data(), encoding: .utf8) ?? "{}"
         case "/editor":
             // 编辑器测试：focus / type&chars= / key&code=&mods=cmd,shift / op&name= / dump
             guard let window = NSApp.keyWindow ?? MainWindow.window, let tv = findEditor(window.contentView) else { return "{\"error\":\"no editor\"}" }

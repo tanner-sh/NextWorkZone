@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 struct PageView: View {
     var pageId: String
     var anchor: String?
-    /// 窗口工具栏中页面操作的状态：主窗口中按钮在不随页面重建的 WikiPage 中（见 WikiPageToolbar）；
+    /// 按钮栏中页面操作的状态：主窗口中按钮在不随页面重建的 WikiPage 中（见 WikiPageToolbar）；
     /// 为 nil 时（单独的页面窗口，页面不会切换）由这里自己放按钮
     var externalToolbar: WikiPageToolbar?
     var onOpen: (String) -> Void
@@ -235,7 +235,7 @@ struct PageView: View {
         if let anchor, let i = headings.firstIndex(where: { $0.text == anchor || anchor.hasSuffix($0.text.replacingOccurrences(of: " ", with: "")) }) { scrollTo = headings[i].index }
     }
 
-    /// 把页面的状态和操作交给窗口工具栏（见 WikiPageToolbar）；只在值变化时赋值，免得工具栏无谓地更新。
+    /// 把页面的状态和操作交给按钮栏（见 WikiPageToolbar）；只在值变化时赋值，免得按钮栏无谓地更新。
     private func updateToolbar() {
         toolbar.owner = toolbarOwner
         if toolbar.page != page { toolbar.page = page }
@@ -837,13 +837,13 @@ private struct CopyPageSheet: View {
     }
 }
 
-/// 单独的页面窗口中由 PageView 自己放工具栏按钮。
+/// 单独的页面窗口中由 PageView 自己放按钮栏的按钮。
 private struct OwnToolbar: ViewModifier {
     var enabled: Bool
     var bar: WikiPageToolbar
     var onEdit: () -> Void
 
     func body(content: Content) -> some View {
-        if enabled { content.pageToolbar(hiding: { shown in WikiPageToolbarItems(bar: bar, hidden: !shown) { _ in onEdit() } }) } else { content }
+        if enabled { content.pageBar { wikiPageBarItems(bar) { _ in onEdit() } } } else { content }
     }
 }

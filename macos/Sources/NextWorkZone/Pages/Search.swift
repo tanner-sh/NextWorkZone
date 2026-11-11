@@ -350,13 +350,9 @@ struct SearchPage: View {
             .frame(maxWidth: 980, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .pageToolbar {
-            ToolbarItem(placement: .navigation) {
-                Picker("范围", selection: $scope) {
-                    ForEach(Scope.allCases) { s in Text(search.results != nil ? "\(s.label) \(count(s))" : s.label).tag(s) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+        .pageBar {
+            BarItem(.leading) {
+                BarSegmented(Scope.allCases.map { s in (s, search.results != nil ? "\(s.label) \(count(s))" : s.label) }, selection: $scope)
             }
         }
         .issueMenuDialogs(issueMenu)

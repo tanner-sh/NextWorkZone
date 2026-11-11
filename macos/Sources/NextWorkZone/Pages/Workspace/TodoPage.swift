@@ -94,16 +94,12 @@ struct TodoPage: View {
         } trailing: {
             detailPane
         }
-        .pageToolbar {
-            ToolbarItem(placement: .navigation) {
-                Picker("视图", selection: $view) {
-                    ForEach(ViewKind.allCases) { v in
-                        let n = count(v)
-                        Text(v != .done && n > 0 ? "\(v.label) \(n)" : v.label).tag(v)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+        .pageBar {
+            BarItem(.leading) {
+                BarSegmented(ViewKind.allCases.map { v in
+                    let n = count(v)
+                    return (v, v != .done && n > 0 ? "\(v.label) \(n)" : v.label)
+                }, selection: $view)
             }
         }
         .pageCommands {
@@ -618,14 +614,14 @@ private struct TodoDetail: View {
                 toast("已添加到附件。要把图片放进备注，先点一下备注再粘贴")
             }
         })
-        .pageToolbar {
-            // 待办的操作放在窗口工具栏右侧
+        .pageBar {
+            // 待办的操作放在按钮栏右侧
             if draft.refKey == nil && model.isReady(.jira) {
-                ToolbarItem {
+                BarItem {
                     Button("创建为 Jira 问题", systemImage: "smallcircle.filled.circle") { promoting = true }.help("创建为 Jira 问题")
                 }
             }
-            ToolbarItem {
+            BarItem {
                 // 可以撤销（⌘Z 或提示中的“撤销”），不再确认
                 Button(draft.refSystem == "jira" ? "删除待办" : "删除", systemImage: "trash", role: .destructive) {
                     guarded {

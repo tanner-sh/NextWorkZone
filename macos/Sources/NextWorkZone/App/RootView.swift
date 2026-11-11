@@ -8,47 +8,55 @@ struct RootView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var kept: [PageID] = []
+    @State private var columns: NavigationSplitViewVisibility = .automatic
     /// 各保留页面第几次刷新（见 scheduleVisit）
     @State private var visits: [PageID: Int] = [:]
     /// 各保留页面上次刷新（或创建）的时间
     @State private var refreshed: [PageID: Date] = [:]
     @State private var pendingVisit: Task<Void, Never>?
 
-    /// 回到页面后等多久再在后台刷新：等页面内容和工具栏都切换完，刷新不和切换抢主线程；中途又切走的页面不刷新。
+    /// 回到页面后等多久再在后台刷新：等页面内容切换完，刷新不和切换抢主线程；中途又切走的页面不刷新。
     static let visitDelay: TimeInterval = 0.35
     /// 同一个页面两次后台刷新的最小间隔：来回切换时不必每次都重新加载（今天页一次要重新加载七张卡片）。
     /// 没到间隔时推迟到间隔满了再刷新（仍停在这个页面的话），所以停在页面上看到的数据最多旧这么久。
     static let visitInterval: TimeInterval = 30
 
-    /// 不在窗口中显示标题的页面：工具栏左侧有切换视图的分段控件（它本身就说明了在哪儿，侧栏也标明了当前页面），
-    /// 标题只会排在分段控件后面、夹在几组按钮之间。没有分段控件的页面（今天、知识库、周报）标题在最左边。
+    /// 按钮栏中不显示标题的页面：左侧有切换视图的分段控件（它本身就说明了在哪儿，侧栏也标明了当前页面），
+    /// 标题只会夹在几组按钮之间。没有分段控件的页面（今天、知识库、周报）标题在最左边。
     static let untitled: Set<PageID> = [.todos, .notes, .jira, .wiki, .gitlab, .activity, .stats, .tools, .search]
 
     static let keepAlive: Set<PageID> = [.home, .todos, .notes, .kb, .jira, .wiki, .gitlab, .activity, .weekly, .stats]
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
+                // 显示、隐藏侧栏的按钮由侧栏和按钮栏自己画（窗口没有系统工具栏）
+                .toolbar(removing: .sidebarToggle)
         } detail: {
+            // 页面铺到窗口最上面，顶部是页面自己的按钮栏（见 PageChrome）：各保留页面的宿主视图不留窗口的安全区，其余页面忽略它
             ZStack {
                 KeptPages(pages: kept, active: model.current.page, visits: visits) { page, state in
-                    AnyView(pageView(page).environment(\.page, state).environment(model))
+                    AnyView(pageView(page).modifier(MainPageBar(page: page))
+                        .environment(\.page, state).environment(\.windowChrome, .main).environment(model))
                 }
-                // 宿主视图铺到窗口工具栏下面：各页面的 NSHostingView 按窗口算出顶部安全区，正文仍从工具栏下方开始，
-                // 但滚动时能滚进工具栏下面，由工具栏的滚动边缘效果模糊（否则在工具栏下沿被硬生生切掉）。
-                // 这个边缘效果由窗口按 AppKit 默认样式（模糊加一条细线）画，SwiftUI 的 scrollEdgeEffectStyle 改不了它
-                .ignoresSafeArea(.container, edges: .top)
                 if !Self.keepAlive.contains(model.current.page) {
                     pageView(model.current.page)
+                        .modifier(MainPageBar(page: model.current.page))
                         .id(model.current.page)
                 }
             }
+            .ignoresSafeArea(.container, edges: .top)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .textBackgroundColor))
-            .navigationTitle(Self.untitled.contains(model.current.page) ? "" : title)
-            .navigationSubtitle(Self.untitled.contains(model.current.page) ? "" : PageTitles.shared.subtitles[model.current.page] ?? "")
+            // 窗口的名字（“窗口”菜单、调度中心中）；页面的标题画在按钮栏里
+            .navigationTitle("NextWorkZone")
+        }
+        .windowBarChrome(.main)
+        .onChange(of: columns, initial: true) { _, c in WindowChrome.main.sidebarHidden = c == .detailOnly }
+        .onAppear {
+            WindowChrome.main.toggleSidebar = { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
         }
         // 窗口的最小尺寸由 SwiftUI 内容决定（NSHostingController 会覆盖 window.minSize）；
         // 太窄时列表加详情的页面挤成一个字宽，长 Wiki 页面会排成几十万点高，画面出现黑块
@@ -98,11 +106,6 @@ struct RootView: View {
         }
     }
 
-    private var title: String {
-        if model.current.page == .tools { return Tools.byId(model.current.tool)?.name ?? Tools.all[0].name }
-        return AppCommands.pageTitles[model.current.page] ?? "NextWorkZone"
-    }
-
     @ViewBuilder
     private func pageView(_ page: PageID) -> some View {
         switch page {
@@ -120,6 +123,16 @@ struct RootView: View {
         case .settings: EmptyView()
         case .search: SearchPage()
         }
+    }
+}
+
+/// 主窗口中页面的按钮栏：没有分段控件的页面在最左边显示标题和副标题。
+private struct MainPageBar: ViewModifier {
+    var page: PageID
+
+    func body(content: Content) -> some View {
+        let titled = !RootView.untitled.contains(page)
+        content.pageBarRoot(title: titled ? AppCommands.pageTitles[page] ?? "" : "", subtitle: titled ? PageTitles.shared.subtitles[page] ?? "" : "")
     }
 }
 
@@ -217,6 +230,30 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // 侧栏顶部（红绿灯右边）：隐藏侧栏的按钮；空白处拖动窗口
+        .overlay(alignment: .top) {
+            HStack {
+                Spacer()
+                Button("隐藏边栏", systemImage: "sidebar.leading") { WindowChrome.main.toggleSidebar() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .medium))
+                    .imageScale(.large)
+                    .foregroundStyle(.secondary)
+                    .frame(width: PageBarMetrics.itemHeight, height: PageBarMetrics.itemHeight)
+                    .contentShape(Rectangle())
+                    .help("隐藏边栏")
+            }
+            .padding(.trailing, 6)
+            .frame(height: PageBarMetrics.height)
+            .background {
+                Color.clear.contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { TitlebarFix.titlebarDoubleClick() })
+                    .allowsWindowActivationEvents(true)
+            }
+            .ignoresSafeArea(.container, edges: .top)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) { SidebarLoginStatus() }
     }
 

@@ -8,7 +8,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
     var onDeleted: (() -> Void)? = nil
     /// 标题下方的额外内容（知识库的来源、子页面等）
     @ViewBuilder var header: (Doc) -> Header
-    /// 工具栏中的额外操作（放在置顶、删除之前）
+    /// 按钮栏中的额外操作（放在置顶、删除之前）
     @ViewBuilder var actions: (Doc) -> Actions
     /// 正文下方的额外内容（日记的工作记录）
     @ViewBuilder var footer: (Doc) -> Footer
@@ -38,7 +38,7 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
             if let error {
                 ErrorBox(message: error) { Task { await load() } }.padding(24)
             } else if let doc {
-                content(doc).pageToolbar { toolbar(doc) }
+                content(doc).pageBar { toolbar(doc) }
             } else {
                 LoadingView()
             }
@@ -113,14 +113,14 @@ struct DocPane<Header: View, Actions: View, Footer: View>: View {
         }
     }
 
-    /// 文档的操作放在窗口工具栏右侧：额外操作；置顶、删除。
-    @ToolbarContentBuilder
-    private func toolbar(_ doc: Doc) -> some ToolbarContent {
+    /// 文档的操作放在按钮栏右侧：额外操作；置顶、删除。
+    @BarBuilder
+    private func toolbar(_ doc: Doc) -> [BarEntry] {
         if Actions.self != EmptyView.self {
-            ToolbarItemGroup { actions(doc) }
-            ToolbarSpacer(.fixed)
+            BarItem { actions(doc) }
+            BarSpacer()
         }
-        ToolbarItemGroup {
+        BarItem {
             if doc.kind != "daily" {
                 Button(doc.pinned ? "取消置顶" : "置顶", systemImage: doc.pinned ? "pin.slash" : "pin") { save { $0.pinned.toggle() } }
                     .help(doc.pinned ? "取消置顶" : "置顶")

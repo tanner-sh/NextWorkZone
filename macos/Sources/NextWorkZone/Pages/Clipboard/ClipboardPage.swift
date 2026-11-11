@@ -8,14 +8,9 @@ struct ClipboardPage: View {
     @Environment(AppModel.self) private var model
 
     private var switcher: some View {
-        Picker("", selection: Binding(get: { tab == "settings" }, set: { settings in
+        BarSegmented([(false, "历史"), (true, "设置")], selection: Binding(get: { tab == "settings" }, set: { settings in
             model.navigate(NavTarget(.tools, tool: "clipboard", toolTab: settings ? "settings" : nil))
-        })) {
-            Text("历史").tag(false)
-            Text("设置").tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        }))
     }
 
     var body: some View {
@@ -26,8 +21,8 @@ struct ClipboardPage: View {
                 ClipHistory(initialQuery: query ?? "")
             }
         }
-        .pageToolbar {
-            ToolbarItem(placement: .navigation) { switcher }
+        .pageBar {
+            BarItem(.leading) { switcher }
         }
     }
 }
@@ -340,19 +335,18 @@ private struct ClipDetail: View {
             Spacer(minLength: 0)
         }
         .padding(24)
-        .pageToolbar {
-            // 条目的操作放在窗口工具栏右侧
-            ToolbarItemGroup {
+        .pageBar {
+            // 条目的操作放在按钮栏右侧
+            BarItem {
                 if item.hasHtml { Button("复制为纯文本", systemImage: "textformat") { guarded { try await API.shared.clipCopy([item.id], plain: true); toast("已复制纯文本") } }.help("复制为纯文本") }
                 if item.textual && draft == nil { Button("编辑", systemImage: "pencil") { draft = text }.help("编辑") }
                 Button(board?.name ?? "置顶到…", systemImage: "pin") { MenuBuilder.popUp(pinMenu([item.id], item.pinboard)) }.help(board.map { "置顶于“\($0.name)”" } ?? "置顶到…")
                 Button("删除", systemImage: "trash") { guarded { try await API.shared.clipDelete([item.id]) } }.help("删除")
             }
-            ToolbarSpacer(.fixed)
-            ToolbarItem {
+            BarSpacer()
+            BarItem(prominent: true) {
                 Button("复制", systemImage: "doc.on.doc") { guarded { try await API.shared.clipCopy([item.id]); toast("已复制") } }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderedProminent)
             }
         }
         .task {

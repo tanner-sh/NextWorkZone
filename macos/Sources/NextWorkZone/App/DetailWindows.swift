@@ -30,6 +30,7 @@ struct DetailWindow: View {
 
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var title = ""
+    @State private var chrome = WindowChrome()
 
     var body: some View {
         Group {
@@ -65,10 +66,14 @@ struct DetailWindow: View {
                 Text("内容已不存在").foregroundStyle(.secondary)
             }
         }
+        // 和主窗口一样，按钮画在内容顶部的按钮栏里（标题在最左边），窗口不用系统工具栏
+        .pageBarRoot(title: title)
+        .ignoresSafeArea(.container, edges: .top)
         .environment(AppModel.shared)
         .frame(minWidth: 640, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
         .navigationTitle(title)
+        .windowBarChrome(chrome)
         .overlay { ToastOverlay() }
     }
 }

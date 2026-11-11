@@ -45,16 +45,11 @@ struct NotesPage: View {
             .id(selected)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .pageToolbar {
-            ToolbarItem(placement: .navigation) {
-                Picker("显示", selection: $tab) {
-                    Text("日记").tag(Tab.daily)
-                    Text(notes.map { $0.isEmpty ? "笔记" : "笔记 \($0.count)" } ?? "笔记").tag(Tab.notes)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+        .pageBar {
+            BarItem(.leading) {
+                BarSegmented([(Tab.daily, "日记"), (Tab.notes, notes.map { $0.isEmpty ? "笔记" : "笔记 \($0.count)" } ?? "笔记")], selection: $tab)
             }
-            ToolbarItemGroup(placement: .navigation) {
+            BarItem(.leading) {
                 Button("新建笔记", systemImage: "square.and.pencil", action: createNote).help("新建笔记（⌘N）")
                 Button("最近删除", systemImage: "clock.arrow.circlepath") { showDeleted = true }.help("最近删除的笔记和日记")
             }

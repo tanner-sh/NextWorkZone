@@ -72,7 +72,7 @@ struct ActivityPage: View {
                 NotConfigured(label: "Jira 或 Wiki")
             } else {
                 content
-                    .pageToolbar { toolbar }
+                    .pageBar { toolbar }
                     .pageCommands { PageCommands(title: "动态", refresh: { Task { await refresh() } }) }
             }
         }
@@ -94,18 +94,12 @@ struct ActivityPage: View {
     }
 
     /// 左侧筛选；右侧通知设置、立即检查、全部已读。
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Picker("筛选", selection: $filter) {
-                ForEach(Filter.allCases) { f in
-                    Text(f == .unread && (model.activity?.unread ?? 0) > 0 ? "未读 \(model.activity!.unread)" : f.label).tag(f)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+    @BarBuilder
+    private var toolbar: [BarEntry] {
+        BarItem(.leading) {
+            BarSegmented(Filter.allCases.map { f in (f, f == .unread && (model.activity?.unread ?? 0) > 0 ? "未读 \(model.activity!.unread)" : f.label) }, selection: $filter)
         }
-        ToolbarItemGroup {
+        BarItem {
             Button("通知设置", systemImage: "bell.badge") {
                 MenuBuilder.popUp([.label("以下动态发送系统通知")] + ActivityText.kindLabels.map { k, label in
                     .action(label, checked: notifyKinds.contains(k)) {
@@ -117,8 +111,8 @@ struct ActivityPage: View {
             .help("通知设置")
             Button("立即检查", systemImage: "arrow.clockwise") { Task { await refresh() } }.refreshing(loading).disabled(loading).help("立即检查")
         }
-        ToolbarSpacer(.fixed)
-        ToolbarItem {
+        BarSpacer()
+        BarItem {
             Button("全部已读", systemImage: "checkmark.circle") { Task { await model.markRead(nil) } }
                 .labelStyle(.titleAndIcon)
                 .disabled((model.activity?.unread ?? 0) == 0)

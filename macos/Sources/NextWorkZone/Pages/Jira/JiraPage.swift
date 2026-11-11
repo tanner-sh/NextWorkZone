@@ -57,7 +57,7 @@ struct JiraPage: View {
     @State private var refreshScheduled = false
     @State private var pendingRefresh = false
     @State private var issueMenu = IssueMenu()
-    /// 问题详情的工具栏按钮（见 IssueToolbar）
+    /// 问题详情在按钮栏中的按钮（见 IssueToolbar）
     @State private var issueBar = IssueToolbar()
     @State private var searchDebounce = Debouncer()
 
@@ -84,7 +84,7 @@ struct JiraPage: View {
                 } trailing: {
                     detailPane
                 }
-                .pageToolbar { toolbar }
+                .pageBar { toolbar }
                 .pageCommands {
                     let issue = issues?.first { $0.key == selected }
                     return PageCommands(
@@ -393,24 +393,18 @@ struct JiraPage: View {
     // MARK: 工具栏
 
     /// 列表的操作在左侧：切换查询方式、常用查询、排序分组、刷新；新建在最右侧（问题的操作见 detailPane，在它前面）。
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Picker("查询方式", selection: Binding(get: { mode }, set: { chooseMode($0) })) {
-                ForEach(JQL.presets, id: \.id) { p in Text(p.label).tag(Mode(rawValue: p.id)!) }
-                Text("搜索").tag(Mode.search)
-                Text("JQL").tag(Mode.jql)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+    @BarBuilder
+    private var toolbar: [BarEntry] {
+        BarItem(.leading) {
+            BarSegmented(JQL.presets.map { (Mode(rawValue: $0.id)!, $0.label) } + [(.search, "搜索"), (.jql, "JQL")], selection: Binding(get: { mode }, set: { chooseMode($0) }))
         }
-        ToolbarItemGroup(placement: .navigation) {
+        BarItem(.leading) {
             Button("常用查询", systemImage: "bookmark") { MenuBuilder.popUp(savedMenu()) }.help("常用查询")
             Button("排序与分组", systemImage: view.sort != "default" || view.group != "none" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") { MenuBuilder.popUp(viewMenu()) }
                 .help("排序与分组")
             Button("刷新", systemImage: "arrow.clockwise") { Task { await load() } }.refreshing(loading).disabled(loading).help("刷新")
         }
-        ToolbarItem(placement: .primaryAction) {
+        BarItem(.primary) {
             Button("新建问题", systemImage: "plus") { creating = true }.help("新建问题")
         }
     }
@@ -513,7 +507,7 @@ struct JiraPage: View {
     /// 问题的按钮挂在这一层（不随问题重建），排在“新建问题”前面。
     private var detailPane: some View {
         ZStack { detailContent }
-            .pageToolbar(hiding: { IssueToolbarItems(bar: issueBar, pageShown: $0) })
+            .pageBar { issueBarItems(issueBar) }
     }
 
     @ViewBuilder

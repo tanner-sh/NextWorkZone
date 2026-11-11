@@ -9,7 +9,7 @@ struct IssueView: View {
     var summary: IssueSummary?
     /// 在别处（例如列表的右键菜单）改过这个问题后递增：原地重新加载，不重建视图（滚动位置、展开状态、评论草稿保留）
     var version = 0
-    /// 窗口工具栏中问题操作的状态：主窗口中按钮在不随问题重建的 JiraPage 中（见 IssueToolbar）；
+    /// 按钮栏中问题操作的状态：主窗口中按钮在不随问题重建的 JiraPage 中（见 IssueToolbar）；
     /// 为 nil 时（单独的问题窗口，问题不会切换）由这里自己放按钮
     var externalToolbar: IssueToolbar?
     var onChanged: (IssueSummary) -> Void
@@ -183,7 +183,7 @@ struct IssueView: View {
         }
     }
 
-    /// 把问题的状态和操作交给窗口工具栏（见 IssueToolbar）；只在值变化时赋值，免得工具栏无谓地更新。
+    /// 把问题的状态和操作交给按钮栏（见 IssueToolbar）；只在值变化时赋值，免得按钮栏无谓地更新。
     private func updateToolbar() {
         let bar = toolbar
         bar.owner = toolbarOwner
@@ -667,10 +667,9 @@ private struct IssueKeyValue: View {
 }
 
 /// 关注 / 取消关注，显示关注人数（与详情中的“关注”一行共用数据）。
-/// 问题的操作在窗口工具栏中所需的状态，由正在显示的 IssueView 填写。
+/// 问题的操作在按钮栏中所需的状态，由正在显示的 IssueView 填写。
 ///
-/// 按钮放在不随问题重建的 JiraPage 中：IssueView 按问题重建，按钮放在 IssueView 里时，
-/// 每切换一个问题窗口工具栏都要删掉旧项目、创建新项目并重新排列，点击列表后的那一帧多花三十毫秒左右；
+/// 按钮放在不随问题重建的 JiraPage 中：IssueView 按问题重建，按钮放在 IssueView 里时每切换一个问题都要重建按钮，
 /// 放在外层时只更新按钮的状态。
 @MainActor @Observable
 final class IssueToolbar {
@@ -703,74 +702,55 @@ final class IssueToolbar {
     }
 }
 
-/// 问题的操作放在窗口工具栏右侧（列表的操作在左侧）：流转、编辑、关注、更多。
-/// 没有问题（载入中、出错）或没有可用的流转时隐藏而不是去掉，免得切换问题时重新创建项目；
-/// 流转按钮后的间隔在隐藏时落在左边的弹性空白里，看不出来。
-struct IssueToolbarItems: ToolbarContent {
-    var bar: IssueToolbar
-    /// 所在页面是否显示（见 pageToolbar(hiding:)）
-    var pageShown: Bool
-
-    var body: some ToolbarContent {
-        let issue = pageShown ? bar.issue : nil
-        let transitions = bar.transitions, templates = bar.templates
-        let watching = bar.watchers?.watching == true
-        ToolbarItem {
-            // 流转合成一个分体按钮：点按钮执行第一个流转（与 Jira 网页最左边的按钮一致），箭头列出其余流转和模板。
-            // 之前前两个流转各占一个按钮、再加一个箭头，和编辑、关注、更多挤在一起
-            if let first = transitions.first {
-                Menu {
-                    ForEach(transitions) { t in
-                        Button(t.name) { bar.startTransition(t, nil) }
-                    }
-                    if !templates.isEmpty {
-                        Divider()
-                        ForEach(templates, id: \.template.id) { item in
-                            Button("\(item.template.name)（\(item.transition.name)）", systemImage: "bolt") { bar.startTransition(item.transition, item.template) }
-                        }
-                    }
-                } label: {
-                    Text(first.name)
-                } primaryAction: {
-                    bar.startTransition(first, nil)
-                }
-                .help("流转到「\(first.to.name)」；箭头中有其余流转和流转模板")
-            } else {
-                // 只有文字的菜单在工具栏中只剩一个箭头，带上图标
-                Menu {
-                    ForEach(templates, id: \.template.id) { item in
-                        Button("\(item.template.name)（\(item.transition.name)）", systemImage: "bolt") { bar.startTransition(item.transition, item.template) }
-                    }
-                } label: {
-                    Label("流转", systemImage: "bolt")
-                }
-                .labelStyle(.titleAndIcon)
-            }
-        }
-        .hidden(issue == nil || (transitions.isEmpty && templates.isEmpty))
-        ToolbarSpacer(.fixed)
-        ToolbarItemGroup {
-            Button("编辑", systemImage: "pencil") { bar.edit() }.help("编辑问题")
-            Button {
-                bar.toggleWatch()
-            } label: {
-                Label(watching ? "取消关注" : "关注", systemImage: watching ? "eye.fill" : "eye")
-            }
-            .disabled(bar.watchBusy || bar.watchers == nil)
-            .help(bar.watchers.map { "\($0.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\($0.count > 0 ? "\n\($0.count) 人关注" : "")" } ?? "")
-            Button("更多操作", systemImage: "ellipsis") { MenuBuilder.popUp(bar.actions()) }.help("更多操作（与网页的“更多”一致）")
-        }
-        .hidden(issue == nil)
+/// 问题的操作放在按钮栏右侧（列表的操作在左侧）：流转、编辑、关注、更多。没有问题（载入中、出错）时不显示。
+@MainActor @BarBuilder
+func issueBarItems(_ bar: IssueToolbar) -> [BarEntry] {
+    let issue = bar.issue
+    let transitions = bar.transitions, templates = bar.templates
+    let watching = bar.watchers?.watching == true
+    let templateSpecs: [MenuSpec] = templates.map { item in
+        .action("\(item.template.name)（\(item.transition.name)）", icon: "bolt") { bar.startTransition(item.transition, item.template) }
     }
+    BarItem {
+        // 流转是一个分体按钮：点按钮执行第一个流转（与 Jira 网页最左边的按钮一致），箭头列出其余流转和模板
+        if let first = transitions.first {
+            Button(first.name) { bar.startTransition(first, nil) }
+                .padding(.trailing, -6)
+                .help("流转到「\(first.to.name)」")
+            Button {
+                MenuBuilder.popUp(transitions.map { t in .action(t.name) { bar.startTransition(t, nil) } } + (templateSpecs.isEmpty ? [] : [.separator] + templateSpecs))
+            } label: {
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            .padding(.leading, -6)
+            .help("其余流转和流转模板")
+        } else {
+            BarMenu("流转", icon: "bolt") { templateSpecs }
+        }
+    }
+    .hidden(issue == nil || (transitions.isEmpty && templates.isEmpty))
+    BarSpacer()
+    BarItem {
+        Button("编辑", systemImage: "pencil") { bar.edit() }.help("编辑问题")
+        Button {
+            bar.toggleWatch()
+        } label: {
+            Label(watching ? "取消关注" : "关注", systemImage: watching ? "eye.fill" : "eye")
+        }
+        .disabled(bar.watchBusy || bar.watchers == nil)
+        .help(bar.watchers.map { "\($0.watching ? "取消关注（不再收到这个问题的动态）" : "关注（问题有变化时提醒我）")\($0.count > 0 ? "\n\($0.count) 人关注" : "")" } ?? "")
+        Button("更多操作", systemImage: "ellipsis") { MenuBuilder.popUp(bar.actions()) }.help("更多操作（与网页的“更多”一致）")
+    }
+    .hidden(issue == nil)
 }
 
-/// 单独的问题窗口中由 IssueView 自己放工具栏按钮。
+/// 单独的问题窗口中由 IssueView 自己放按钮栏的按钮。
 private struct OwnIssueToolbar: ViewModifier {
     var enabled: Bool
     var bar: IssueToolbar
 
     func body(content: Content) -> some View {
-        if enabled { content.pageToolbar(hiding: { IssueToolbarItems(bar: bar, pageShown: $0) }) } else { content }
+        if enabled { content.pageBar { issueBarItems(bar) } } else { content }
     }
 }
 

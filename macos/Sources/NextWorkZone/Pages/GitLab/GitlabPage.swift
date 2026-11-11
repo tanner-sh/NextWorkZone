@@ -121,7 +121,7 @@ struct GitlabPage: View {
                 } trailing: {
                     detail
                 }
-                .pageToolbar { toolbar }
+                .pageBar { toolbar }
             }
         }
         .onAppear { takeTarget() }
@@ -198,28 +198,17 @@ struct GitlabPage: View {
     // MARK: 工具栏
 
     /// 左侧：切换合并请求和项目，合并请求的状态，刷新。详情的操作由 MergeRequestView、ProjectView 放在右侧。
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Picker("显示", selection: Binding(get: { mode }, set: { setMode($0) })) {
-                Text("合并请求").tag(Mode.mrs)
-                Text("项目").tag(Mode.projects)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+    @BarBuilder
+    private var toolbar: [BarEntry] {
+        BarItem(.leading) {
+            BarSegmented([(Mode.mrs, "合并请求"), (Mode.projects, "项目")], selection: Binding(get: { mode }, set: { setMode($0) }))
         }
-        ToolbarItemGroup(placement: .navigation) {
+        BarItem(.leading) {
             if mode == .mrs {
-                // 工具栏中的菜单样式 Picker 不显示当前值，改用显示状态名的菜单
-                Menu {
-                    ForEach(mrStates, id: \.0) { st in
-                        Toggle(st.1, isOn: Binding(get: { mrState == st.0 }, set: { if $0 { mrState = st.0 } }))
-                    }
-                } label: {
-                    // 只有文字的标签在工具栏中会被隐藏，只剩一个箭头；和分支菜单一样带图标、显示文字
-                    Label(mrStates.first { $0.0 == mrState }?.1 ?? "状态", systemImage: "line.3.horizontal.decrease")
+                // 显示当前状态名的菜单
+                BarMenu(mrStates.first { $0.0 == mrState }?.1 ?? "状态", icon: "line.3.horizontal.decrease") {
+                    mrStates.map { st in .action(st.1, checked: mrState == st.0) { mrState = st.0 } }
                 }
-                .labelStyle(.titleAndIcon)
                 .help("合并请求的状态")
                 Button("刷新", systemImage: "arrow.clockwise") { Task { await mrList.load(.scope(scope), state: mrState, search: mrSearch) } }
                     .refreshing(mrList.loading).disabled(mrList.loading).help("刷新")
