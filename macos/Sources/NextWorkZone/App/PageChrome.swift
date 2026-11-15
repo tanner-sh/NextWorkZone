@@ -363,14 +363,17 @@ final class WindowChrome {
     /// 侧栏收起时按钮栏最左边放一个显示侧栏的按钮（展开时这个按钮在侧栏顶部）
     var showsSidebarButton: Bool { hasSidebar && sidebarHidden }
 
-    /// 红绿灯在按钮栏上方时（没有侧栏挡着、不是全屏）让开它们
+    /// 红绿灯在按钮栏上方时（没有侧栏挡着）让开它们
     var leadingInset: CGFloat {
-        if fullScreen || (hasSidebar && !sidebarHidden) { return 12 }
+        if hasSidebar && !sidebarHidden { return 12 }
         return PageBarMetrics.trafficLights
     }
 
     /// 显示或隐藏侧栏（主窗口的根视图提供；不走响应链，窗口不是关键窗口时也能用）
     @ObservationIgnored var toggleSidebar: @MainActor () -> Void = {}
+    /// 全屏时按钮栏上的关闭和退出全屏操作，由窗口探针设置。
+    @ObservationIgnored var closeWindow: @MainActor () -> Void = {}
+    @ObservationIgnored var exitFullScreen: @MainActor () -> Void = {}
 }
 
 private struct WindowChromeKey: EnvironmentKey {
@@ -392,6 +395,47 @@ extension View {
             .toolbarVisibility(.hidden, for: .windowToolbar)
             .background(TitlebarFix(chrome: chrome))
             .environment(\.windowChrome, chrome)
+            .overlay(alignment: .topLeading) {
+                if chrome.fullScreen { FullScreenTrafficLights(chrome: chrome).ignoresSafeArea(.container, edges: .top) }
+            }
+    }
+}
+
+/// 全屏时保留窗口操作，最小化与系统全屏标题栏一样不可用。
+private struct FullScreenTrafficLights: View {
+    var chrome: WindowChrome
+    @Environment(\.appearsActive) private var appearsActive
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            light("关闭窗口", symbol: "xmark", color: Color(red: 1, green: 0.37, blue: 0.34), action: chrome.closeWindow)
+            light("全屏时不能最小化", symbol: "minus", color: Color(red: 1, green: 0.74, blue: 0.18), enabled: false) {}
+            light("退出全屏幕", symbol: "arrow.down.right.and.arrow.up.left", color: Color(red: 0.16, green: 0.78, blue: 0.25), action: chrome.exitFullScreen)
+        }
+        .padding(.leading, 19)
+        .frame(height: PageBarMetrics.height)
+        .onHover { hovering = $0 }
+    }
+
+    private func light(_ label: String, symbol: String, color: Color, enabled: Bool = true, action: @escaping @MainActor () -> Void) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(appearsActive && enabled ? color : Color.gray.opacity(0.28))
+                .overlay { Circle().strokeBorder(.black.opacity(0.13), lineWidth: 0.5) }
+                .overlay {
+                    Image(systemName: symbol)
+                        .font(.system(size: 7, weight: .heavy))
+                        .foregroundStyle(.black.opacity(0.65))
+                        .opacity(hovering && enabled ? 1 : 0)
+                }
+                .frame(width: 14, height: 14)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
 
@@ -399,9 +443,10 @@ extension View {
 ///
 /// SwiftUI 隐藏窗口工具栏时把整个标题栏（连同红绿灯）一起隐藏。这里把标题栏重新显示出来，只隐藏其中红绿灯以外的部分
 /// （工具栏的视图即使是空的也会吞掉点击）：标题栏仍是统一工具栏的高度，红绿灯在原来的位置，
-/// 其余地方的点击落到下面页面自己的按钮栏上。只按视图的层级关系操作（红绿灯的上一层是标题栏），不依赖系统内部的类名；
+/// 其余地方的点击落到下面页面自己的按钮栏上。系统隐藏工具栏后，标题栏的外层即使重新显示也不参与命中测试；
+/// 因此在窗口上方加一层只命中红绿灯的视图，把点击交给原来的系统按钮。只按视图的层级关系操作，不依赖系统内部的类名；
 /// 层级不是预期的样子时什么都不做，退化为没有红绿灯（菜单和快捷键仍可关闭、最小化窗口）。
-/// 全屏时系统把标题栏（和红绿灯）移到另一个盖在内容顶部的窗口里，把那个窗口变成透明的、不接收鼠标。
+/// 全屏时系统把标题栏移到另一个盖在内容顶部的窗口里：隐藏它，并在内容上放一组窗口按钮。
 struct TitlebarFix: NSViewRepresentable {
     var chrome: WindowChrome
 
@@ -424,6 +469,7 @@ struct TitlebarFix: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var hiddenObservation: NSKeyValueObservation?
         private var alphaObservation: NSKeyValueObservation?
+        private var hitView: TrafficLightHitView?
 
         init(chrome: WindowChrome) {
             self.chrome = chrome
@@ -441,7 +487,14 @@ struct TitlebarFix: NSViewRepresentable {
             hiddenObservation = nil
             alphaObservation = nil
             observedBar = nil
+            hitView?.removeFromSuperview()
+            hitView = nil
             guard let window else { return }
+            chrome.closeWindow = { [weak window] in
+                guard let button = window?.standardWindowButton(.closeButton), let action = button.action else { return }
+                NSApp.sendAction(action, to: button.target, from: button)
+            }
+            chrome.exitFullScreen = { [weak window] in window?.toggleFullScreen(nil) }
             let names: [Notification.Name] = [
                 NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification,
                 NSWindow.didBecomeKeyNotification, NSWindow.didResizeNotification,
@@ -454,6 +507,9 @@ struct TitlebarFix: NSViewRepresentable {
             // 进入全屏的动画一开始就不再让开红绿灯
             observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.chrome.fullScreen = true }
+            })
+            observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.chrome.fullScreen = false }
             })
             apply()
         }
@@ -468,14 +524,22 @@ struct TitlebarFix: NSViewRepresentable {
             let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
             guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview,
                   buttons.allSatisfy({ $0.superview === bar }) else { return }
+            // SwiftUI 隐藏工具栏时，标题栏的容器不再参与命中测试，即使重新显示它也不会恢复。
+            // 在窗口顶层只为三个按钮转交命中，其余区域仍落到页面和侧栏上。
+            if let frame = window.contentView?.superview, hitView?.superview !== frame {
+                hitView?.removeFromSuperview()
+                let view = TrafficLightHitView(frame: frame.bounds)
+                view.autoresizingMask = [.width, .height]
+                frame.addSubview(view, positioned: .above, relativeTo: nil)
+                hitView = view
+            }
             // 全屏时红绿灯在系统的另一个窗口里（见下）
             let overlay = bar.window.flatMap { $0 === window ? nil : $0 }
             if container.isHidden { container.isHidden = false }
             let alpha: CGFloat = overlay == nil ? 1 : 0
             if bar.alphaValue != alpha { bar.alphaValue = alpha }
             for view in bar.subviews where !buttons.contains(where: { $0 === view }) && !view.isHidden { view.isHidden = true }
-            // 全屏时系统把标题栏放进另一个窗口，盖在内容顶部并拦住点击：把它变成透明的、不接收鼠标，下面页面的按钮栏才看得见、点得到。
-            // 这样全屏时没有红绿灯（鼠标移到屏幕顶部时也不出现），用菜单“显示 > 退出全屏幕”或 ⌃⌘F 退出
+            // 全屏时系统把标题栏放进另一个窗口，盖在内容顶部并拦住点击：让它透明且不接收鼠标，红绿灯由内容提供。
             if let overlay {
                 if overlay.isOpaque { overlay.isOpaque = false }
                 if overlay.backgroundColor != .clear { overlay.backgroundColor = .clear }
@@ -493,6 +557,19 @@ struct TitlebarFix: NSViewRepresentable {
                     MainActor.assumeIsolated { self?.apply() }
                 }
             }
+        }
+    }
+
+    /// 将普通窗口的命中交给原来的系统按钮。
+    private final class TrafficLightHitView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let window, !window.styleMask.contains(.fullScreen), let superview else { return nil }
+            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                guard let button = window.standardWindowButton(type), !button.isHiddenOrHasHiddenAncestor,
+                      let parent = button.superview, parent.window === window, parent.alphaValue > 0 else { continue }
+                if let hit = button.hitTest(parent.convert(point, from: superview)) { return hit }
+            }
+            return nil
         }
     }
 }
