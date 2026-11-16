@@ -22,6 +22,7 @@ let package = Package(
         .target(name: "NWZServices", dependencies: ["NWZCore", "NWZWorkspace", "NWZRich", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab", "NWZClipboard"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "NWZTool", dependencies: ["NWZServices", "NWZCore", "NWZJira", "NWZWiki", "NWZGitLab"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "NWZTests", dependencies: ["NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab", "NWZClipboard", "CLibXML2"], resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6), .unsafeFlags(["-I\(sdk)/usr/include/libxml2"])]),
+        .testTarget(name: "NWZChromeTests", dependencies: ["NextWorkZone"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(
             name: "NextWorkZone",
             dependencies: ["NWZCore", "NWZServices", "NWZRich", "NWZWorkspace", "NWZPreview", "NWZJira", "NWZWiki", "NWZGitLab", "NWZClipboard"],

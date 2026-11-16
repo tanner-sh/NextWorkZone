@@ -441,10 +441,9 @@ private struct FullScreenTrafficLights: View {
 
 /// 隐藏系统工具栏后把红绿灯留住。
 ///
-/// SwiftUI 隐藏窗口工具栏时把整个标题栏（连同红绿灯）一起隐藏。这里把标题栏重新显示出来，只隐藏其中红绿灯以外的部分
-/// （工具栏的视图即使是空的也会吞掉点击）：标题栏仍是统一工具栏的高度，红绿灯在原来的位置，
-/// 其余地方的点击落到下面页面自己的按钮栏上。系统隐藏工具栏后，标题栏的外层即使重新显示也不参与命中测试；
-/// 因此在窗口上方加一层只命中红绿灯的视图，把点击交给原来的系统按钮。只按视图的层级关系操作，不依赖系统内部的类名；
+/// SwiftUI 隐藏窗口工具栏时把整个标题栏（连同红绿灯）一起隐藏。
+/// 在窗口上方放一组系统样式的窗口按钮，位置跟随原来的按钮，其余地方的点击落到下面页面自己的按钮栏上。
+/// 窗口按钮必须属于命中视图的子树，不能从 hitTest 返回另一条视图分支的按钮，否则鼠标事件可能在 AppKit 内循环转发。
 /// 层级不是预期的样子时什么都不做，退化为没有红绿灯（菜单和快捷键仍可关闭、最小化窗口）。
 /// 全屏时系统把标题栏移到另一个盖在内容顶部的窗口里：隐藏它，并在内容上放一组窗口按钮。
 struct TitlebarFix: NSViewRepresentable {
@@ -468,7 +467,6 @@ struct TitlebarFix: NSViewRepresentable {
         let chrome: WindowChrome
         private var observers: [NSObjectProtocol] = []
         private var hiddenObservation: NSKeyValueObservation?
-        private var alphaObservation: NSKeyValueObservation?
         private var hitView: TrafficLightHitView?
 
         init(chrome: WindowChrome) {
@@ -485,7 +483,6 @@ struct TitlebarFix: NSViewRepresentable {
             observers.forEach(center.removeObserver)
             observers = []
             hiddenObservation = nil
-            alphaObservation = nil
             observedBar = nil
             hitView?.removeFromSuperview()
             hitView = nil
@@ -506,7 +503,10 @@ struct TitlebarFix: NSViewRepresentable {
             }
             // 进入全屏的动画一开始就不再让开红绿灯
             observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.chrome.fullScreen = true }
+                MainActor.assumeIsolated {
+                    self?.chrome.fullScreen = true
+                    self?.hitView?.isHidden = true
+                }
             })
             observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.chrome.fullScreen = false }
@@ -523,22 +523,23 @@ struct TitlebarFix: NSViewRepresentable {
             if chrome.fullScreen != fullScreen { chrome.fullScreen = fullScreen }
             let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
             guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview,
-                  buttons.allSatisfy({ $0.superview === bar }) else { return }
-            // SwiftUI 隐藏工具栏时，标题栏的容器不再参与命中测试，即使重新显示它也不会恢复。
-            // 在窗口顶层只为三个按钮转交命中，其余区域仍落到页面和侧栏上。
+                  buttons.allSatisfy({ $0.superview === bar }) else {
+                hitView?.isHidden = true
+                return
+            }
+            // 按钮放在覆盖层自己的视图树里，其余区域仍落到页面和侧栏上。
             if let frame = window.contentView?.superview, hitView?.superview !== frame {
                 hitView?.removeFromSuperview()
-                let view = TrafficLightHitView(frame: frame.bounds)
+                let view = TrafficLightHitView(frame: frame.bounds, styleMask: window.styleMask)
                 view.autoresizingMask = [.width, .height]
                 frame.addSubview(view, positioned: .above, relativeTo: nil)
                 hitView = view
             }
             // 全屏时红绿灯在系统的另一个窗口里（见下）
             let overlay = bar.window.flatMap { $0 === window ? nil : $0 }
-            if container.isHidden { container.isHidden = false }
-            let alpha: CGFloat = overlay == nil ? 1 : 0
-            if bar.alphaValue != alpha { bar.alphaValue = alpha }
-            for view in bar.subviews where !buttons.contains(where: { $0 === view }) && !view.isHidden { view.isHidden = true }
+            hitView?.update(visible: !fullScreen && bar.window === window)
+            // 原按钮只提供位置和动作，不参与绘制或鼠标事件。
+            if !bar.isHidden { bar.isHidden = true }
             // 全屏时系统把标题栏放进另一个窗口，盖在内容顶部并拦住点击：让它透明且不接收鼠标，红绿灯由内容提供。
             if let overlay {
                 if overlay.isOpaque { overlay.isOpaque = false }
@@ -547,29 +548,86 @@ struct TitlebarFix: NSViewRepresentable {
                 // 标题栏旁边还有不透明的底色
                 for view in container.subviews where view !== bar && !view.isHidden { view.isHidden = true }
             }
-            // SwiftUI 在窗口显示后才隐藏标题栏，之后更新工具栏时还会再隐藏
+            // SwiftUI 更新工具栏时可能重新显示原来的标题栏。
             if observedBar !== bar {
                 observedBar = bar
-                hiddenObservation = container.observe(\.isHidden) { [weak self] _, _ in
-                    MainActor.assumeIsolated { self?.apply() }
-                }
-                alphaObservation = bar.observe(\.alphaValue) { [weak self] _, _ in
+                hiddenObservation = bar.observe(\.isHidden) { [weak self] _, _ in
                     MainActor.assumeIsolated { self?.apply() }
                 }
             }
         }
     }
 
-    /// 将普通窗口的命中交给原来的系统按钮。
-    private final class TrafficLightHitView: NSView {
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let window, !window.styleMask.contains(.fullScreen), let superview else { return nil }
-            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                guard let button = window.standardWindowButton(type), !button.isHiddenOrHasHiddenAncestor,
-                      let parent = button.superview, parent.window === window, parent.alphaValue > 0 else { continue }
-                if let hit = button.hitTest(parent.convert(point, from: superview)) { return hit }
+    /// 普通窗口的系统按钮。只让自己的按钮参与命中，空白区域交给下面的页面。
+    final class TrafficLightHitView: NSView {
+        private static let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        private var lights: [(type: NSWindow.ButtonType, button: NSButton)] = []
+        private var observedButtons: [NSButton] = []
+        private var buttonObservations: [NSKeyValueObservation] = []
+
+        init(frame: NSRect, styleMask: NSWindow.StyleMask) {
+            super.init(frame: frame)
+            for type in Self.types {
+                guard let button = NSWindow.standardWindowButton(type, for: styleMask.subtracting(.fullScreen)) else { continue }
+                button.target = self
+                button.action = #selector(activate(_:))
+                addSubview(button)
+                lights.append((type, button))
             }
-            return nil
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        func update(visible: Bool) {
+            isHidden = !visible
+            guard let window else { return }
+            let buttons = Self.types.compactMap { window.standardWindowButton($0) }
+            if buttons.count != observedButtons.count || zip(buttons, observedButtons).contains(where: { $0.0 !== $0.1 }) {
+                buttonObservations = []
+                observedButtons = buttons
+                for button in buttons {
+                    buttonObservations.append(button.observe(\.isEnabled) { [weak self] _, _ in
+                        MainActor.assumeIsolated { self?.syncButtons() }
+                    })
+                    buttonObservations.append(button.observe(\.isHidden) { [weak self] _, _ in
+                        MainActor.assumeIsolated { self?.syncButtons() }
+                    })
+                }
+            }
+            syncButtons()
+        }
+
+        override func layout() {
+            super.layout()
+            syncButtons()
+        }
+
+        private func syncButtons() {
+            guard let window else { return }
+            for light in lights {
+                guard let original = window.standardWindowButton(light.type), original.window === window else {
+                    light.button.isHidden = true
+                    continue
+                }
+                let frame = convert(original.bounds, from: original)
+                if light.button.frame != frame { light.button.frame = frame }
+                if light.button.isEnabled != original.isEnabled { light.button.isEnabled = original.isEnabled }
+                if light.button.isHidden != original.isHidden { light.button.isHidden = original.isHidden }
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let window, !window.styleMask.contains(.fullScreen),
+                  let hit = super.hitTest(point), hit !== self else { return nil }
+            return hit
+        }
+
+        @objc private func activate(_ sender: NSButton) {
+            guard let type = lights.first(where: { $0.button === sender })?.type,
+                  let original = window?.standardWindowButton(type), original.isEnabled,
+                  let action = original.action else { return }
+            NSApp.sendAction(action, to: original.target, from: original)
         }
     }
 }
